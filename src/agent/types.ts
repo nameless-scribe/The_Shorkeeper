@@ -19,7 +19,7 @@ export type AgUiEvent =
   | { type: 'state_update'; state: AgentPresenceState }
   | { type: 'live2d_motion'; motion: string; priority?: number }
   | { type: 'tts_chunk'; runId: string; audio: ArrayBuffer }
-  | { type: 'usage'; runId: string; promptTokens: number; completionTokens: number };
+  | { type: 'usage'; runId: string; promptTokens: number; completionTokens: number; cachedTokens?: number };
 
 export interface OpenAIToolCall {
   id: string;

@@ -97,6 +97,13 @@ export function SchedulePage() {
             </div>
             <p className="mt-1 text-[10px] text-keeper-ice/40">
               日预算参考 {DAILY_TOKEN_BUDGET.toLocaleString()} · {progress}%
+              {(stats?.todayCached ?? 0) > 0 && (
+                <>
+                  {' '}
+                  · 缓存命中 {stats!.cacheHitRateToday}%（
+                  {stats!.todayCached.toLocaleString()} tokens）
+                </>
+              )}
             </p>
           </section>
 

@@ -6,6 +6,7 @@ import type { UiMessage } from '../hooks/useAgentEvents';
 
 interface MessageListProps {
   messages: UiMessage[];
+  loading?: boolean;
 }
 
 function formatTime(ts?: number) {
@@ -16,7 +17,7 @@ function formatTime(ts?: number) {
 
 const SCROLL_PIN_THRESHOLD = 80;
 
-export function MessageList({ messages }: MessageListProps) {
+export function MessageList({ messages, loading = false }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pinnedToBottomRef = useRef(true);
   const prevMessageCountRef = useRef(messages.length);
@@ -55,7 +56,10 @@ export function MessageList({ messages }: MessageListProps) {
       onScroll={handleScroll}
       className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-3 no-drag"
     >
-      {messages.length === 0 && (
+      {loading && messages.length === 0 && (
+        <div className="mt-8 text-center text-sm text-keeper-ice/40">加载消息中…</div>
+      )}
+      {!loading && messages.length === 0 && (
         <div className="mt-8 text-center text-sm text-keeper-ice/40">
           向 Shorekeeper 打个招呼吧
         </div>

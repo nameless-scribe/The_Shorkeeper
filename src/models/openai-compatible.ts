@@ -28,6 +28,10 @@ interface OpenAIStreamChunk {
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
+    cached_tokens?: number;
+    prompt_tokens_details?: {
+      cached_tokens?: number;
+    };
   };
 }
 
@@ -230,10 +234,15 @@ export async function* streamChat(
         }
 
         if (parsed.usage) {
+          const cachedTokens =
+            parsed.usage.prompt_tokens_details?.cached_tokens ??
+            parsed.usage.cached_tokens ??
+            0;
           yield {
             type: 'usage',
             promptTokens: parsed.usage.prompt_tokens ?? 0,
             completionTokens: parsed.usage.completion_tokens ?? 0,
+            cachedTokens,
           };
         }
       }

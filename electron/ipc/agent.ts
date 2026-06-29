@@ -42,6 +42,7 @@ export function registerAgentIpc() {
               model: config.model,
               promptTokens: agEvent.promptTokens,
               completionTokens: agEvent.completionTokens,
+              cachedTokens: agEvent.cachedTokens,
             });
           }
         }

@@ -5,6 +5,7 @@ import type { TokenUsageRow } from './schema';
 export interface TokenUsageRecord {
   promptTokens: number;
   completionTokens: number;
+  cachedTokens?: number;
   sessionId?: string;
   model: string;
 }
@@ -13,6 +14,8 @@ export interface TokenUsageSummary {
   today: number;
   week: number;
   total: number;
+  todayCached: number;
+  cacheHitRateToday: number;
   dailyLast7: { date: string; tokens: number }[];
 }
 
@@ -39,8 +42,8 @@ function formatDate(ts: number): string {
 export function recordTokenUsage(input: TokenUsageRecord): void {
   getDatabase()
     .prepare(
-      `INSERT INTO token_usage (id, session_id, model, prompt_tokens, completion_tokens, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO token_usage (id, session_id, model, prompt_tokens, completion_tokens, cached_tokens, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       uuid(),
@@ -48,6 +51,7 @@ export function recordTokenUsage(input: TokenUsageRecord): void {
       input.model,
       input.promptTokens,
       input.completionTokens,
+      input.cachedTokens ?? 0,
       Date.now(),
     );
 }
@@ -60,6 +64,26 @@ function sumTokensSince(since: number): number {
   const row = getDatabase()
     .prepare(
       `SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS total
+       FROM token_usage WHERE created_at >= ?`,
+    )
+    .get(since) as { total: number } | undefined;
+  return readTotal(row);
+}
+
+function sumCachedSince(since: number): number {
+  const row = getDatabase()
+    .prepare(
+      `SELECT COALESCE(SUM(cached_tokens), 0) AS total
+       FROM token_usage WHERE created_at >= ?`,
+    )
+    .get(since) as { total: number } | undefined;
+  return readTotal(row);
+}
+
+function sumPromptSince(since: number): number {
+  const row = getDatabase()
+    .prepare(
+      `SELECT COALESCE(SUM(prompt_tokens), 0) AS total
        FROM token_usage WHERE created_at >= ?`,
     )
     .get(since) as { total: number } | undefined;
@@ -90,10 +114,17 @@ export function getTokenUsageSummary(): TokenUsageSummary {
     dailyLast7.push({ date: formatDate(dayStart), tokens: readTotal(row) });
   }
 
+  const todayCached = sumCachedSince(todayStart);
+  const todayPrompt = sumPromptSince(todayStart);
+  const cacheHitRateToday =
+    todayPrompt > 0 ? Math.round((todayCached / todayPrompt) * 100) : 0;
+
   return {
     today: sumTokensSince(todayStart),
     week: sumTokensSince(weekStart),
     total: readTotal(totalRow),
+    todayCached,
+    cacheHitRateToday,
     dailyLast7,
   };
 }
@@ -105,7 +136,8 @@ export function getTodayTokenCount(): number {
 export function listRecentUsage(limit = 20): TokenUsageRow[] {
   return getDatabase()
     .prepare(
-      `SELECT id, session_id, model, prompt_tokens, completion_tokens, created_at
+      `SELECT id, session_id, model, prompt_tokens, completion_tokens,
+              COALESCE(cached_tokens, 0) AS cached_tokens, created_at
        FROM token_usage ORDER BY created_at DESC LIMIT ?`,
     )
     .all(limit) as unknown as TokenUsageRow[];

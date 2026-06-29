@@ -6,7 +6,12 @@ export type { ToolResult } from '../tools/types';
 export type ModelEvent =
   | { type: 'text_delta'; delta: string }
   | { type: 'reasoning_delta'; delta: string }
-  | { type: 'usage'; promptTokens: number; completionTokens: number }
+  | {
+      type: 'usage';
+      promptTokens: number;
+      completionTokens: number;
+      cachedTokens?: number;
+    }
   | {
       type: 'round_complete';
       content: string | null;
@@ -128,6 +133,8 @@ export interface TokenUsageSummaryInfo {
   today: number;
   week: number;
   total: number;
+  todayCached: number;
+  cacheHitRateToday: number;
   dailyLast7: { date: string; tokens: number }[];
 }
 

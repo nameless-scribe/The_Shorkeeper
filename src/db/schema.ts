@@ -30,6 +30,7 @@ export interface TokenUsageRow {
   model: string;
   prompt_tokens: number;
   completion_tokens: number;
+  cached_tokens: number;
   created_at: number;
 }
 

@@ -31,16 +31,22 @@ export function SessionHistoryPanel({
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const refresh = useCallback(async () => {
     const list = await window.shorekeeper.sessions.list({
       includeArchived: showArchived,
-      query: query.trim() || undefined,
+      query: debouncedQuery.trim() || undefined,
     });
     setSessions(list.slice(0, MAX_SESSIONS));
     setLoading(false);
-  }, [query, showArchived]);
+  }, [debouncedQuery, showArchived]);
 
   useEffect(() => {
     if (!open) return;
@@ -53,7 +59,8 @@ export function SessionHistoryPanel({
     if (!window.confirm('确定删除此会话？消息将无法恢复。')) return;
     await window.shorekeeper.sessions.delete(sessionId);
     if (sessionId === currentSessionId) {
-      await window.shorekeeper.sessions.create();
+      const session = await window.shorekeeper.sessions.create();
+      onSelect(session.id);
     }
     await refresh();
   };

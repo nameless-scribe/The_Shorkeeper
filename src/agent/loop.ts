@@ -110,7 +110,7 @@ export async function* runAgentLoop(
       } else if (event.type === 'reasoning_delta') {
         yield ev.reasoningDelta(runId, event.delta);
       } else if (event.type === 'usage') {
-        yield ev.usage(runId, event.promptTokens, event.completionTokens);
+        yield ev.usage(runId, event.promptTokens, event.completionTokens, event.cachedTokens);
       } else if (event.type === 'round_complete') {
         roundContent = event.content;
         roundToolCalls = event.toolCalls;

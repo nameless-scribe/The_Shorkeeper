@@ -18,24 +18,30 @@ export function useAgentEvents(
   options?: { onRunFinished?: () => void },
 ) {
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
     setError(null);
-    window.shorekeeper.messages.list(sessionId).then((list) => {
-      setMessages(
-        list
-          .filter((m) => m.role === 'user' || m.role === 'assistant')
-          .map((m) => ({
-            id: m.id,
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-            createdAt: m.createdAt,
-          })),
-      );
-    });
+    setLoadingMessages(true);
+    window.shorekeeper.messages
+      .list(sessionId)
+      .then((list) => {
+        setMessages(
+          list
+            .filter((m) => m.role === 'user' || m.role === 'assistant')
+            .map((m) => ({
+              id: m.id,
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+              createdAt: m.createdAt,
+            })),
+        );
+      })
+      .catch(console.error)
+      .finally(() => setLoadingMessages(false));
   }, [sessionId]);
 
   useEffect(() => {
@@ -232,5 +238,5 @@ export function useAgentEvents(
     });
   };
 
-  return { messages, isRunning, error, send };
+  return { messages, loadingMessages, isRunning, error, send };
 }

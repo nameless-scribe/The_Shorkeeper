@@ -18,9 +18,17 @@ interface AnthropicStreamEvent {
     stop_reason?: string;
   };
   message?: {
-    usage?: { input_tokens?: number; output_tokens?: number };
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
   };
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
 }
 
 type ToolUseAccumulator = Record<
@@ -210,6 +218,7 @@ export async function* streamChatAnthropic(
             type: 'usage',
             promptTokens: parsed.usage.input_tokens ?? 0,
             completionTokens: parsed.usage.output_tokens ?? 0,
+            cachedTokens: parsed.usage.cache_read_input_tokens ?? 0,
           };
         }
 
@@ -218,6 +227,7 @@ export async function* streamChatAnthropic(
             type: 'usage',
             promptTokens: parsed.message.usage.input_tokens ?? 0,
             completionTokens: parsed.message.usage.output_tokens ?? 0,
+            cachedTokens: parsed.message.usage.cache_read_input_tokens ?? 0,
           };
         }
 

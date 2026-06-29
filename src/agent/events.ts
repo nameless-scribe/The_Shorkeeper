@@ -56,7 +56,7 @@ export const ev = {
     return { type: 'tts_chunk', runId, audio };
   },
 
-  usage(runId: string, promptTokens: number, completionTokens: number): AgUiEvent {
-    return { type: 'usage', runId, promptTokens, completionTokens };
+  usage(runId: string, promptTokens: number, completionTokens: number, cachedTokens?: number): AgUiEvent {
+    return { type: 'usage', runId, promptTokens, completionTokens, cachedTokens };
   },
 };
