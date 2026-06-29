@@ -1,6 +1,8 @@
 import { listMessages } from '../db/repositories/messages';
 import { completeChat } from '../models/complete-chat';
 import { getModelConfigSafe } from '../models/config';
+import { getPerformanceSettings } from '../config/performance';
+import { getSetting, setSetting } from '../db/app-settings';
 import {
   getExtractedUpToMessageId,
   markExtractedUpToMessageId,
@@ -137,4 +139,33 @@ export async function extractMemoriesFromSession(sessionId: string): Promise<num
   }
 
   return saved;
+}
+
+const TURN_COUNT_PREFIX = 'memory.extract_turns.';
+
+function getSessionTurnCount(sessionId: string): number {
+  const raw = getSetting(`${TURN_COUNT_PREFIX}${sessionId}`);
+  if (!raw) return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function incrementSessionTurnCount(sessionId: string): number {
+  const next = getSessionTurnCount(sessionId) + 1;
+  setSetting(`${TURN_COUNT_PREFIX}${sessionId}`, String(next));
+  return next;
+}
+
+/** 根据性能设置决定是否自动提取记忆 */
+export function shouldAutoExtractMemories(sessionId: string, _userMessage: string): boolean {
+  const { memoryExtractMode, memoryExtractInterval } = getPerformanceSettings();
+
+  if (memoryExtractMode === 'manual') return false;
+
+  if (memoryExtractMode === 'every_n') {
+    const turns = incrementSessionTurnCount(sessionId);
+    if (turns % memoryExtractInterval !== 0) return false;
+  }
+
+  return true;
 }

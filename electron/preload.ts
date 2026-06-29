@@ -16,6 +16,7 @@ import type {
   ImportProgress,
   ModelProtocol,
   McpServerInfo,
+  PerformanceSettingsInfo,
   SkillInfo,
 } from '../src/shared/types';
 
@@ -35,10 +36,14 @@ const shorekeeperApi = {
     status: (): Promise<AppStatus> => ipcRenderer.invoke('app:status'),
   },
   sessions: {
-    list: (): Promise<SessionInfo[]> => ipcRenderer.invoke('sessions:list'),
+    list: (options?: { includeArchived?: boolean; query?: string }): Promise<SessionInfo[]> =>
+      ipcRenderer.invoke('sessions:list', options),
     current: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:current'),
     create: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:create'),
     switch: (id: string): Promise<SessionInfo> => ipcRenderer.invoke('sessions:switch', id),
+    delete: (id: string): Promise<boolean> => ipcRenderer.invoke('sessions:delete', id),
+    archive: (id: string, archived: boolean): Promise<SessionInfo> =>
+      ipcRenderer.invoke('sessions:archive', id, archived),
   },
   messages: {
     list: (sessionId: string): Promise<MessageInfo[]> =>
@@ -183,6 +188,11 @@ const shorekeeperApi = {
     getProtocol: (): Promise<ModelProtocol> => ipcRenderer.invoke('model:getProtocol'),
     setProtocol: (protocol: ModelProtocol): Promise<ModelProtocol> =>
       ipcRenderer.invoke('model:setProtocol', protocol),
+  },
+  performance: {
+    get: (): Promise<PerformanceSettingsInfo> => ipcRenderer.invoke('performance:get'),
+    set: (patch: Partial<PerformanceSettingsInfo>): Promise<PerformanceSettingsInfo> =>
+      ipcRenderer.invoke('performance:set', patch),
   },
 };
 

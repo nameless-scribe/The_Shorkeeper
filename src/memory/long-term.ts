@@ -77,7 +77,7 @@ export function searchMemories(query: string, limit = 5): MemoryEntry[] {
   const db = getDatabase();
 
   if (!trimmed) {
-    return listMemories(limit);
+    return [];
   }
 
   const pattern = `%${trimmed}%`;
@@ -102,7 +102,7 @@ export function searchMemories(query: string, limit = 5): MemoryEntry[] {
     return rows.map(rowToEntry);
   }
 
-  return listMemories(Math.min(limit, 3));
+  return [];
 }
 
 function listMemoryEmbeddings(limit = 200): Array<{

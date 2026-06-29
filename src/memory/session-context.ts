@@ -1,0 +1,116 @@
+import { getDatabase } from '../db';
+import { listMessages } from '../db/repositories/messages';
+import { completeChat } from '../models/complete-chat';
+import { getModelConfigSafe } from '../models/config';
+import { getPerformanceSettings } from '../config/performance';
+
+export interface SessionSummary {
+  sessionId: string;
+  summary: string;
+  compressedUpToMessageId: string | null;
+  updatedAt: number;
+}
+
+export function getSessionSummary(sessionId: string): SessionSummary | null {
+  const row = getDatabase()
+    .prepare(
+      `SELECT session_id, summary, compressed_up_to_message_id, updated_at
+       FROM session_summaries WHERE session_id = ?`,
+    )
+    .get(sessionId) as
+    | {
+        session_id: string;
+        summary: string;
+        compressed_up_to_message_id: string | null;
+        updated_at: number;
+      }
+    | undefined;
+
+  if (!row) return null;
+
+  return {
+    sessionId: row.session_id,
+    summary: row.summary,
+    compressedUpToMessageId: row.compressed_up_to_message_id,
+    updatedAt: row.updated_at,
+  };
+}
+
+function upsertSessionSummary(
+  sessionId: string,
+  summary: string,
+  compressedUpToMessageId: string,
+): void {
+  const now = Date.now();
+  getDatabase()
+    .prepare(
+      `INSERT INTO session_summaries (session_id, summary, compressed_up_to_message_id, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         summary = excluded.summary,
+         compressed_up_to_message_id = excluded.compressed_up_to_message_id,
+         updated_at = excluded.updated_at`,
+    )
+    .run(sessionId, summary, compressedUpToMessageId, now);
+
+  getDatabase()
+    .prepare(`UPDATE sessions SET compressed = 1, updated_at = ? WHERE id = ?`)
+    .run(now, sessionId);
+}
+
+function buildSummaryPrompt(existingSummary: string | null): string {
+  return `你是会话摘要助手。将以下对话历史压缩为简洁中文摘要，保留关键事实、决定与用户偏好。
+${existingSummary ? `\n已有摘要（请合并更新）：\n${existingSummary}\n` : ''}
+要求：
+1. 200-400 字以内
+2. 不要编造未出现的信息
+3. 直接输出摘要正文，不要 JSON 或标题`;
+}
+
+/** 消息数超阈值时压缩早期对话为 summary */
+export async function maybeCompressSession(sessionId: string): Promise<boolean> {
+  const config = getModelConfigSafe();
+  if (!config) return false;
+
+  const { compressThreshold, maxHistoryMessages } = getPerformanceSettings();
+  const all = listMessages(sessionId).filter(
+    (m) => m.role === 'user' || m.role === 'assistant',
+  );
+
+  if (all.length <= compressThreshold) return false;
+
+  const keepCount = maxHistoryMessages;
+  const toCompress = all.slice(0, all.length - keepCount);
+  if (!toCompress.length) return false;
+
+  const existing = getSessionSummary(sessionId);
+  const dialogue = toCompress
+    .map((m) => `${m.role === 'user' ? '用户' : '助手'}：${m.content}`)
+    .join('\n');
+
+  const summary = await completeChat(
+    [
+      { role: 'system', content: buildSummaryPrompt(existing?.summary ?? null) },
+      { role: 'user', content: `请摘要以下对话：\n\n${dialogue}` },
+    ],
+    config,
+  );
+
+  const trimmed = summary.trim();
+  if (!trimmed) return false;
+
+  upsertSessionSummary(sessionId, trimmed, toCompress.at(-1)!.id);
+  return true;
+}
+
+export function formatSummaryForPrompt(summary: SessionSummary | null): string | null {
+  if (!summary?.summary.trim()) return null;
+  return `【此前对话摘要】\n${summary.summary.trim()}`;
+}
+
+export function getRecentChatMessages(sessionId: string, limit: number) {
+  const all = listMessages(sessionId).filter(
+    (m) => m.role === 'user' || m.role === 'assistant',
+  );
+  return all.slice(-limit).map((m) => ({ role: m.role, content: m.content }));
+}

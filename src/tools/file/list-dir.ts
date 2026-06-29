@@ -1,16 +1,6 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import type { ToolDefinition } from '../types';
-
-function resolveWorkspacePath(workspaceRoot: string, relativePath: string): string {
-  const normalized = (relativePath || '.').replace(/\\/g, '/').replace(/^\/+/, '');
-  const resolved = path.resolve(workspaceRoot, normalized);
-  const root = path.resolve(workspaceRoot);
-  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
-    throw new Error(`路径越界：${relativePath} 不在工作区内`);
-  }
-  return resolved;
-}
+import { resolveWorkspacePath } from './workspace-path';
 
 export const listDirTool: ToolDefinition = {
   name: 'list_dir',

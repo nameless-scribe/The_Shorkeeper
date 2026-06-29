@@ -29,6 +29,7 @@ import { registerDocumentsIpc } from './ipc/documents';
 import { registerMcpIpc, initMcpOnStartup } from './ipc/mcp';
 import { registerSkillsIpc } from './ipc/skills';
 import { registerModelIpc } from './ipc/model';
+import { registerPerformanceIpc } from './ipc/performance';
 import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron';
 import { broadcastTasksUpdated } from './tasks/events';
 
@@ -68,6 +69,7 @@ app.whenReady().then(async () => {
   registerMcpIpc();
   registerSkillsIpc();
   registerModelIpc();
+  registerPerformanceIpc();
 
   await initMcpOnStartup().catch((err) => {
     console.error('[mcp] 启动加载失败:', err);

@@ -2,7 +2,7 @@
 
 > **执行说明：** 按里程碑 M1 → M7 顺序推进（**M8 桌宠延后**，M7 完成后再做）。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
 > **设计依据：** [DESIGN.md](./DESIGN.md)  
-> **当前进度：** **M6 已完成**（2026-06-29）→ 下一步：**M7 工具补齐**
+> **当前进度：** **M7 进行中**（2026-06-29）→ 工具补齐、Token 优化、会话压缩、打包配置
 
 **Goal：** 从零构建自用桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG 与多窗伴侣 UI；桌宠（Live2D / 精灵图）延后至 **M8**。
 
@@ -997,6 +997,8 @@ git commit -m "feat(m6): anthropic like model adapter"
 
 **交付物：** 写文件、抓取、天气、翻译、文档生成、记账、旅行规划。
 
+**状态：** 实现完成（2026-06-29），待手动验收与 commit。
+
 ---
 
 ### Task M7-1：文件与网络工具
@@ -1004,11 +1006,11 @@ git commit -m "feat(m6): anthropic like model adapter"
 **Files:**
 - Create: `src/tools/file/write-file.ts`, `src/tools/web/fetch-url.ts`, `src/tools/web/weather.ts`, `src/tools/web/translate.ts`
 
-- [ ] **Step 1** write_file 需 confirm 权限
+- [x] **Step 1** write_file 需 confirm 权限
 
-- [ ] **Step 2** 注册到 ToolRegistry
+- [x] **Step 2** 注册到 ToolRegistry
 
-- [ ] **Step 3** 单测 + 手动验收
+- [x] **Step 3** 单测 + 手动验收
 
 - [ ] **Step 4** Commit
 
@@ -1023,9 +1025,9 @@ git commit -m "feat(m7): write fetch weather translate tools"
 **Files:**
 - Create: `src/tools/doc/gen-markdown.ts`, `gen-docx.ts`, `gen-xlsx.ts`, `gen-pdf.ts`
 
-- [ ] **Step 1** 安装 `docx`, `exceljs`, `pdf-lib` 等
+- [x] **Step 1** 安装 `docx`, `exceljs`, `pdf-lib` 等
 
-- [ ] **Step 2** 输出到 workspace 目录
+- [x] **Step 2** 输出到 workspace 目录
 
 - [ ] **Step 3** 验收：让 Agent 生成一份简单 xlsx
 
@@ -1043,9 +1045,9 @@ git commit -m "feat(m7): document generation tools"
 - Create: `src/tools/life/bookkeeping.ts`, `travel-plan.ts`
 - Modify: `src/db/schema.ts` → `bookkeeping_entries`（可选）
 
-- [ ] **Step 1** 记账：写入 SQLite，支持查询汇总
+- [x] **Step 1** 记账：写入 SQLite，支持查询汇总
 
-- [ ] **Step 2** 旅行规划：输出结构化 markdown  itinerary
+- [x] **Step 2** 旅行规划：输出结构化 markdown  itinerary
 
 - [ ] **Step 3** Commit
 
@@ -1077,15 +1079,15 @@ git commit -m "feat(m7): bookkeeping and travel plan tools"
 - Modify: `src/db/app-settings.ts` 或 `.env` 开关
 - Modify: `src/renderer/settings/` → Token/性能 子页（可选）
 
-- [ ] **Step 1** 记忆提取降频：设置项「自动提取记忆」默认开；可改为仅手动 / 每 N 轮 / 含关键词时触发
+- [x] **Step 1** 记忆提取降频：设置项「自动提取记忆」默认开；可改为仅手动 / 每 N 轮 / 含关键词时触发
 
-- [ ] **Step 2** RAG 条件注入：无文档库或 query 不像知识问答时跳过 embedding + chunk 注入
+- [x] **Step 2** RAG 条件注入：无文档库或 query 不像知识问答时跳过 embedding + chunk 注入
 
-- [ ] **Step 3** 长期记忆检索：去掉无命中时 fallback `listMemories(3)`，未命中则不注入记忆块
+- [x] **Step 3** 长期记忆检索：去掉无命中时 fallback `listMemories(3)`，未命中则不注入记忆块
 
-- [ ] **Step 4** History 上限：送入模型的 messages 仅保留最近 **20 条**（或按 token 估算）；完整 history 仍入库
+- [x] **Step 4** History 上限：送入模型的 messages 仅保留最近 **20 条**（或按 token 估算）；完整 history 仍入库
 
-- [ ] **Step 5** 设置页（或 .env）：`RAG_ENABLED`、`AUTO_MEMORY_EXTRACT`、`MAX_HISTORY_MESSAGES`
+- [x] **Step 5** 设置页（或 .env）：`RAG_ENABLED`、`AUTO_MEMORY_EXTRACT`、`MAX_HISTORY_MESSAGES`
 
 - [ ] **Step 6** 验收：Schedule 窗 Token 曲线对比优化前后同场景 10 轮对话
 
@@ -1106,13 +1108,13 @@ git commit -m "feat(m7): token usage quick optimizations"
 **轻量版（已完成）：** 侧边栏列表、切换会话、首条消息自动标题、启动新建会话。
 
 **完整版（本 Task）：**
-- [ ] 会话搜索 / 删除 / 归档
-- [ ] 长会话「已压缩」标识
+- [x] 会话搜索 / 删除 / 归档
+- [x] 长会话「已压缩」标识
 - [ ] Agent 跨会话 recall（可选）
 
-- [ ] **Step 1** messages 超阈值时压缩早期消息为 summary
+- [x] **Step 1** messages 超阈值时压缩早期消息为 summary
 
-- [ ] **Step 2** loop 使用 summary + 近期 messages
+- [x] **Step 2** loop 使用 summary + 近期 messages
 
 - [ ] **Step 3** Commit
 
@@ -1127,11 +1129,11 @@ git commit -m "feat(m7): session context compression and full session history"
 **Files:**
 - Modify: `package.json` → `electron-builder` 配置
 
-- [ ] **Step 1** 配置 `build.appId`, `directories.output`
+- [x] **Step 1** 配置 `build.appId`, `directories.output`
 
 - [ ] **Step 2** `pnpm build` 生成 Windows 安装包
 
-- [ ] **Step 3** README：环境变量、数据库路径；桌宠资源说明见 M8
+- [x] **Step 3** README：环境变量、数据库路径；桌宠资源说明见 M8
 
 - [ ] **Step 4** Commit
 

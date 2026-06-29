@@ -49,6 +49,14 @@ export interface McpServerInfo {
   enabled: boolean;
 }
 
+export interface PerformanceSettingsInfo {
+  ragEnabled: boolean;
+  memoryExtractMode: 'always' | 'manual' | 'every_n';
+  memoryExtractInterval: number;
+  maxHistoryMessages: number;
+  compressThreshold: number;
+}
+
 export interface SkillInfo {
   id: string;
   name: string;
@@ -65,6 +73,8 @@ export interface SessionInfo {
   title: string;
   createdAt: number;
   updatedAt: number;
+  archived?: boolean;
+  compressed?: boolean;
 }
 
 export interface MessageInfo {

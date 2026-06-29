@@ -51,6 +51,15 @@ export function runMigrations(db: SqliteDb): string[] {
         applied.push(`${file} (partial)`);
         continue;
       }
+      if (file.includes('m7') && message.includes('duplicate column')) {
+        console.warn(`[migrate] ${file} 部分列已存在，跳过`);
+        db.prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)').run(
+          file,
+          Date.now(),
+        );
+        applied.push(`${file} (partial)`);
+        continue;
+      }
       throw err;
     }
     db.prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)').run(

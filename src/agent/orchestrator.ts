@@ -10,15 +10,18 @@ import { getSession } from '../db/repositories/sessions';
 import { getActiveSession } from '../session/active';
 import {
   insertMessage,
-  listMessages,
-  toChatMessages,
 } from '../db/repositories/messages';
-import { extractMemoriesFromSession } from '../memory/summarizer';
+import { extractMemoriesFromSession, shouldAutoExtractMemories } from '../memory/summarizer';
 import {
   archiveConversationToKnowledge,
   buildArchiveConfirmation,
   parseKnowledgeArchiveIntent,
 } from '../rag/conversation-knowledge';
+import { getPerformanceSettings } from '../config/performance';
+import {
+  getRecentChatMessages,
+  maybeCompressSession,
+} from '../memory/session-context';
 
 async function* streamText(runId: string, text: string): AsyncGenerator<AgUiEvent> {
   const chunkSize = 12;
@@ -62,7 +65,8 @@ export async function* runOrchestrator(
       return;
     }
 
-    const history = toChatMessages(listMessages(session.id));
+    const { maxHistoryMessages } = getPerformanceSettings();
+    const history = getRecentChatMessages(session.id, maxHistoryMessages);
     const systemPrompt = await buildSystemPrompt({
       userMessage,
       sessionId: session.id,
@@ -109,9 +113,15 @@ export async function* runOrchestrator(
 
     yield ev.runFinished(runId);
 
-    void extractMemoriesFromSession(session.id).catch((err) => {
-      console.error('[memory] 提取失败:', err);
+    void maybeCompressSession(session.id).catch((err) => {
+      console.error('[session] 压缩失败:', err);
     });
+
+    if (shouldAutoExtractMemories(session.id, userMessage)) {
+      void extractMemoriesFromSession(session.id).catch((err) => {
+        console.error('[memory] 提取失败:', err);
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     yield ev.runError(runId, message);

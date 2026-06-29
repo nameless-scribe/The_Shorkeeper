@@ -6,8 +6,9 @@ import { DocumentsPage } from './DocumentsPage';
 import { McpPage } from './McpPage';
 import { SkillsPage } from './SkillsPage';
 import { ModelPage } from './ModelPage';
+import { PerformancePage } from './PerformancePage';
 
-type SettingsTab = 'profile' | 'worldbook' | 'tasks' | 'documents' | 'skills' | 'mcp' | 'model';
+type SettingsTab = 'profile' | 'worldbook' | 'tasks' | 'documents' | 'skills' | 'mcp' | 'model' | 'performance';
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -102,6 +103,17 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
         </button>
         <button
           type="button"
+          onClick={() => setTab('performance')}
+          className={`rounded-lg px-3 py-1.5 text-xs ${
+            tab === 'performance'
+              ? 'bg-keeper-cyan/20 text-keeper-cyan'
+              : 'text-keeper-ice/60 hover:text-keeper-ice'
+          }`}
+        >
+          性能
+        </button>
+        <button
+          type="button"
           onClick={() => setTab('model')}
           className={`rounded-lg px-3 py-1.5 text-xs ${
             tab === 'model'
@@ -120,6 +132,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
         {tab === 'documents' && <DocumentsPage />}
         {tab === 'skills' && <SkillsPage />}
         {tab === 'mcp' && <McpPage />}
+        {tab === 'performance' && <PerformancePage />}
         {tab === 'model' && <ModelPage />}
       </div>
     </div>

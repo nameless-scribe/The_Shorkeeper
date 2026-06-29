@@ -77,3 +77,21 @@ export interface McpServerRow {
   env: string;
   enabled: number;
 }
+
+export interface BookkeepingEntryRow {
+  id: string;
+  session_id: string | null;
+  category: string;
+  amount: number;
+  currency: string;
+  note: string | null;
+  entry_type: string;
+  created_at: number;
+}
+
+export interface SessionSummaryRow {
+  session_id: string;
+  summary: string;
+  compressed_up_to_message_id: string | null;
+  updated_at: number;
+}
