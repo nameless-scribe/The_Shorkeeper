@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { app, Menu, Tray, nativeImage } from 'electron';
+import { app, BrowserWindow, Menu, Tray, nativeImage } from 'electron';
 import { getWindowManager } from './windows/manager';
 import { syncDockVisibility } from './dock/visibility';
 import { showChatWindow } from './windows/chat';
@@ -7,6 +7,7 @@ import { showStatusWindow } from './windows/status';
 import { showScheduleWindow } from './windows/schedule';
 
 let tray: Tray | null = null;
+let appQuitting = false;
 
 function resolveTrayIcon(): Electron.NativeImage {
   const candidates = [
@@ -46,9 +47,10 @@ function buildTrayMenu(): Menu {
     {
       label: '退出',
       click: () => {
+        setAppQuitting();
         tray?.destroy();
         tray = null;
-        app.exit(0);
+        app.quit();
       },
     },
   ]);
@@ -68,14 +70,41 @@ export function createTray(): Tray {
   return tray;
 }
 
-export function hideAllWindowsToTray(): void {
-  const manager = getWindowManager();
-  for (const win of manager.getAllWindows()) {
-    win.hide();
+export function setAppQuitting(): void {
+  appQuitting = true;
+}
+
+export function isAppQuitting(): boolean {
+  return appQuitting;
+}
+
+/** 隐藏到托盘：不进任务栏，不影响其它窗口 */
+export function hideWindowToTray(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.setSkipTaskbar(true);
+  win.hide();
+}
+
+/** 从托盘恢复：重新出现在任务栏 */
+export function showWindowFromTray(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  win.setSkipTaskbar(false);
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) {
+    win.show();
   }
-  syncDockVisibility();
+  win.moveTop();
+  win.focus();
+  if (process.platform === 'win32') {
+    app.focus({ steal: true });
+  }
+}
+
+export function hideAllWindowsToTray(): void {
+  getWindowManager().hideAll();
 }
 
 export function shouldMinimizeToTray(): boolean {
-  return tray !== null;
+  return tray !== null && !appQuitting;
 }

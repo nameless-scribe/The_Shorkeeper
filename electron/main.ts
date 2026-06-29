@@ -12,11 +12,14 @@ import { registerWindowIpc } from './ipc/window';
 import { registerTasksIpc } from './ipc/tasks';
 import { initDatabase, closeDatabase } from '../src/db';
 import { resetActiveSession } from '../src/session/active';
-import { createTray, hideAllWindowsToTray, shouldMinimizeToTray } from './tray';
+import {
+  createTray,
+  hideAllWindowsToTray,
+  isAppQuitting,
+  setAppQuitting,
+  shouldMinimizeToTray,
+} from './tray';
 import { attachMainPanelDockSync, syncDockVisibility } from './dock/visibility';
-import { createChatWindow } from './windows/chat';
-import { createStatusWindow } from './windows/status';
-import { createScheduleWindow } from './windows/schedule';
 import { getWindowManager } from './windows/manager';
 import { emitInitialState } from './state/presence';
 import { setTaskChangeHandler } from '../src/scheduler/task-events';
@@ -32,9 +35,10 @@ config({ path: path.join(process.cwd(), '.env') });
 
 function attachTrayCloseBehavior(win: BrowserWindow): void {
   win.on('close', (event) => {
+    if (isAppQuitting()) return;
     if (shouldMinimizeToTray()) {
       event.preventDefault();
-      win.hide();
+      getWindowManager().hideWindow(win);
     }
   });
 }
@@ -66,8 +70,10 @@ app.whenReady().then(async () => {
 
   createTray();
 
-  for (const win of [createChatWindow(), createStatusWindow(), createScheduleWindow()]) {
-    attachTrayCloseBehavior(win);
+  const manager = getWindowManager();
+  attachTrayCloseBehavior(manager.create('chat'));
+  for (const kind of ['status', 'schedule'] as const) {
+    attachTrayCloseBehavior(manager.create(kind, { showOnReady: false }));
   }
 
   attachMainPanelDockSync();
@@ -90,6 +96,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  setAppQuitting();
   stopScheduler();
   closeDatabase();
 });
@@ -102,7 +109,5 @@ app.on('activate', () => {
 });
 
 function managerHasVisibleWindows(): boolean {
-  return getWindowManager()
-    .getAllWindows()
-    .some((w) => w.isVisible());
+  return getWindowManager().isAnyPanelShown();
 }

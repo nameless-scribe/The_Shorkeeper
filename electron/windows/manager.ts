@@ -1,9 +1,16 @@
 import { BrowserWindow, type BrowserWindowConstructorOptions } from 'electron';
 import { getJsonSetting, setJsonSetting } from '../../src/db/app-settings';
 import type { WindowBounds } from '../../src/db/schema';
+import { syncDockVisibility } from '../dock/visibility';
 import { getPreloadPath, getRendererIndexPath } from '../paths';
+import { hideWindowToTray, showWindowFromTray } from '../tray';
 
 export type WindowKind = 'chat' | 'status' | 'schedule';
+
+export interface CreateWindowOptions {
+  /** 内容就绪后是否显示；默认 true */
+  showOnReady?: boolean;
+}
 
 const BOUNDS_KEYS: Record<WindowKind, string> = {
   chat: 'window.bounds.chat',
@@ -57,14 +64,17 @@ function baseOptions(kind: WindowKind): BrowserWindowConstructorOptions {
 
 export class WindowManager {
   private readonly windows = new Map<WindowKind, BrowserWindow>();
+  /** 逻辑可见状态；比 win.isVisible() 更可靠（skipTaskbar 切换时 Windows 可能不同步） */
+  private readonly panelShown = new Map<WindowKind, boolean>();
 
-  create(kind: WindowKind): BrowserWindow {
+  create(kind: WindowKind, createOptions: CreateWindowOptions = {}): BrowserWindow {
+    const { showOnReady = true } = createOptions;
     const existing = this.windows.get(kind);
     if (existing && !existing.isDestroyed()) {
       return existing;
     }
 
-    const options: BrowserWindowConstructorOptions = {
+    const windowOptions: BrowserWindowConstructorOptions = {
       ...baseOptions(kind),
       title:
         kind === 'chat'
@@ -75,17 +85,17 @@ export class WindowManager {
     };
 
     if (kind === 'chat') {
-      options.minWidth = 360;
-      options.minHeight = 520;
+      windowOptions.minWidth = 360;
+      windowOptions.minHeight = 520;
     } else if (kind === 'status') {
-      options.minWidth = 260;
-      options.minHeight = 360;
+      windowOptions.minWidth = 260;
+      windowOptions.minHeight = 360;
     } else {
-      options.minWidth = 320;
-      options.minHeight = 420;
+      windowOptions.minWidth = 320;
+      windowOptions.minHeight = 420;
     }
 
-    const win = new BrowserWindow(options);
+    const win = new BrowserWindow(windowOptions);
     this.attachPersistence(win, kind);
     this.windows.set(kind, win);
 
@@ -100,9 +110,46 @@ export class WindowManager {
     });
 
     loadWindowContent(win, kind);
-    win.once('ready-to-show', () => win.show());
+    win.once('ready-to-show', () => {
+      if (showOnReady) {
+        this.panelShown.set(kind, true);
+        showWindowFromTray(win);
+      } else {
+        this.panelShown.set(kind, false);
+        hideWindowToTray(win);
+      }
+      syncDockVisibility();
+    });
 
     return win;
+  }
+
+  getKindFromWindow(win: BrowserWindow): WindowKind | null {
+    for (const [kind, tracked] of this.windows) {
+      if (tracked === win) return kind;
+    }
+    return null;
+  }
+
+  isPanelShown(kind: WindowKind): boolean {
+    return this.panelShown.get(kind) ?? false;
+  }
+
+  isAnyPanelShown(): boolean {
+    for (const kind of ['chat', 'status', 'schedule'] as const) {
+      if (this.isPanelShown(kind)) return true;
+    }
+    return false;
+  }
+
+  hideWindow(win: BrowserWindow): void {
+    const kind = this.getKindFromWindow(win);
+    if (kind) {
+      this.hide(kind);
+      return;
+    }
+    hideWindowToTray(win);
+    syncDockVisibility();
   }
 
   get(kind: WindowKind): BrowserWindow | null {
@@ -114,22 +161,35 @@ export class WindowManager {
   show(kind: WindowKind): BrowserWindow {
     let win = this.get(kind);
     if (!win) {
-      win = this.create(kind);
+      win = this.create(kind, { showOnReady: false });
     }
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
+    this.panelShown.set(kind, true);
+    showWindowFromTray(win);
+    syncDockVisibility();
     return win;
   }
 
+  hideAll(): void {
+    for (const kind of ['chat', 'status', 'schedule'] as const) {
+      const win = this.get(kind);
+      if (!win) continue;
+      this.panelShown.set(kind, false);
+      hideWindowToTray(win);
+    }
+    syncDockVisibility();
+  }
+
   hide(kind: WindowKind): void {
-    this.get(kind)?.hide();
+    const win = this.get(kind);
+    if (!win) return;
+    this.panelShown.set(kind, false);
+    hideWindowToTray(win);
+    syncDockVisibility();
   }
 
   toggle(kind: WindowKind): void {
-    const win = this.get(kind);
-    if (win?.isVisible()) {
-      win.hide();
+    if (this.isPanelShown(kind)) {
+      this.hide(kind);
     } else {
       this.show(kind);
     }

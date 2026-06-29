@@ -5,8 +5,8 @@ import { getPreloadPath, getRendererIndexPath } from '../paths';
 import { getWindowManager } from './manager';
 import { getDockPreferences, type DockPreferences } from '../dock/preferences';
 
-const DOCK_WIDTH = 360;
-const DOCK_HEIGHT = 96;
+const DOCK_WIDTH = 300;
+const DOCK_HEIGHT = 188;
 const BOUNDS_KEY = 'window.bounds.dock';
 
 let dockWindow: BrowserWindow | null = null;
@@ -127,10 +127,13 @@ export function hideDockWindow(): void {
 }
 
 export function openChatFromDock(): void {
-  hideDockWindow();
   getWindowManager().show('chat');
 }
 
 export function openScheduleFromDock(): void {
   getWindowManager().show('schedule');
+}
+
+export function openStatusFromDock(): void {
+  getWindowManager().show('status');
 }

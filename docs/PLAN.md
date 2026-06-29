@@ -2,7 +2,7 @@
 
 > **执行说明：** 按里程碑 M1 → M7 顺序推进（**M8 桌宠延后**，M7 完成后再做）。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
 > **设计依据：** [DESIGN.md](./DESIGN.md)  
-> **当前进度：** **M4 已完成**（2026-06-29）→ 下一步：**M5 RAG**（详见 [M5 实施计划](./superpowers/plans/2026-06-29-m5-rag.md)）
+> **当前进度：** **M5 已完成**（2026-06-29 手动验收：导入 `shenhong-data-governance.md` 问答成功）→ 下一步：**M6 扩展能力**
 
 **Goal：** 从零构建自用桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG 与多窗伴侣 UI；桌宠（Live2D / 精灵图）延后至 **M8**。
 
@@ -20,9 +20,9 @@
 | M2 | Agent 核心 | 4–6 天 | ✅ **已完成** — 工具循环、AG-UI 事件、工具卡片 |
 | M3 | 记忆系统 | 3–5 天 | ✅ **已完成** — 结构化长期记忆、Worldbook、设置页 |
 | M4 | 多窗 UI | 4–5 天 | ✅ **已完成** — 状态/日程窗、Token 统计 |
-| M5 | RAG | 3–5 天 | 文档导入与向量检索回答 |
+| M5 | RAG | 3–5 天 | ✅ **已完成** — 文档导入、向量检索、问答引用 |
 | M6 | 扩展能力 | 4–6 天 | MCP、技能、TTS |
-| M7 | 工具补齐 | 5–7 天 | 文档生成与生活类工具 |
+| M7 | 工具补齐 | 5–7 天 | 文档生成与生活类工具；**含 Token 优化与长会话压缩** |
 | M8 | 桌宠（延后） | 3–5 天 | Live2D 或精灵图窗，动作与对话联动 |
 
 ---
@@ -758,28 +758,49 @@ git commit -m "feat(m4): scheduled tasks"
 
 ---
 
-# M5：RAG
+# M5：RAG ✅
 
 **交付物：** 文档导入、向量存储与检索，问答可引用导入内容。
+
+**状态：** 已完成（2026-06-29）。手动验收通过（设置 → 文档导入 `testdata/shenhong-data-governance.md`，提问「伸宏贸易关账日」等可正确引用）。
+
+**实现说明（与原文差异）：**
+
+- 向量存储：**sql.js 兼容** — `embedding BLOB` + TypeScript 余弦相似度（非 sqlite-vec，见 [M5 实施计划](./superpowers/plans/2026-06-29-m5-rag.md)）
+- Embedding：百炼 OpenAI 兼容 `/embeddings`，`.env` → `EMBEDDING_MODEL=text-embedding-v3`
+- 增量（超出原计划 M5）：**对话归档知识库**（「将本次对话计入知识库」）、**轻量历史会话**（☰ 侧边栏）
+- Token 消耗偏快 → 已排期 **M7-4**，本阶段不阻塞
+
+**主要源文件：**
+
+| 区域 | 路径 |
+|------|------|
+| Embedding / 向量 | `src/rag/embedding.ts`, `src/rag/vector.ts` |
+| 分块 / 导入 | `src/rag/chunker.ts`, `src/rag/importer.ts`, `src/rag/text-import.ts` |
+| 检索 / 注入 | `src/rag/retriever.ts`, `src/agent/context-builder.ts` |
+| 对话归档 | `src/rag/conversation-knowledge.ts` |
+| 设置 UI | `src/renderer/settings/DocumentsPage.tsx` |
+| Schema | `src/db/migrations/0006_rag.sql` |
+| 单测 | `src/rag/__tests__/` |
 
 > **排期说明：** 桌宠（Live2D / 精灵图）已移至 **M8**，M5 仅做 RAG。`live2d_motion` 等 AG-UI 事件类型保留，供 M8 订阅。
 
 ---
 
-### Task M5-1：RAG schema + sqlite-vec
+### Task M5-1：RAG schema + embedding
 
 **Files:**
 - Create: `src/db/schema.ts` 扩展 documents/document_chunks
 - Create: `src/rag/embedding.ts`
 
-- [ ] **Step 1** 集成 sqlite-vec，document_chunks 加向量列
+- [x] **Step 1** migration `0006_rag.sql`（documents / document_chunks / memory.embedding）
 
-- [ ] **Step 2** embedding 调用 OpenAI `text-embedding-3-small` 或本地模型
+- [x] **Step 2** embedding 调用 OpenAI 兼容 API（`text-embedding-v3`）
 
 - [ ] **Step 3** Commit
 
 ```bash
-git commit -m "feat(m5): rag schema and sqlite-vec"
+git commit -m "feat(m5): rag schema and embedding"
 ```
 
 ---
@@ -789,11 +810,11 @@ git commit -m "feat(m5): rag schema and sqlite-vec"
 **Files:**
 - Create: `src/rag/importer.ts`, `src/rag/chunker.ts`, `src/rag/retriever.ts`
 
-- [ ] **Step 1** 支持 MD/TXT 先（PDF/DOCX 可后加库）
+- [x] **Step 1** 支持 MD/TXT（PDF/DOCX 留 M7）
 
-- [ ] **Step 2** chunk_size=512, overlap=64
+- [x] **Step 2** chunk_size=512, overlap=64
 
-- [ ] **Step 3** 设置页「导入文档」按钮 + 进度
+- [x] **Step 3** 设置页「导入文档」+ 进度
 
 - [ ] **Step 4** Commit
 
@@ -808,11 +829,11 @@ git commit -m "feat(m5): document import and chunking"
 **Files:**
 - Modify: `src/agent/context-builder.ts`
 
-- [ ] **Step 1** 用户消息前检索 top-5 chunks
+- [x] **Step 1** 检索 top-5 chunks
 
-- [ ] **Step 2** 格式化为 `<reference>...</reference>` 注入 system
+- [x] **Step 2** `<reference>...</reference>` 注入 system
 
-- [ ] **Step 3** 验收：导入文档后提问文档内容可答
+- [x] **Step 3** 验收：导入文档后提问文档内容可答 ✅
 
 - [ ] **Step 4** Commit
 
@@ -824,8 +845,9 @@ git commit -m "feat(m5): rag retrieval in context builder"
 
 ### M5 验收清单
 
-- [ ] 导入 md 文件后，问答能引用文档内容
-- [ ] 语义记忆去重（向量）可在此阶段一并验收（见 M3 延后项）
+- [x] 导入 md 文件后，问答能引用文档内容
+- [x] 语义记忆去重（向量，`save_memory` 路径）
+- [x] （增量）对话「计入知识库」可提炼写入 RAG
 
 ---
 
@@ -993,7 +1015,49 @@ git commit -m "feat(m7): bookkeeping and travel plan tools"
 
 ---
 
-### Task M7-4：会话摘要压缩 + 完整历史会话
+---
+
+### Task M7-4：Token 消耗优化（快速项）
+
+> **排期说明（2026-06-29）：** M5 RAG + 每轮记忆提取 + 全量 history 导致 Token 消耗偏快。本 Task 在 **M7 会话压缩（M7-5）之前** 先做低成本开关与上限，不阻塞 M6。
+
+**现状问题（每轮用户消息）：**
+
+| 来源 | 说明 |
+|------|------|
+| 主对话 LLM | system（人设+记忆+RAG+Worldbook+工具说明）+ 全量 session history + 10 工具 schema |
+| 隐藏 LLM | `run_finished` 后 `extractMemoriesFromSession` 再调一次 |
+| Embedding | RAG 检索每轮 1 次 |
+| Tool loop | 每轮 tool 重发累积 messages |
+
+**Files:**
+- Modify: `src/agent/orchestrator.ts`, `src/agent/context-builder.ts`
+- Modify: `src/memory/summarizer.ts`, `src/memory/long-term.ts`
+- Modify: `src/rag/retriever.ts`
+- Modify: `src/db/app-settings.ts` 或 `.env` 开关
+- Modify: `src/renderer/settings/` → Token/性能 子页（可选）
+
+- [ ] **Step 1** 记忆提取降频：设置项「自动提取记忆」默认开；可改为仅手动 / 每 N 轮 / 含关键词时触发
+
+- [ ] **Step 2** RAG 条件注入：无文档库或 query 不像知识问答时跳过 embedding + chunk 注入
+
+- [ ] **Step 3** 长期记忆检索：去掉无命中时 fallback `listMemories(3)`，未命中则不注入记忆块
+
+- [ ] **Step 4** History 上限：送入模型的 messages 仅保留最近 **20 条**（或按 token 估算）；完整 history 仍入库
+
+- [ ] **Step 5** 设置页（或 .env）：`RAG_ENABLED`、`AUTO_MEMORY_EXTRACT`、`MAX_HISTORY_MESSAGES`
+
+- [ ] **Step 6** 验收：Schedule 窗 Token 曲线对比优化前后同场景 10 轮对话
+
+- [ ] **Step 7** Commit
+
+```bash
+git commit -m "feat(m7): token usage quick optimizations"
+```
+
+---
+
+### Task M7-5：会话摘要压缩 + 完整历史会话
 
 **Files:**
 - Modify: `src/memory/summarizer.ts`, `src/db/schema.ts` → `session_summaries`
@@ -1013,12 +1077,12 @@ git commit -m "feat(m7): bookkeeping and travel plan tools"
 - [ ] **Step 3** Commit
 
 ```bash
-git commit -m "feat(m7): session context compression"
+git commit -m "feat(m7): session context compression and full session history"
 ```
 
 ---
 
-### Task M7-5：打包与发布（自用）
+### Task M7-6：打包与发布（自用）
 
 **Files:**
 - Modify: `package.json` → `electron-builder` 配置
@@ -1040,6 +1104,7 @@ git commit -m "chore(m7): electron builder config and readme"
 ### M7 验收清单
 
 - [ ] 文档生成工具可产出可打开的文件
+- [ ] Token 优化后同场景 10 轮对话 prompt tokens 明显下降（见 Schedule 统计）
 - [ ] 长会话不超限（摘要生效）
 - [ ] 本地可打包运行
 
@@ -1151,9 +1216,9 @@ git tag v0.2.0-m2
 |--------|--------|
 | M1 结束 | ~~better-sqlite3 electron rebuild~~ → 已改用 **sql.js**，Electron 运行正常 |
 | M2 结束 | tool loop 是否会死循环（maxRounds） |
-| M5 结束 | sqlite-vec 集成与 embedding 成本 |
+| M5 结束 | RAG embedding 成本；每轮双 LLM（主对话+记忆提取）→ **M7-4 优化** |
 | M6 结束 | MCP server 超时处理 |
-| M7 结束 | write_file 权限与确认弹窗 |
+| M7 结束 | write_file 权限；**Token 消耗与长会话压缩**（M7-4 + M7-5） |
 | M8 结束 | Live2D 模型版权与路径；精灵图素材授权 |
 
 ---
@@ -1168,7 +1233,9 @@ git tag v0.2.0-m2
 | 0.1.3 | 2026-06-29 | M3 验收完成，进入 M4 |
 | 0.1.4 | 2026-06-29 | M3 文档补充：结构化 memory_key、upsert、增量提取 |
 | 0.1.5 | 2026-06-29 | 桌宠延后至 M8；M5 收窄为 RAG only |
+| 0.1.6 | 2026-06-29 | 新增 M7-4 Token 优化排期；M7-5 会话压缩；轻量历史会话已完成 |
+| 0.1.7 | 2026-06-29 | M5 RAG 验收完成（伸宏测试文档导入问答）；进入 M6 |
 
 ---
 
-*下一步：从 **M5 Task M5-1**（RAG schema + embedding）开始执行。详见 [2026-06-29-m5-rag.md](./superpowers/plans/2026-06-29-m5-rag.md)。*
+*下一步：从 **M6 Task M6-1**（MCP Client）开始执行。*

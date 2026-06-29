@@ -139,6 +139,7 @@ const shorekeeperApi = {
   dock: {
     openChat: () => ipcRenderer.invoke('dock:openChat'),
     openSchedule: () => ipcRenderer.invoke('dock:openSchedule'),
+    openStatus: () => ipcRenderer.invoke('dock:openStatus'),
     moveBy: (dx: number, dy: number) => ipcRenderer.invoke('dock:moveBy', dx, dy),
     getPreferences: (): Promise<DockPreferencesInfo> => ipcRenderer.invoke('dock:getPreferences'),
     setAlwaysOnTop: (enabled: boolean): Promise<DockPreferencesInfo> =>

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DockPreferencesInfo } from '@/shared/types';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { DockScheduleBar } from './DockScheduleBar';
+import { DockStatusBar } from './DockStatusBar';
+import { DockTokenBar } from './DockTokenBar';
 
 const DRAG_THRESHOLD_PX = 6;
 
@@ -36,8 +38,8 @@ export function DockPage() {
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (prefs.positionLocked) return;
       if ((event.target as HTMLElement).closest('button.no-drag')) return;
+      if (prefs.positionLocked) return;
 
       pointerRef.current = {
         x: event.screenX,
@@ -71,14 +73,17 @@ export function DockPage() {
   const handlePointerUp = useCallback(async (event: React.PointerEvent<HTMLDivElement>) => {
     const start = pointerRef.current;
     pointerRef.current = null;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
     if (!start || start.moved) return;
 
-    const el = (event.target as HTMLElement).closest('[data-dock-action]');
+    const el = (start.target as HTMLElement)?.closest?.('[data-dock-action]');
     const action = el?.getAttribute('data-dock-action');
     if (action === 'chat') {
       await window.shorekeeper.dock.openChat();
+    } else if (action === 'status') {
+      await window.shorekeeper.dock.openStatus();
     } else if (action === 'schedule') {
       await window.shorekeeper.dock.openSchedule();
     }
@@ -149,11 +154,16 @@ export function DockPage() {
         <div className="flex items-center gap-2 pt-5">
           <div
             data-dock-action="chat"
-            title={prefs.positionLocked ? '打开聊天' : '打开聊天 · 拖动可移动'}
+            title={prefs.positionLocked ? '打开聊天' : '点击打开聊天 · 按住拖动可移动'}
             aria-label="打开守岸人聊天窗"
             role="button"
             tabIndex={0}
-            className="relative shrink-0 cursor-pointer rounded-full outline-none transition-transform hover:scale-105 active:scale-95"
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              void window.shorekeeper.dock.openChat();
+            }}
+            className="relative shrink-0 cursor-grab rounded-full outline-none transition-transform active:cursor-grabbing hover:scale-105 active:scale-95"
           >
             <span
               aria-hidden
@@ -165,7 +175,11 @@ export function DockPage() {
             />
           </div>
 
-          <DockScheduleBar />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <DockStatusBar />
+            <DockScheduleBar />
+            <DockTokenBar />
+          </div>
         </div>
       </div>
     </div>

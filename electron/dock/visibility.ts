@@ -3,16 +3,9 @@ import { hideDockWindow, showDockWindow } from '../windows/dock';
 
 const MAIN_PANELS = ['chat', 'status', 'schedule'] as const;
 
-/** 是否有主面板正在屏幕上展示（非隐藏、非最小化） */
+/** 是否有主面板处于「已打开」状态（含逻辑可见，不依赖 win.isVisible） */
 export function isAnyMainPanelOnScreen(): boolean {
-  const manager = getWindowManager();
-  for (const kind of MAIN_PANELS) {
-    const win = manager.get(kind);
-    if (win && win.isVisible() && !win.isMinimized()) {
-      return true;
-    }
-  }
-  return false;
+  return getWindowManager().isAnyPanelShown();
 }
 
 export function syncDockVisibility(): void {

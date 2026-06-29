@@ -4,7 +4,7 @@ import {
   setDockAlwaysOnTop,
   setDockPositionLocked,
 } from '../dock/preferences';
-import { openChatFromDock, openScheduleFromDock, refreshDockPreferences } from '../windows/dock';
+import { openChatFromDock, openScheduleFromDock, openStatusFromDock, refreshDockPreferences } from '../windows/dock';
 
 export function registerDockIpc(): void {
   ipcMain.handle('dock:openChat', () => {
@@ -14,6 +14,11 @@ export function registerDockIpc(): void {
 
   ipcMain.handle('dock:openSchedule', () => {
     openScheduleFromDock();
+    return { ok: true };
+  });
+
+  ipcMain.handle('dock:openStatus', () => {
+    openStatusFromDock();
     return { ok: true };
   });
 
