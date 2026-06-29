@@ -35,6 +35,23 @@ python scripts/init-db.py
 pnpm db:init
 ```
 
+### 写入守岸人种子数据（人设 + Worldbook）
+
+基于 `守岸人.txt` 整理的 prompt 与 Worldbook 条目，幂等写入数据库：
+
+```powershell
+pnpm db:seed
+```
+
+- `app_settings`：`persona.system_prompt`、`persona.version`
+- `worldbook_entries`：10 条关键词触发型背景（已存在 id 则跳过）
+- 同时应用 `src/db/migrations/0001_memory_worldbook.sql`（含 FTS5）
+
+种子源文件（可编辑后重新 `db:seed`）：
+
+- `src/db/seeds/persona-shorekeeper.ts`
+- `src/db/seeds/worldbook-shorekeeper.ts`
+
 若报错 `Could not locate the bindings file`，需安装 **Visual Studio「使用 C++ 的桌面开发」** 工作负载，然后：
 
 ```powershell

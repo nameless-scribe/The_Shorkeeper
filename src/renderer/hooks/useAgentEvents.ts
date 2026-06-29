@@ -6,6 +6,7 @@ export interface UiMessage {
   role: 'user' | 'assistant';
   content: string;
   streaming?: boolean;
+  createdAt?: number;
 }
 
 export function useAgentEvents(
@@ -26,6 +27,7 @@ export function useAgentEvents(
             id: m.id,
             role: m.role as 'user' | 'assistant',
             content: m.content,
+            createdAt: m.createdAt,
           })),
       );
     });
@@ -40,7 +42,7 @@ export function useAgentEvents(
         setError(null);
         setMessages((prev) => [
           ...prev,
-          { id: `stream-${event.runId}`, role: 'assistant', content: '', streaming: true },
+          { id: `stream-${event.runId}`, role: 'assistant', content: '', streaming: true, createdAt: Date.now() },
         ]);
       }
 
@@ -70,6 +72,7 @@ export function useAgentEvents(
                   id: m.id,
                   role: m.role as 'user' | 'assistant',
                   content: m.content,
+                  createdAt: m.createdAt,
                 })),
             );
           });
@@ -101,6 +104,7 @@ export function useAgentEvents(
       id: `local-${Date.now()}`,
       role: 'user',
       content: trimmed,
+      createdAt: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
     setError(null);

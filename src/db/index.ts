@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { DATABASE_DIR, DATABASE_PATH, WORKSPACE_DIR } from '../config/paths';
+import { runMigrations } from './migrate';
 
 const require = createRequire(import.meta.url);
 // sql.js 为 CJS 包，在 Electron ESM 主进程中用 require 加载更稳定
@@ -123,6 +124,7 @@ export async function openDatabase(dbPath: string = DATABASE_PATH): Promise<Sqli
   db.run('PRAGMA foreign_keys = ON');
   const wrapped = new SqliteDb(SQL, db, dbPath);
   wrapped.exec(INIT_SQL);
+  runMigrations(wrapped);
   return wrapped;
 }
 

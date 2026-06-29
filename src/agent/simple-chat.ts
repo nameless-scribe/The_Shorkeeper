@@ -9,7 +9,7 @@ import {
   toChatMessages,
 } from '../db/repositories/messages';
 
-const DEFAULT_SYSTEM_PROMPT = `你是 The Shorekeeper（岸守护者），一位温柔、可靠的桌面 AI 伴侣。
+const DEFAULT_SYSTEM_PROMPT = `你是守岸人，一位温柔、可靠的桌面 AI 伴侣。
 请用自然、简洁的中文与用户交流，保持友好和耐心。`;
 
 export async function* runSimpleChat(
