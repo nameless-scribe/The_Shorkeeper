@@ -7,6 +7,7 @@ import type {
   ProfileEntryInfo,
   ScheduleKind,
   ScheduledTaskInfo,
+  SessionDeleteResult,
   SessionInfo,
   SessionListOptions,
   SessionListResult,
@@ -45,7 +46,8 @@ const shorekeeperApi = {
     current: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:current'),
     create: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:create'),
     switch: (id: string): Promise<SessionInfo> => ipcRenderer.invoke('sessions:switch', id),
-    delete: (id: string): Promise<boolean> => ipcRenderer.invoke('sessions:delete', id),
+    delete: (id: string): Promise<SessionDeleteResult> =>
+      ipcRenderer.invoke('sessions:delete', id),
     archive: (id: string, archived: boolean): Promise<SessionInfo> =>
       ipcRenderer.invoke('sessions:archive', id, archived),
   },

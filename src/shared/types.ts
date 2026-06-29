@@ -107,6 +107,12 @@ export interface SessionListResult {
   hasMore: boolean;
 }
 
+export interface SessionDeleteResult {
+  ok: true;
+  /** 删除的是当前活跃会话时，自动创建的新会话 */
+  replacementSession?: SessionInfo;
+}
+
 export interface MessageInfo {
   id: string;
   sessionId: string;

@@ -165,6 +165,7 @@ export async function* streamChatAnthropic(
   let buffer = '';
   let assistantContent = '';
   const toolAcc: ToolUseAccumulator = {};
+  let roundUsage = { promptTokens: 0, completionTokens: 0, cachedTokens: 0 };
 
   try {
     while (true) {
@@ -214,24 +215,23 @@ export async function* streamChatAnthropic(
         }
 
         if (parsed.type === 'message_delta' && parsed.usage) {
-          yield {
-            type: 'usage',
-            promptTokens: parsed.usage.input_tokens ?? 0,
-            completionTokens: parsed.usage.output_tokens ?? 0,
-            cachedTokens: parsed.usage.cache_read_input_tokens ?? 0,
-          };
+          roundUsage.completionTokens = parsed.usage.output_tokens ?? roundUsage.completionTokens;
         }
 
         if (parsed.type === 'message_start' && parsed.message?.usage) {
-          yield {
-            type: 'usage',
-            promptTokens: parsed.message.usage.input_tokens ?? 0,
-            completionTokens: parsed.message.usage.output_tokens ?? 0,
-            cachedTokens: parsed.message.usage.cache_read_input_tokens ?? 0,
-          };
+          roundUsage.promptTokens = parsed.message.usage.input_tokens ?? 0;
+          roundUsage.cachedTokens = parsed.message.usage.cache_read_input_tokens ?? 0;
         }
 
         if (parsed.type === 'message_stop') {
+          if (roundUsage.promptTokens > 0 || roundUsage.completionTokens > 0) {
+            yield {
+              type: 'usage',
+              promptTokens: roundUsage.promptTokens,
+              completionTokens: roundUsage.completionTokens,
+              cachedTokens: roundUsage.cachedTokens,
+            };
+          }
           const toolCalls = toOpenAIToolCalls(toolAcc);
           yield {
             type: 'round_complete',

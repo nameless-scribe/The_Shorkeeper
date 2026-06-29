@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AgUiEvent, WorkspaceAttachment } from '@/shared/types';
 import type { UiToolCall } from '../components/ToolCallCard';
 
@@ -22,13 +22,25 @@ export function useAgentEvents(
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  const runSessionIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setMessages([]);
+      setIsRunning(false);
+      return;
+    }
+
+    setIsRunning(false);
     setError(null);
+    setMessages([]);
     setLoadingMessages(true);
     window.shorekeeper.messages
       .list(sessionId)
       .then((list) => {
+        if (sessionIdRef.current !== sessionId) return;
         setMessages(
           list
             .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -41,7 +53,11 @@ export function useAgentEvents(
         );
       })
       .catch(console.error)
-      .finally(() => setLoadingMessages(false));
+      .finally(() => {
+        if (sessionIdRef.current === sessionId) {
+          setLoadingMessages(false);
+        }
+      });
   }, [sessionId]);
 
   useEffect(() => {
@@ -49,8 +65,11 @@ export function useAgentEvents(
 
     const unsubscribe = window.shorekeeper.agent.onEvent((raw) => {
       const event = raw as AgUiEvent;
+      const activeSessionId = sessionIdRef.current;
 
       if (event.type === 'run_started') {
+        if (event.sessionId !== activeSessionId) return;
+        runSessionIdRef.current = event.sessionId;
         currentRunId = event.runId;
         const streamId = `stream-${event.runId}`;
         setIsRunning(true);
@@ -69,7 +88,7 @@ export function useAgentEvents(
         return;
       }
 
-      if (!currentRunId) return;
+      if (!currentRunId || runSessionIdRef.current !== activeSessionId) return;
       const streamId = `stream-${currentRunId}`;
 
       if (event.type === 'reasoning_delta') {
@@ -145,8 +164,10 @@ export function useAgentEvents(
       }
 
       if (event.type === 'run_finished') {
+        const finishedSessionId = runSessionIdRef.current;
         setIsRunning(false);
         currentRunId = null;
+        runSessionIdRef.current = null;
         options?.onRunFinished?.();
         setMessages((prev) => {
           const streamMsg = prev.find((m) => m.id === streamId);
@@ -165,8 +186,12 @@ export function useAgentEvents(
                 !(m.id === streamId && !m.content.trim() && !hasToolCalls),
             );
 
-          if (sessionId) {
-            window.shorekeeper.messages.list(sessionId).then((list) => {
+          if (
+            finishedSessionId &&
+            finishedSessionId === sessionIdRef.current
+          ) {
+            window.shorekeeper.messages.list(finishedSessionId).then((list) => {
+              if (sessionIdRef.current !== finishedSessionId) return;
               const dbMessages: UiMessage[] = list
                 .filter((m) => m.role === 'user' || m.role === 'assistant')
                 .map((m) => ({
@@ -196,8 +221,10 @@ export function useAgentEvents(
       }
 
       if (event.type === 'run_error') {
+        if (runSessionIdRef.current !== activeSessionId) return;
         setIsRunning(false);
         currentRunId = null;
+        runSessionIdRef.current = null;
         setError(event.message);
         setMessages((prev) => prev.filter((m) => !m.streaming));
       }
@@ -205,7 +232,7 @@ export function useAgentEvents(
     return () => {
       unsubscribe();
     };
-  }, [sessionId, options?.onRunFinished]);
+  }, [options?.onRunFinished]);
 
   const send = async (text: string, attachments: WorkspaceAttachment[] = []) => {
     const trimmed = text.trim();

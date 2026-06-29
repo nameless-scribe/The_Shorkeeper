@@ -7,9 +7,9 @@ import {
   listSessions,
   setSessionArchived,
 } from '../../src/db/repositories/sessions';
-import { getActiveSession, resetActiveSession, switchActiveSession } from '../../src/session/active';
+import { getActiveSession, getActiveSessionId, resetActiveSession, switchActiveSession } from '../../src/session/active';
 import { listMessages } from '../../src/db/repositories/messages';
-import type { AppStatus, MessageInfo, SessionInfo, SessionListOptions, SessionListResult } from '../../src/shared/types';
+import type { AppStatus, MessageInfo, SessionDeleteResult, SessionInfo, SessionListOptions, SessionListResult } from '../../src/shared/types';
 
 function toSessionInfo(session: NonNullable<ReturnType<typeof getSession>>): SessionInfo {
   return {
@@ -60,9 +60,14 @@ export function registerSessionIpc() {
     return toSessionInfo(session);
   });
 
-  ipcMain.handle('sessions:delete', (_event, id: string): boolean => {
+  ipcMain.handle('sessions:delete', (_event, id: string): SessionDeleteResult => {
+    const wasActive = getActiveSessionId() === id;
     deleteSession(id);
-    return true;
+    if (wasActive) {
+      const session = resetActiveSession();
+      return { ok: true, replacementSession: toSessionInfo(session) };
+    }
+    return { ok: true };
   });
 
   ipcMain.handle('sessions:archive', (_event, id: string, archived: boolean): SessionInfo => {

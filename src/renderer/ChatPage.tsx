@@ -30,21 +30,6 @@ export function ChatPage() {
     };
   }, []);
 
-  const handleNewChat = useCallback(async () => {
-    const session = await window.shorekeeper.sessions.create();
-    setSessionId(session.id);
-    bumpHistory();
-  }, [bumpHistory]);
-
-  const handleSelectSession = useCallback(
-    async (id: string) => {
-      if (id === sessionId) return;
-      const session = await window.shorekeeper.sessions.switch(id);
-      setSessionId(session.id);
-    },
-    [sessionId],
-  );
-
   const ensureSession = useCallback(async () => {
     if (sessionId) return sessionId;
     const session = await window.shorekeeper.sessions.current();
@@ -55,6 +40,27 @@ export function ChatPage() {
   const { messages, loadingMessages, isRunning, error, send } = useAgentEvents(sessionId, ensureSession, {
     onRunFinished: bumpHistory,
   });
+
+  const handleNewChat = useCallback(async () => {
+    if (isRunning) {
+      await window.shorekeeper.agent.abort();
+    }
+    const session = await window.shorekeeper.sessions.create();
+    setSessionId(session.id);
+    bumpHistory();
+  }, [bumpHistory, isRunning]);
+
+  const handleSelectSession = useCallback(
+    async (id: string) => {
+      if (id === sessionId) return;
+      if (isRunning) {
+        await window.shorekeeper.agent.abort();
+      }
+      const session = await window.shorekeeper.sessions.switch(id);
+      setSessionId(session.id);
+    },
+    [sessionId, isRunning],
+  );
 
   return (
     <div className="relative h-screen overflow-hidden rounded-3xl border border-keeper-silver/25 shadow-cyanSm">

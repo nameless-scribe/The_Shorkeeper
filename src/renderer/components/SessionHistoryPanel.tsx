@@ -80,10 +80,9 @@ export function SessionHistoryPanel({
   const handleDelete = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!window.confirm('确定删除此会话？消息将无法恢复。')) return;
-    await window.shorekeeper.sessions.delete(sessionId);
-    if (sessionId === currentSessionId) {
-      const session = await window.shorekeeper.sessions.create();
-      onSelect(session.id);
+    const result = await window.shorekeeper.sessions.delete(sessionId);
+    if (sessionId === currentSessionId && result.replacementSession) {
+      onSelect(result.replacementSession.id);
     }
     setLoading(true);
     await fetchPage(0, false);
