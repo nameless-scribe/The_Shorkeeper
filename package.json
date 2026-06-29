@@ -15,6 +15,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "db:init": "tsx scripts/init-db.ts",
+    "db:migrate": "tsx scripts/init-db.ts",
     "db:seed": "tsx scripts/seed-db.ts",
     "db:init:py": "python scripts/init-db.py",
     "typecheck": "tsc --noEmit",

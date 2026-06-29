@@ -2,7 +2,7 @@
 
 > **执行说明：** 按里程碑 M1 → M7 顺序推进。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
 > **设计依据：** [DESIGN.md](./DESIGN.md)  
-> **当前进度：** **M2 已完成**（2026-06-29 手动验收）→ 下一步：**M3 记忆系统**
+> **当前进度：** **M3 已完成**（2026-06-29 手动验收）→ 下一步：**M4 多窗 UI**
 
 **Goal：** 从零构建自用桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG、Live2D 桌宠与多窗伴侣 UI。
 
@@ -18,7 +18,7 @@
 |--------|------|----------|----------|
 | M1 | 基础脚手架 | 3–5 天 | ✅ **已完成** — 能流式聊天，会话入库 |
 | M2 | Agent 核心 | 4–6 天 | ✅ **已完成** — 工具循环、AG-UI 事件、工具卡片 |
-| M3 | 记忆系统 | 3–5 天 | 长期记忆与 Worldbook 注入 context |
+| M3 | 记忆系统 | 3–5 天 | ✅ **已完成** — 长期记忆、Worldbook 注入、设置页 |
 | M4 | 多窗 UI | 4–5 天 | 状态/日程窗、Token 统计 |
 | M5 | Live2D + RAG | 5–7 天 | 桌宠联动，文档检索回答 |
 | M6 | 扩展能力 | 4–6 天 | MCP、技能、TTS |
@@ -475,9 +475,19 @@ git commit -m "feat(m2): tool call cards in chat ui"
 
 ---
 
-# M3：记忆系统 ← **当前里程碑**
+# M3：记忆系统 ✅
 
 **交付物：** 长期记忆、Worldbook + FTS5、上下文组装器。
+
+**状态：** 已完成（2026-06-29）。手动验收通过（对话 + Navicat 查库），可进入 M4。
+
+**实现说明（验收记录）：**
+
+- Schema：`0001_memory_worldbook.sql` + 可选 `0002_worldbook_fts5.sql`（sql.js 运行时以关键词匹配为主）
+- 上下文：`context-builder.ts` 按 DESIGN §5.1 组装；orchestrator 已接入
+- 工具：`recall_memory`、`search_worldbook`、`save_memory`
+- 设置：顶栏 ⚙ → 用户画像 / Worldbook 管理（`SettingsDrawer`）
+- 已验：Worldbook 命中（如「介绍一下守岸人」）、`long_term_memory` / `user_profile` 表有数据
 
 ---
 
@@ -487,11 +497,11 @@ git commit -m "feat(m2): tool call cards in chat ui"
 - Modify: `src/db/schema.ts`
 - Create: migration for `user_profile`, `long_term_memory`, `worldbook_entries`, FTS5
 
-- [ ] **Step 1** 添加表定义（见 DESIGN §7.2）
+- [x] **Step 1** 添加表定义（见 DESIGN §7.2）
 
-- [ ] **Step 2** 手写 migration 创建 `worldbook_fts` 虚表及 trigger 同步
+- [x] **Step 2** 手写 migration 创建 `worldbook_fts` 虚表及 trigger 同步
 
-- [ ] **Step 3** `pnpm db:migrate`
+- [x] **Step 3** `pnpm db:migrate`
 
 - [ ] **Step 4** Commit
 
@@ -506,13 +516,13 @@ git commit -m "feat(m3): memory and worldbook schema"
 **Files:**
 - Create: `src/memory/user-profile.ts`, `src/memory/long-term.ts`
 
-- [ ] **Step 1** `getProfileSummary()` 格式化为 prompt 片段
+- [x] **Step 1** `getProfileSummary()` 格式化为 prompt 片段
 
-- [ ] **Step 2** `searchMemories(query, limit)` 先用 SQL `LIKE` 或按 importance 排序（向量 M5 再加）
+- [x] **Step 2** `searchMemories(query, limit)` 先用 SQL `LIKE` 或按 importance 排序（向量 M5 再加）
 
-- [ ] **Step 3** `saveMemory(content, importance, sessionId)`
+- [x] **Step 3** `saveMemory(content, importance, sessionId)`
 
-- [ ] **Step 4** 单测
+- [x] **Step 4** 单测
 
 - [ ] **Step 5** Commit
 
@@ -527,11 +537,11 @@ git commit -m "feat(m3): user profile and long term memory"
 **Files:**
 - Create: `src/memory/worldbook.ts`
 
-- [ ] **Step 1** CRUD API
+- [x] **Step 1** CRUD API
 
-- [ ] **Step 2** `matchWorldbook(userMessage)` 用 FTS5 查 keys/content
+- [x] **Step 2** `matchWorldbook(userMessage)` 用 FTS5 查 keys/content
 
-- [ ] **Step 3** 测试：插入条目 keys=「魔法」→ 用户消息含「魔法」时命中
+- [x] **Step 3** 测试：插入条目 keys=「魔法」→ 用户消息含「魔法」时命中
 
 - [ ] **Step 4** Commit
 
@@ -546,11 +556,11 @@ git commit -m "feat(m3): worldbook fts5 retrieval"
 **Files:**
 - Create: `src/agent/context-builder.ts`
 
-- [ ] **Step 1** 按 DESIGN §5.1 顺序组装 system prompt
+- [x] **Step 1** 按 DESIGN §5.1 顺序组装 system prompt
 
-- [ ] **Step 2** 接入 orchestrator，替换 M1 硬编码 system prompt
+- [x] **Step 2** 接入 orchestrator，替换 M1 硬编码 system prompt
 
-- [ ] **Step 3** 工具 `recall_memory`, `search_worldbook`
+- [x] **Step 3** 工具 `recall_memory`, `search_worldbook`
 
 - [ ] **Step 4** Commit
 
@@ -565,9 +575,9 @@ git commit -m "feat(m3): context builder and memory tools"
 **Files:**
 - Create: `src/memory/summarizer.ts`
 
-- [ ] **Step 1** `run_finished` 后异步调用 LLM：「从对话提取值得长期记住的事实」
+- [x] **Step 1** `run_finished` 后异步调用 LLM：「从对话提取值得长期记住的事实」
 
-- [ ] **Step 2** 去重：与已有记忆相似度简单字符串比较或后续向量
+- [x] **Step 2** 去重：与已有记忆相似度简单字符串比较或后续向量
 
 - [ ] **Step 3** Commit
 
@@ -582,7 +592,7 @@ git commit -m "feat(m3): post-run memory extraction"
 **Files:**
 - Create: `src/renderer/settings/WorldbookPage.tsx`, `electron/ipc/worldbook.ts`
 
-- [ ] **Step 1** 列表、新增、编辑、删除、启用开关
+- [x] **Step 1** 列表、新增、编辑、删除、启用开关
 
 - [ ] **Step 2** Commit
 
@@ -594,13 +604,13 @@ git commit -m "feat(m3): worldbook settings ui"
 
 ### M3 验收清单
 
-- [ ] Worldbook 命中内容出现在回复语境中
-- [ ] 多轮对话后长期记忆表有新增
-- [ ] 用户画像可在设置中编辑
+- [x] Worldbook 命中内容出现在回复语境中
+- [x] 多轮对话后长期记忆表有新增
+- [x] 用户画像可在设置中编辑
 
 ---
 
-# M4：多窗 UI
+# M4：多窗 UI ← **当前里程碑**
 
 **交付物：** 状态面板、日程/Token 面板、系统托盘、定时任务表。
 
@@ -1092,7 +1102,8 @@ git tag v0.2.0-m2
 | 0.1.0 | 2026-06-29 | 初稿，覆盖 M1–M7 任务分解 |
 | 0.1.1 | 2026-06-29 | M1 验收完成，标记可进入 M2 |
 | 0.1.2 | 2026-06-29 | M2 验收完成，进入 M3 |
+| 0.1.3 | 2026-06-29 | M3 验收完成，进入 M4 |
 
 ---
 
-*下一步：从 **M3 Task M3-1**（记忆 schema 扩展）开始执行。*
+*下一步：从 **M4 Task M4-1**（窗口管理器）开始执行。*

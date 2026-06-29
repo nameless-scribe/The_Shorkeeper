@@ -2,9 +2,10 @@ import type { AppStatus } from '@/shared/types';
 
 interface TitleBarProps {
   status: AppStatus | null;
+  onOpenSettings?: () => void;
 }
 
-export function TitleBar({ status }: TitleBarProps) {
+export function TitleBar({ status, onOpenSettings }: TitleBarProps) {
   return (
     <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between border-b border-keeper-cyan/15 px-4 py-3">
       <div className="no-drag">
@@ -23,6 +24,14 @@ export function TitleBar({ status }: TitleBarProps) {
         </p>
       </div>
       <div className="no-drag flex gap-1">
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-keeper-ice/50 hover:bg-keeper-cyan/10 hover:text-keeper-cyan"
+          title="设置"
+        >
+          ⚙
+        </button>
         <button
           type="button"
           onClick={() => window.shorekeeper.window.minimize()}

@@ -5,10 +5,12 @@ import { AppBackground } from './components/AppBackground';
 import { TitleBar } from './components/TitleBar';
 import { MessageList } from './components/MessageList';
 import { InputBar } from './components/InputBar';
+import { SettingsDrawer } from './settings/SettingsDrawer';
 
 export function ChatPage() {
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!window.shorekeeper) return;
@@ -30,7 +32,7 @@ export function ChatPage() {
       <AppBackground />
 
       <div className="relative z-10 flex h-full min-h-0 flex-col">
-        <TitleBar status={status} />
+        <TitleBar status={status} onOpenSettings={() => setSettingsOpen(true)} />
         <MessageList messages={messages} />
         {error && (
           <div className="mx-4 mb-2 rounded-xl border border-red-400/30 bg-red-950/40 px-3 py-2 text-xs text-red-200 no-drag">
@@ -38,6 +40,7 @@ export function ChatPage() {
           </div>
         )}
         <InputBar disabled={isRunning || !status?.apiConfigured} onSend={send} />
+        <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </div>
     </div>
   );

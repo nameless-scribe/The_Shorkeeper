@@ -46,6 +46,21 @@ export interface MessageInfo {
   createdAt: number;
 }
 
+export interface WorldbookEntryInfo {
+  id: string;
+  keys: string;
+  content: string;
+  priority: number;
+  enabled: boolean;
+  createdAt: number;
+}
+
+export interface ProfileEntryInfo {
+  key: string;
+  value: string;
+  updatedAt: number;
+}
+
 export interface AppStatus {
   model: string;
   baseUrl: string;

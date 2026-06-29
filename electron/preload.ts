@@ -3,7 +3,9 @@ import type {
   AgentSendPayload,
   AppStatus,
   MessageInfo,
+  ProfileEntryInfo,
   SessionInfo,
+  WorldbookEntryInfo,
 } from '../src/shared/types';
 
 const shorekeeperApi = {
@@ -27,6 +29,30 @@ const shorekeeperApi = {
   messages: {
     list: (sessionId: string): Promise<MessageInfo[]> =>
       ipcRenderer.invoke('messages:list', sessionId),
+  },
+  profile: {
+    list: (): Promise<ProfileEntryInfo[]> => ipcRenderer.invoke('profile:list'),
+    set: (key: string, value: string) => ipcRenderer.invoke('profile:set', key, value),
+    delete: (key: string) => ipcRenderer.invoke('profile:delete', key),
+  },
+  worldbook: {
+    list: (): Promise<WorldbookEntryInfo[]> => ipcRenderer.invoke('worldbook:list'),
+    create: (input: {
+      keys: string;
+      content: string;
+      priority?: number;
+      enabled?: boolean;
+    }) => ipcRenderer.invoke('worldbook:create', input),
+    update: (
+      id: string,
+      patch: {
+        keys?: string;
+        content?: string;
+        priority?: number;
+        enabled?: boolean;
+      },
+    ) => ipcRenderer.invoke('worldbook:update', id, patch),
+    delete: (id: string) => ipcRenderer.invoke('worldbook:delete', id),
   },
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),

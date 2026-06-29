@@ -4,6 +4,8 @@ import { config } from 'dotenv';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { registerAgentIpc } from './ipc/agent';
 import { registerSessionIpc } from './ipc/session';
+import { registerProfileIpc } from './ipc/profile';
+import { registerWorldbookIpc } from './ipc/worldbook';
 import { initDatabase, closeDatabase } from '../src/db';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -55,6 +57,8 @@ app.whenReady().then(async () => {
   }
   registerAgentIpc(() => chatWindow);
   registerSessionIpc();
+  registerProfileIpc();
+  registerWorldbookIpc();
 
   ipcMain.on('window:minimize', () => chatWindow?.minimize());
   ipcMain.on('window:close', () => chatWindow?.close());
