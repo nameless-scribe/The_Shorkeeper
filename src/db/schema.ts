@@ -68,3 +68,12 @@ export interface DocumentChunkRow {
   content: string;
   embedding: Uint8Array;
 }
+
+export interface McpServerRow {
+  id: string;
+  name: string;
+  command: string;
+  args: string;
+  env: string;
+  enabled: number;
+}

@@ -14,6 +14,9 @@ import type {
   WorldbookEntryInfo,
   DocumentInfo,
   ImportProgress,
+  ModelProtocol,
+  McpServerInfo,
+  SkillInfo,
 } from '../src/shared/types';
 
 const shorekeeperApi = {
@@ -146,6 +149,40 @@ const shorekeeperApi = {
       ipcRenderer.invoke('dock:setAlwaysOnTop', enabled),
     setPositionLocked: (locked: boolean): Promise<DockPreferencesInfo> =>
       ipcRenderer.invoke('dock:setPositionLocked', locked),
+  },
+  mcp: {
+    list: (): Promise<McpServerInfo[]> => ipcRenderer.invoke('mcp:list'),
+    create: (input: {
+      name: string;
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+      enabled?: boolean;
+    }) => ipcRenderer.invoke('mcp:create', input),
+    update: (
+      id: string,
+      patch: Partial<{
+        name: string;
+        command: string;
+        args: string[];
+        env: Record<string, string>;
+        enabled: boolean;
+      }>,
+    ) => ipcRenderer.invoke('mcp:update', id, patch),
+    delete: (id: string) => ipcRenderer.invoke('mcp:delete', id),
+    test: (id: string): Promise<{ ok: boolean; tools: string[]; error?: string }> =>
+      ipcRenderer.invoke('mcp:test', id),
+  },
+  skills: {
+    list: (): Promise<SkillInfo[]> => ipcRenderer.invoke('skills:list'),
+    getEnabled: (): Promise<string[]> => ipcRenderer.invoke('skills:getEnabled'),
+    toggle: (id: string, enabled: boolean): Promise<SkillInfo[]> =>
+      ipcRenderer.invoke('skills:toggle', id, enabled),
+  },
+  model: {
+    getProtocol: (): Promise<ModelProtocol> => ipcRenderer.invoke('model:getProtocol'),
+    setProtocol: (protocol: ModelProtocol): Promise<ModelProtocol> =>
+      ipcRenderer.invoke('model:setProtocol', protocol),
   },
 };
 

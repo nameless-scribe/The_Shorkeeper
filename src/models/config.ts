@@ -1,4 +1,18 @@
+import { getSetting } from '../db/app-settings';
 import type { ModelConfig } from '../shared/types';
+
+export type ModelProtocol = 'openai' | 'anthropic';
+
+export const MODEL_PROTOCOL_KEY = 'model.protocol';
+
+export function getModelProtocol(): ModelProtocol {
+  try {
+    const raw = getSetting(MODEL_PROTOCOL_KEY);
+    return raw === 'anthropic' ? 'anthropic' : 'openai';
+  } catch {
+    return 'openai';
+  }
+}
 
 export function loadModelConfig(): ModelConfig {
   const apiKey = process.env.OPENAI_API_KEY?.trim() ?? '';

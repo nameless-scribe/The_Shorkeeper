@@ -3,8 +3,11 @@ import { ProfilePage } from './ProfilePage';
 import { WorldbookPage } from './WorldbookPage';
 import { TasksPage } from './TasksPage';
 import { DocumentsPage } from './DocumentsPage';
+import { McpPage } from './McpPage';
+import { SkillsPage } from './SkillsPage';
+import { ModelPage } from './ModelPage';
 
-type SettingsTab = 'profile' | 'worldbook' | 'tasks' | 'documents';
+type SettingsTab = 'profile' | 'worldbook' | 'tasks' | 'documents' | 'skills' | 'mcp' | 'model';
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -30,7 +33,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
         </button>
       </header>
 
-      <div className="flex shrink-0 gap-1 border-b border-keeper-cyan/10 px-4 py-2">
+      <div className="flex shrink-0 flex-wrap gap-1 border-b border-keeper-cyan/10 px-4 py-2">
         <button
           type="button"
           onClick={() => setTab('profile')}
@@ -75,6 +78,39 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
         >
           文档
         </button>
+        <button
+          type="button"
+          onClick={() => setTab('skills')}
+          className={`rounded-lg px-3 py-1.5 text-xs ${
+            tab === 'skills'
+              ? 'bg-keeper-cyan/20 text-keeper-cyan'
+              : 'text-keeper-ice/60 hover:text-keeper-ice'
+          }`}
+        >
+          技能
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('mcp')}
+          className={`rounded-lg px-3 py-1.5 text-xs ${
+            tab === 'mcp'
+              ? 'bg-keeper-cyan/20 text-keeper-cyan'
+              : 'text-keeper-ice/60 hover:text-keeper-ice'
+          }`}
+        >
+          MCP
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('model')}
+          className={`rounded-lg px-3 py-1.5 text-xs ${
+            tab === 'model'
+              ? 'bg-keeper-cyan/20 text-keeper-cyan'
+              : 'text-keeper-ice/60 hover:text-keeper-ice'
+          }`}
+        >
+          模型
+        </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -82,6 +118,9 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
         {tab === 'worldbook' && <WorldbookPage />}
         {tab === 'tasks' && <TasksPage />}
         {tab === 'documents' && <DocumentsPage />}
+        {tab === 'skills' && <SkillsPage />}
+        {tab === 'mcp' && <McpPage />}
+        {tab === 'model' && <ModelPage />}
       </div>
     </div>
   );

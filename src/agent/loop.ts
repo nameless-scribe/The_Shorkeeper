@@ -8,7 +8,7 @@ import {
   ensureWorkspaceDir,
 } from './permissions';
 import { loadModelConfig } from '../models/config';
-import { streamChat } from '../models/openai-compatible';
+import { streamChat } from '../models/stream-chat';
 import type { ToolRegistry } from '../tools/registry';
 import type { ToolContext, ToolResult } from '../tools/types';
 

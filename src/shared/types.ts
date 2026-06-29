@@ -38,6 +38,28 @@ export interface ModelConfig {
   model: string;
 }
 
+export type ModelProtocol = 'openai' | 'anthropic';
+
+export interface McpServerInfo {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  enabled: boolean;
+}
+
+export interface SkillInfo {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  systemPromptFragment: string;
+  allowedTools?: string[];
+  trigger: 'manual' | 'auto';
+  enabled: boolean;
+}
+
 export interface SessionInfo {
   id: string;
   title: string;

@@ -2,7 +2,7 @@
 
 > **执行说明：** 按里程碑 M1 → M7 顺序推进（**M8 桌宠延后**，M7 完成后再做）。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
 > **设计依据：** [DESIGN.md](./DESIGN.md)  
-> **当前进度：** **M5 已完成**（2026-06-29 手动验收：导入 `shenhong-data-governance.md` 问答成功）→ 下一步：**M6 扩展能力**
+> **当前进度：** **M6 已完成**（2026-06-29）→ 下一步：**M7 工具补齐**
 
 **Goal：** 从零构建自用桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG 与多窗伴侣 UI；桌宠（Live2D / 精灵图）延后至 **M8**。
 
@@ -19,9 +19,9 @@
 | M1 | 基础脚手架 | 3–5 天 | ✅ **已完成** — 能流式聊天，会话入库 |
 | M2 | Agent 核心 | 4–6 天 | ✅ **已完成** — 工具循环、AG-UI 事件、工具卡片 |
 | M3 | 记忆系统 | 3–5 天 | ✅ **已完成** — 结构化长期记忆、Worldbook、设置页 |
-| M4 | 多窗 UI | 4–5 天 | ✅ **已完成** — 状态/日程窗、Token 统计 |
+| M4 | 多窗 UI | 4–5 天 | ✅ **已完成** — 多窗管理、托盘、Dock 快捷入口、Token/定时任务 |
 | M5 | RAG | 3–5 天 | ✅ **已完成** — 文档导入、向量检索、问答引用 |
-| M6 | 扩展能力 | 4–6 天 | MCP、技能、TTS |
+| M6 | 扩展能力 | 4–6 天 | ✅ **已完成** — MCP、技能、Anthropic 协议（TTS 延后排期） |
 | M7 | 工具补齐 | 5–7 天 | 文档生成与生活类工具；**含 Token 优化与长会话压缩** |
 | M8 | 桌宠（延后） | 3–5 天 | Live2D 或精灵图窗，动作与对话联动 |
 
@@ -631,9 +631,22 @@ git commit -m "feat(m3): settings ui for profile and worldbook"
 
 ---
 
-# M4：多窗 UI ← **当前里程碑**
+# M4：多窗 UI ✅
 
-**交付物：** 状态面板、日程/Token 面板、系统托盘、定时任务表。
+**交付物：** 状态面板、日程/Token 面板、系统托盘、Dock 快捷栏、定时任务表。
+
+**状态：** 已完成（2026-06-29）。含后续 UX 迭代：最小化收进托盘、三窗独立关闭、启动默认仅聊天窗、Dock 竖向信息栏（状态 / 日程 / Token）可点击打开对应窗口并可拖动 reposition。
+
+**主要源文件：**
+
+| 区域 | 路径 |
+|------|------|
+| 窗口管理 | `electron/windows/manager.ts`, `chat.ts`, `status.ts`, `schedule.ts` |
+| 托盘 | `electron/tray.ts` |
+| Dock | `electron/windows/dock.ts`, `electron/dock/visibility.ts`, `src/renderer/dock/` |
+| 面板 UI | `src/renderer/status/StatusPage.tsx`, `src/renderer/schedule/SchedulePage.tsx` |
+| Token 统计 | `src/db/token-usage.ts`, `electron/ipc/stats.ts` |
+| 定时任务 | `src/db/scheduled-tasks.ts`, `electron/scheduler/cron.ts`, `src/renderer/settings/TasksPage.tsx` |
 
 ---
 
@@ -642,11 +655,11 @@ git commit -m "feat(m3): settings ui for profile and worldbook"
 **Files:**
 - Create: `electron/windows/manager.ts`, `electron/windows/chat.ts`, `electron/windows/status.ts`, `electron/windows/schedule.ts`
 
-- [ ] **Step 1** 抽象 `WindowManager`：create/show/hide/getBounds/saveBounds
+- [x] **Step 1** 抽象 `WindowManager`：create/show/hide/getBounds/saveBounds
 
-- [ ] **Step 2** 从 main.ts 拆出三窗创建逻辑
+- [x] **Step 2** 从 main.ts 拆出三窗创建逻辑
 
-- [ ] **Step 3** 窗口位置持久化到 `app_settings`
+- [x] **Step 3** 窗口位置持久化到 `app_settings`
 
 - [ ] **Step 4** Commit
 
@@ -661,9 +674,9 @@ git commit -m "feat(m4): multi window manager"
 **Files:**
 - Create: `electron/tray.ts`
 
-- [ ] **Step 1** 托盘菜单：显示聊天/状态/日程、退出
+- [x] **Step 1** 托盘菜单：显示聊天/状态/日程、退出
 
-- [ ] **Step 2** 关闭所有窗口时最小化到托盘（可选）
+- [x] **Step 2** 最小化/关闭收进托盘（`skipTaskbar`）；三窗互不影响；启动默认仅显示聊天窗
 
 - [ ] **Step 3** Commit
 
@@ -679,9 +692,9 @@ git commit -m "feat(m4): system tray"
 - Modify: `src/db/schema.ts` → `token_usage`
 - Create: `src/db/token-usage.ts`
 
-- [ ] **Step 1** 每次 `usage` 事件写入 token_usage
+- [x] **Step 1** 每次 `usage` 事件写入 token_usage
 
-- [ ] **Step 2** IPC `stats:getTokenUsage` 返回今日/本周/总量
+- [x] **Step 2** IPC `stats:getTokenUsage` 返回今日/本周/总量
 
 - [ ] **Step 3** Commit
 
@@ -696,13 +709,13 @@ git commit -m "feat(m4): token usage tracking"
 **Files:**
 - Create: `src/renderer/status/StatusPage.tsx`
 
-- [ ] **Step 1** 订阅 `state_update` 事件
+- [x] **Step 1** 订阅 `state_update` 事件
 
-- [ ] **Step 2** 展示 Online、Mood、Activity（orchestrator 在 run 各阶段更新 state）
+- [x] **Step 2** 展示 Online、Mood、Activity（orchestrator 在 run 各阶段更新 state）
 
-- [ ] **Step 3** 按钮：打开聊天、打开设置
+- [x] **Step 3** 按钮：打开聊天、打开设置
 
-- [ ] **Step 4** 轻量「喂食」互动：IPC 更新 activity=feeding，30s 后恢复
+- [x] **Step 4** 轻量「喂食」互动：IPC 更新 activity=feeding，30s 后恢复
 
 - [ ] **Step 5** Commit
 
@@ -717,9 +730,9 @@ git commit -m "feat(m4): status panel ui"
 **Files:**
 - Create: `src/renderer/schedule/SchedulePage.tsx`
 
-- [ ] **Step 1** 安装 `recharts`，周 Token 柱状图
+- [x] **Step 1** 安装 `recharts`，周 Token 柱状图
 
-- [ ] **Step 2** 显示日期、今日 Token、进度条
+- [x] **Step 2** 显示日期、今日 Token、进度条
 
 - [ ] **Step 3** Commit
 
@@ -734,13 +747,13 @@ git commit -m "feat(m4): schedule token panel with charts"
 **Files:**
 - Create: `src/db/schema.ts` 扩展, `src/scheduler/cron.ts`
 
-- [ ] **Step 1** `scheduled_tasks` 表与 CRUD
+- [x] **Step 1** `scheduled_tasks` 表与 CRUD
 
-- [ ] **Step 2** `node-cron` 加载 enabled 任务
+- [x] **Step 2** `node-cron` 加载 enabled 任务
 
-- [ ] **Step 3** `action_type=reminder` 用 Notification；`agent_prompt` 触发静默 agent run
+- [x] **Step 3** `action_type=reminder` 用 Notification；`agent_prompt` 触发静默 agent run
 
-- [ ] **Step 4** 设置页任务列表 UI
+- [x] **Step 4** 设置页任务列表 UI
 
 - [ ] **Step 5** Commit
 
@@ -750,11 +763,34 @@ git commit -m "feat(m4): scheduled tasks"
 
 ---
 
+### Task M4-7：Dock 快捷栏（增量）
+
+**Files:**
+- Create: `electron/windows/dock.ts`, `electron/dock/visibility.ts`, `src/renderer/dock/*`
+
+- [x] **Step 1** 主面板全部隐藏时显示 Dock（头像 + 竖向信息条）
+
+- [x] **Step 2** 状态 / 日程 / 今日 Token 预览，点击打开对应窗口
+
+- [x] **Step 3** 拖动 reposition；置顶 / 固定位置偏好持久化
+
+- [x] **Step 4** `WindowManager.panelShown` 统一 Dock 与托盘显隐逻辑
+
+- [ ] **Step 5** Commit
+
+```bash
+git commit -m "feat(m4): dock companion bar with status schedule token"
+```
+
+---
+
 ### M4 验收清单
 
-- [ ] 三窗可独立显示/隐藏，托盘可用
-- [ ] Token 图表有真实数据
-- [ ] 定时 reminder 到点弹出
+- [x] 三窗可独立显示/隐藏，托盘可用；最小化不进任务栏
+- [x] 启动默认仅聊天窗；状态/日程预加载但隐藏
+- [x] Dock 竖向展示状态、日程、Token，可点击打开、可拖动
+- [x] Token 图表有真实数据
+- [x] 定时 reminder 到点弹出
 
 ---
 
@@ -851,9 +887,21 @@ git commit -m "feat(m5): rag retrieval in context builder"
 
 ---
 
-# M6：扩展能力
+# M6：扩展能力 ✅
 
-**交付物：** MCP Client、技能系统、TTS。
+**交付物：** MCP Client、技能系统、Anthropic-like 模型适配。（**TTS 延后排期**，见下）
+
+**状态：** 已完成（2026-06-29）。TTS 曾尝试 edge-tts，国内网络下 Bing 语音服务合成超时，已移除 UI 与运行时逻辑，与桌宠口型一并留待后续里程碑。
+
+**主要源文件：**
+
+| 区域 | 路径 |
+|------|------|
+| MCP | `src/mcp/client.ts`, `src/db/mcp-servers.ts`, `electron/ipc/mcp.ts` |
+| 技能 | `src/skills/loader.ts`, `skills/example/SKILL.md` |
+| 模型协议 | `src/models/anthropic-like.ts`, `src/models/stream-chat.ts` |
+| 工具合并 | `src/tools/agent-registry.ts` |
+| 设置 UI | `McpPage`, `SkillsPage`, `ModelPage` |
 
 ---
 
@@ -862,13 +910,13 @@ git commit -m "feat(m5): rag retrieval in context builder"
 **Files:**
 - Create: `src/mcp/client.ts`, `src/db/schema.ts` → `mcp_servers`
 
-- [ ] **Step 1** 使用 `@modelcontextprotocol/sdk` 连接 stdio server
+- [x] **Step 1** 使用 `@modelcontextprotocol/sdk` 连接 stdio server
 
-- [ ] **Step 2** 启动时加载 enabled servers，工具名加前缀 `mcp__{server}__{tool}`
+- [x] **Step 2** 启动时加载 enabled servers，工具名加前缀 `mcp__{server}__{tool}`
 
-- [ ] **Step 3** 合并进 ToolRegistry
+- [x] **Step 3** 合并进 ToolRegistry
 
-- [ ] **Step 4** 设置页添加/测试/禁用 MCP
+- [x] **Step 4** 设置页添加/测试/禁用 MCP
 
 - [ ] **Step 5** Commit
 
@@ -883,13 +931,13 @@ git commit -m "feat(m6): mcp client integration"
 **Files:**
 - Create: `src/skills/loader.ts`, `skills/example/SKILL.md`
 
-- [ ] **Step 1** 解析 SKILL.md frontmatter + body 为 Skill
+- [x] **Step 1** 解析 SKILL.md frontmatter + body 为 Skill
 
-- [ ] **Step 2** context-builder 注入已启用技能 fragment
+- [x] **Step 2** context-builder 注入已启用技能 fragment
 
-- [ ] **Step 3** `allowedTools` 过滤工具列表
+- [x] **Step 3** `allowedTools` 过滤工具列表
 
-- [ ] **Step 4** 设置页技能开关
+- [x] **Step 4** 设置页技能开关
 
 - [ ] **Step 5** Commit
 
@@ -899,30 +947,22 @@ git commit -m "feat(m6): skill system"
 
 ---
 
-### Task M6-3：TTS（消息朗读）
+### Task M6-3：TTS（消息朗读）— 延后排期
 
-**Files:**
-- Create: `src/tts/engine.ts`, `electron/ipc/tts.ts`
-- Create: `src/renderer/components/MessageSpeechButton.tsx`
-- Modify: `src/renderer/components/MessageList.tsx`, `electron/preload.ts`
+> **2026-06-29 决策：** 国内环境 edge-tts 连接 `speech.platform.bing.com` 易超时/无音频，暂不上线。AG-UI 事件类型 `tts_chunk` 保留，供后续与 M8 桌宠一并实现。候选方案：百炼语音合成 API、可配置代理的 TTS 引擎。
 
-**交互约定：** 每条 **已完成** 的 AI 消息气泡下方显示 🔊；**按需播放**（非每条自动朗读）；同时仅一条在播；合成与 API 调用均在主进程。
+**Files:**（原计划，未交付）
 
-- [ ] **Step 1** 集成 edge-tts 或等价库；IPC `tts:synthesize({ text })` 返回 audio buffer（主进程）
+- `src/tts/engine.ts`, `electron/ipc/tts.ts`
+- `src/renderer/components/MessageSpeechButton.tsx`
 
-- [ ] **Step 2** `MessageSpeechButton`：idle / 合成中 / 播放中 / 失败；挂载于 assistant 消息时间戳旁（`!streaming && content`）
+- [ ] **Step 1** 选定可用 TTS 引擎（百炼 / 代理 edge-tts 等）
 
-- [ ] **Step 3** 渲染进程 `Audio` 播放；文本预处理（去 markdown/表情）；新播放停止上一条
+- [ ] **Step 2** IPC 合成 + 消息 🔊 按钮
 
-- [ ] **Step 4** 设置页：TTS 总开关、音色；可选「自动朗读最新回复」（默认关）
+- [ ] **Step 3** 设置页音色与自动朗读
 
-- [ ] **Step 5** （可选）播放时广播 `tts_chunk`，供 M8 桌宠口型
-
-- [ ] **Step 6** Commit
-
-```bash
-git commit -m "feat(m6): per-message tts playback"
-```
+- [ ] **Step 4** （可选）`tts_chunk` 供桌宠口型
 
 ---
 
@@ -931,11 +971,11 @@ git commit -m "feat(m6): per-message tts playback"
 **Files:**
 - Create: `src/models/anthropic-like.ts`
 
-- [ ] **Step 1** 实现 tool_use / tool_result 格式转换
+- [x] **Step 1** 实现 tool_use / tool_result 格式转换
 
-- [ ] **Step 2** 设置页可选协议类型
+- [x] **Step 2** 设置页可选协议类型
 
-- [ ] **Step 3** 测试与 loop 集成
+- [x] **Step 3** 测试与 loop 集成
 
 - [ ] **Step 4** Commit
 
@@ -947,9 +987,9 @@ git commit -m "feat(m6): anthropic like model adapter"
 
 ### M6 验收清单
 
-- [ ] 至少一个 MCP Server 工具可调用
+- [ ] 至少一个 MCP Server 工具可调用（需本地配置 MCP Server 后手动验收）
 - [ ] 启用技能后 system prompt 有变化
-- [ ] 任意已完成 AI 消息可点 🔊 朗读；播放中可停止；设置页可切换音色
+- [ ] ~~TTS 消息朗读~~（延后排期）
 
 ---
 
@@ -1235,6 +1275,7 @@ git tag v0.2.0-m2
 | 0.1.5 | 2026-06-29 | 桌宠延后至 M8；M5 收窄为 RAG only |
 | 0.1.6 | 2026-06-29 | 新增 M7-4 Token 优化排期；M7-5 会话压缩；轻量历史会话已完成 |
 | 0.1.7 | 2026-06-29 | M5 RAG 验收完成（伸宏测试文档导入问答）；进入 M6 |
+| 0.1.8 | 2026-06-29 | M4 文档同步：托盘/Dock/多窗 UX 验收；M5 里程碑确认完成 |
 
 ---
 

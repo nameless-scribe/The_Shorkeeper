@@ -26,6 +26,9 @@ import { setTaskChangeHandler } from '../src/scheduler/task-events';
 import { registerWorkspaceIpc } from './ipc/workspace';
 import { registerDockIpc } from './ipc/dock';
 import { registerDocumentsIpc } from './ipc/documents';
+import { registerMcpIpc, initMcpOnStartup } from './ipc/mcp';
+import { registerSkillsIpc } from './ipc/skills';
+import { registerModelIpc } from './ipc/model';
 import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron';
 import { broadcastTasksUpdated } from './tasks/events';
 
@@ -62,6 +65,13 @@ app.whenReady().then(async () => {
   registerWorkspaceIpc();
   registerDockIpc();
   registerDocumentsIpc();
+  registerMcpIpc();
+  registerSkillsIpc();
+  registerModelIpc();
+
+  await initMcpOnStartup().catch((err) => {
+    console.error('[mcp] 启动加载失败:', err);
+  });
 
   setTaskChangeHandler(() => {
     reloadScheduler();

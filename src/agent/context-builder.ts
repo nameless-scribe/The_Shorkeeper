@@ -4,6 +4,7 @@ import { getProfileSummary } from '../memory/user-profile';
 import { formatMemoriesForPrompt, searchMemories } from '../memory/long-term';
 import { formatWorldbookForPrompt, matchWorldbook } from '../memory/worldbook';
 import { formatRagForPrompt, retrieveRelevantChunks } from '../rag/retriever';
+import { formatSkillsForPrompt, getEnabledSkills } from '../skills/state';
 
 export interface ContextBuildInput {
   userMessage: string;
@@ -66,6 +67,9 @@ export async function buildSystemPrompt(input: ContextBuildInput): Promise<strin
   const worldbookHits = matchWorldbook(input.userMessage, 5);
   const worldbookBlock = formatWorldbookForPrompt(worldbookHits);
   if (worldbookBlock) sections.push(worldbookBlock);
+
+  const skillsBlock = formatSkillsForPrompt(getEnabledSkills());
+  if (skillsBlock) sections.push(skillsBlock);
 
   sections.push(TOOL_GUIDE);
 

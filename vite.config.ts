@@ -7,6 +7,7 @@ const isExternal = (id: string) =>
   id === 'electron' ||
   id === 'sql.js' ||
   id === 'node-cron' ||
+  id.startsWith('@modelcontextprotocol/') ||
   id.startsWith('node:') ||
   id.startsWith('sql.js/');
 

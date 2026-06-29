@@ -2,7 +2,9 @@ import { createRunId, ev } from './events';
 import { runAgentLoop } from './loop';
 import type { AgUiEvent } from './types';
 import { buildSystemPrompt } from './context-builder';
-import { getBuiltinRegistry } from '../tools/builtin';
+import { getAgentRegistry } from '../tools/agent-registry';
+import { listEnabledMcpServers } from '../db/mcp-servers';
+import { defaultPermissionPolicy } from './permissions';
 import { loadModelConfig } from '../models/config';
 import { getSession } from '../db/repositories/sessions';
 import { getActiveSession } from '../session/active';
@@ -70,13 +72,20 @@ export async function* runOrchestrator(
       ...history.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     ];
 
+    const registry = await getAgentRegistry();
+    const policy = {
+      ...defaultPermissionPolicy(),
+      mcp: listEnabledMcpServers().length > 0,
+    };
+
     let assistantText = '';
 
     for await (const event of runAgentLoop({
       sessionId: session.id,
       runId,
       messages,
-      registry: getBuiltinRegistry(),
+      registry,
+      policy,
       signal,
     })) {
       if (event.type === 'text_delta') {

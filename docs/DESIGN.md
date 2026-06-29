@@ -41,8 +41,10 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 
 ```
 启动应用
-  → Live2D 角色显示在桌面（透明置顶窗）
-  → 点击角色 / 托盘图标打开聊天窗
+  → 默认显示聊天窗；状态/日程窗预加载但隐藏
+  → 全部主面板隐藏时显示 Dock 快捷栏（头像 + 状态 / 日程 / Token）
+  → 点击 Dock 区块 / 托盘菜单打开对应窗口
+  → （M8）Live2D 桌宠显示在桌面（透明置顶窗）
   → 选择模型、风格、推理模式
   → 发送消息 → Agent 循环（可能调用工具）→ 流式回复
   → 角色播放动作 / TTS 朗读
@@ -69,7 +71,7 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      表现层 (Renderer)                       │
-│  Live2D 窗 │ 聊天窗 │ 状态面板 │ 日程/Token │ 设置/侧边栏    │
+│  Live2D 窗 │ 聊天窗 │ 状态面板 │ 日程/Token │ Dock 快捷栏 │ 设置/侧边栏 │
 └──────────────────────────┬──────────────────────────────────┘
                            │ IPC + AG-UI Event Stream
 ┌──────────────────────────▼──────────────────────────────────┐
@@ -101,11 +103,26 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 
 | 窗口 | 类型 | 职责 |
 |------|------|------|
-| `live2d` | 透明、无边框、可置顶 | PixiJS 渲染 Live2D，接收动作指令 |
-| `chat` | 无边框、圆角 | 消息列表、输入、流式输出、工具卡片 |
+| `live2d` | 透明、无边框、可置顶 | PixiJS 渲染 Live2D，接收动作指令（**M8**） |
+| `chat` | 无边框、圆角 | 消息列表、输入、流式输出、工具卡片；**启动时默认显示** |
 | `status` | 浮动面板 | 头像、在线、心情、活动、快捷操作 |
 | `schedule` | 浮动面板 | 日程、Token 统计、定时任务入口 |
-| `settings` | 标准/无边框窗口 | 模型、API、MCP、技能、权限、人设 |
+| `dock` | 透明、无边框、可置顶 | 主面板全隐藏时的伴侣快捷栏：头像 + 状态/日程/Token 预览 |
+| `reminder` | 透明、置顶 | 定时任务 reminder 弹窗 |
+| `settings` | 聊天窗内 Drawer | 模型、API、MCP、技能、权限、人设、文档、任务 |
+
+**窗口生命周期（M4）：**
+
+- `WindowManager` 统一管理 `chat` / `status` / `schedule` 三窗的 create/show/hide 与 bounds 持久化。
+- 逻辑可见状态 `panelShown` 为单一事实来源，驱动 Dock 显隐（不依赖 `win.isVisible()`，避免 Windows `skipTaskbar` 竞态）。
+- 最小化 / 关闭 → 收进**系统托盘**（`skipTaskbar`，不占任务栏）；三窗互不影响。
+- 托盘菜单：分别显示聊天 / 状态 / 日程、退出。
+
+**Dock 快捷栏（M4）：**
+
+- 当所有主面板 `panelShown=false` 时自动显示；任一主面板打开时隐藏。
+- 布局：左侧头像（点击 → 聊天），右侧**竖向**三行——状态、日程、今日 Token（点击 → 对应面板）。
+- 支持拖动 reposition；可选窗口置顶、固定位置（`app_settings` 持久化）。
 
 系统托盘提供：显示/隐藏各窗口、退出、快捷打开聊天。
 
@@ -127,7 +144,7 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 | 数据库 | SQLite（运行时 **sql.js**；设计原案 better-sqlite3） | 嵌入式主库 |
 | Schema | `src/db/schema.ts` + 手写 SQL migration | 类型与迁移 |
 | 全文检索 | SQLite FTS5 | Worldbook 关键词 |
-| 向量检索 | sqlite-vec（M5 阶段） | RAG、语义记忆 |
+| 向量检索 | sql.js BLOB + TS 余弦相似度（M5） | RAG、语义记忆；原设计 sqlite-vec 待迁原生 SQLite 时再评估 |
 | 定时任务 | node-cron | 本地调度 |
 | TTS | edge-tts 或等价方案 | 文本转语音 |
 | MCP | @modelcontextprotocol/sdk | 外部工具扩展 |
@@ -142,7 +159,7 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 
 - M1：基础表（sessions, messages）
 - M3：记忆表 + Worldbook + `memory_key` upsert + FTS5（可选）
-- M5：sqlite-vec（document_chunks 向量）、语义记忆去重
+- M5：document_chunks `embedding BLOB`、语义记忆向量去重（非 sqlite-vec WASM 限制）
 - 未来若文档量极大（>5 万 chunk）：评估 SQLite + LanceDB 双库
 
 ### 4.3 模型适配
@@ -626,6 +643,19 @@ sessions 1───N token_usage (optional)
 - 周趋势柱状图（Recharts）
 - 定时任务列表与「任务设置」入口
 
+### 8.5 Dock 快捷栏
+
+| 区块 | 内容 | 点击行为 |
+|------|------|----------|
+| 头像 | 守岸人静态头像 | 打开聊天窗 |
+| 状态 | 在线指示、活动、心情 | 打开状态面板 |
+| 日程 | 定时任务数量与最近条目 | 打开日程面板 |
+| 今日 Token | 当日用量与进度条 | 打开日程面板（含 Token 详情） |
+
+- 竖向堆叠，固定宽度约 300px；可拖动移动位置。
+- 顶栏控件（悬停显示）：窗口置顶 📌、固定位置 📍。
+- 拖动手势与点击区分：移动超过阈值视为拖动，否则触发打开。
+
 ---
 
 ## 9. 配置与安全
@@ -638,7 +668,8 @@ sessions 1───N token_usage (optional)
 | 模型列表 | `app_settings` | 端点、模型 ID、协议类型 |
 | 人设 Prompt | `app_settings` | 可拆分 name/personality/rules |
 | 权限策略 | `app_settings` | filesystem roots 等 |
-| 窗口位置 | `app_settings` | 各窗 last bounds |
+| 窗口位置 | `app_settings` | 各窗 last bounds（含 `window.bounds.dock`） |
+| Dock 偏好 | `app_settings` | alwaysOnTop、positionLocked |
 
 ### 9.2 安全原则
 
@@ -660,11 +691,17 @@ TheShorekeeper/
 │   ├── main.ts                   # 应用入口
 │   ├── preload.ts                # IPC 桥
 │   ├── tray.ts                   # 系统托盘
+│   ├── dock/
+│   │   ├── visibility.ts         # Dock 与主面板显隐同步
+│   │   └── preferences.ts        # Dock 置顶/固定
 │   ├── windows/
-│   │   ├── manager.ts            # 窗口创建与生命周期
-│   │   ├── live2d.ts
+│   │   ├── manager.ts            # 窗口创建与生命周期（panelShown）
+│   │   ├── dock.ts
 │   │   ├── chat.ts
-│   │   └── ...
+│   │   ├── status.ts
+│   │   ├── schedule.ts
+│   │   ├── reminder.ts
+│   │   └── live2d.ts             # M8
 │   └── ipc/
 │       ├── agent.ts
 │       ├── session.ts
@@ -709,6 +746,7 @@ TheShorekeeper/
 │       ├── schema.ts             # 表类型定义
 │       └── migrations/
 ├── src/renderer/
+│   ├── dock/                     # DockPage、Status/Schedule/Token 信息条
 │   ├── live2d/
 │   │   ├── main.tsx
 │   │   └── Live2DStage.tsx
@@ -739,10 +777,11 @@ TheShorekeeper/
 | **M1** | 基础脚手架 | Electron+Vite+React，单窗聊天，流式 LLM，SQLite sessions/messages |
 | **M2** | Agent 核心 | Tool loop，AG-UI 事件，3 个内置工具，权限骨架 |
 | **M3** | 记忆 | 结构化长期记忆（memory_key upsert）、Worldbook、上下文组装、设置页 |
-| **M4** | 多窗 UI | 状态面板、Token 统计、定时任务表 |
-| **M5** | Live2D | 透明窗桌宠，动作联动，RAG+sqlite-vec |
+| **M4** | 多窗 UI | 多窗管理、托盘、Dock 快捷栏、状态/日程/Token 面板、定时任务 |
+| **M5** | RAG | 文档导入、向量检索、语义记忆去重（sql.js BLOB；桌宠延后 M8） |
 | **M6** | 扩展 | MCP，技能系统，TTS |
-| **M7** | 工具补齐 | 文档生成、记账、旅行规划等 |
+| **M7** | 工具补齐 | 文档生成、记账、旅行规划等；Token 优化与长会话压缩 |
+| **M8** | 桌宠 | Live2D 或精灵图窗，动作与对话联动 |
 
 每个里程碑结束时应可独立运行、可测试。
 
@@ -786,6 +825,7 @@ TheShorekeeper/
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | 0.1.0-draft | 2026-06-29 | 初稿，基于需求讨论整理 |
+| 0.1.1 | 2026-06-29 | M4 多窗/Dock/托盘模型；M5 更正为 RAG（非 Live2D）；向量实现为 BLOB+余弦 |
 
 ---
 
