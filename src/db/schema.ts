@@ -8,6 +8,7 @@ export interface UserProfileRow {
 
 export interface LongTermMemoryRow {
   id: string;
+  memory_key: string | null;
   content: string;
   importance: number;
   source_session_id: string | null;

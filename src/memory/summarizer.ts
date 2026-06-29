@@ -1,17 +1,46 @@
 import { listMessages } from '../db/repositories/messages';
 import { completeChat } from '../models/complete-chat';
 import { getModelConfigSafe } from '../models/config';
-import { isDuplicateMemory } from './dedupe';
-import { listMemoryContents, saveMemory } from './long-term';
+import {
+  getExtractedUpToMessageId,
+  markExtractedUpToMessageId,
+} from './extraction-state';
+import {
+  formatMemoriesForExtraction,
+  listMemories,
+  upsertMemory,
+} from './long-term';
 
-const EXTRACTION_PROMPT = `你是记忆提取助手。从对话中提取值得长期记住的用户相关事实（称呼、偏好、习惯、重要日期、职业等）。
-规则：
-- 只提取对话中明确出现的信息，不要编造
-- 每条事实用一句简短中文
-- 以 JSON 数组输出，例如：["用户喜欢喝咖啡","用户名叫小明"]
-- 若无值得记住的内容，输出：[]`;
+export interface StructuredMemoryFact {
+  key: string;
+  content: string;
+}
 
-function parseFacts(raw: string): string[] {
+function buildExtractionPrompt(existingMemories: string): string {
+  return `你是记忆提取助手。你的任务是从「本轮新对话」中提取值得长期记住的用户事实。
+
+【已有长期记忆】
+${existingMemories}
+
+【规则】
+1. 只分析本轮对话，不要重复提取已有记忆中已覆盖的事实
+2. 若本轮更新了某个已有主题（如称呼变了），复用相同的 memory_key 并输出新 content
+3. 若无任何新事实或更新，输出 []
+4. 不要编造对话中未出现的信息
+5. memory_key 命名规范：
+   - user.nickname — 称呼/名字
+   - user.preference.* — 偏好（如 user.preference.drink）
+   - user.schedule.* — 作息/忙碌时段
+   - user.relationship.* — 与助手的关系、情感
+   - user.habit.* — 习惯
+   - user.other.* — 其他（尽量用具体子 key，如 user.other.weekend_activity）
+
+【输出格式】
+仅输出 JSON 数组，例如：
+[{"key":"user.nickname","content":"用户名叫汐"}]`;
+}
+
+function parseStructuredFacts(raw: string): StructuredMemoryFact[] {
   const trimmed = raw.trim();
   const jsonMatch = trimmed.match(/\[[\s\S]*\]/);
   if (!jsonMatch) return [];
@@ -19,16 +48,22 @@ function parseFacts(raw: string): string[] {
   try {
     const parsed = JSON.parse(jsonMatch[0]) as unknown;
     if (!Array.isArray(parsed)) return [];
+
     return parsed
-      .filter((item): item is string => typeof item === 'string')
-      .map((item) => item.trim())
-      .filter(Boolean);
+      .filter((item): item is { key?: string; content?: string } => {
+        return typeof item === 'object' && item !== null;
+      })
+      .map((item) => ({
+        key: String(item.key ?? '').trim(),
+        content: String(item.content ?? '').trim(),
+      }))
+      .filter((item) => item.key && item.content);
   } catch {
     return [];
   }
 }
 
-function formatDialogue(
+function formatTurnDialogue(
   rows: Array<{ role: string; content: string }>,
 ): string {
   return rows
@@ -36,36 +71,68 @@ function formatDialogue(
     .join('\n');
 }
 
-/** run_finished 后异步提取并写入长期记忆 */
+/** 取刚结束的一轮对话（最后一条 user + 紧随其后的 assistant） */
+function getLatestTurn(sessionId: string): Array<{ id: string; role: string; content: string }> {
+  const all = listMessages(sessionId).filter(
+    (m) => m.role === 'user' || m.role === 'assistant',
+  );
+
+  if (all.length < 2) return [];
+
+  const last = all.at(-1)!;
+  const secondLast = all.at(-2)!;
+
+  if (last.role === 'assistant' && secondLast.role === 'user') {
+    return [
+      { id: secondLast.id, role: secondLast.role, content: secondLast.content },
+      { id: last.id, role: last.role, content: last.content },
+    ];
+  }
+
+  if (last.role === 'user') {
+    return [{ id: last.id, role: last.role, content: last.content }];
+  }
+
+  return [];
+}
+
+/** run_finished 后异步提取：仅分析本轮增量，按 key upsert */
 export async function extractMemoriesFromSession(sessionId: string): Promise<number> {
   const config = getModelConfigSafe();
   if (!config) return 0;
 
-  const rows = listMessages(sessionId)
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .slice(-12);
+  const turn = getLatestTurn(sessionId);
+  if (!turn.length) return 0;
 
-  if (rows.length < 2) return 0;
+  const latestUserMessage = turn.find((m) => m.role === 'user');
+  if (!latestUserMessage) return 0;
 
-  const dialogue = formatDialogue(rows);
+  if (getExtractedUpToMessageId(sessionId) === latestUserMessage.id) {
+    return 0;
+  }
+
+  const existingMemories = formatMemoriesForExtraction(listMemories(80));
+  const dialogue = formatTurnDialogue(turn);
+
   const reply = await completeChat(
     [
-      { role: 'system', content: EXTRACTION_PROMPT },
-      { role: 'user', content: `请从以下对话提取事实：\n\n${dialogue}` },
+      { role: 'system', content: buildExtractionPrompt(existingMemories) },
+      {
+        role: 'user',
+        content: `请从以下本轮对话中提取新事实或需更新的记忆：\n\n${dialogue}`,
+      },
     ],
     config,
   );
 
-  const facts = parseFacts(reply);
+  markExtractedUpToMessageId(sessionId, latestUserMessage.id);
+
+  const facts = parseStructuredFacts(reply);
   if (!facts.length) return 0;
 
-  const existing = listMemoryContents();
   let saved = 0;
-
   for (const fact of facts) {
-    if (isDuplicateMemory(fact, existing)) continue;
-    saveMemory(fact, 0.55, sessionId);
-    existing.push(fact);
+    upsertMemory(fact.key, fact.content, 0.55, sessionId);
     saved += 1;
   }
 

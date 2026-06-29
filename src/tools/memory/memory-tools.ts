@@ -1,5 +1,5 @@
 import type { ToolDefinition } from '../types';
-import { searchMemories, saveMemory, formatMemoriesForPrompt } from '../../memory/long-term';
+import { searchMemories, saveMemory, upsertMemory, formatMemoriesForPrompt } from '../../memory/long-term';
 import { searchWorldbook, formatWorldbookForPrompt } from '../../memory/worldbook';
 
 export const recallMemoryTool: ToolDefinition = {
@@ -84,6 +84,11 @@ export const saveMemoryTool: ToolDefinition = {
         type: 'string',
         description: '要记住的事实描述',
       },
+      key: {
+        type: 'string',
+        description:
+          '记忆键，如 user.nickname、user.preference.drink；同一 key 会更新而非重复插入',
+      },
       importance: {
         type: 'number',
         description: '重要程度 0-1，默认 0.6',
@@ -92,12 +97,27 @@ export const saveMemoryTool: ToolDefinition = {
     required: ['content'],
   },
   async execute(args, ctx) {
-    const { content, importance } = args as { content?: string; importance?: number };
+    const { content, importance, key } = args as {
+      content?: string;
+      importance?: number;
+      key?: string;
+    };
     if (!content?.trim()) {
       return { success: false, output: '', error: '缺少 content 参数' };
     }
 
+    if (key?.trim()) {
+      const entry = upsertMemory(key.trim(), content, importance ?? 0.6, ctx.sessionId);
+      return { success: true, output: `已保存记忆 [${entry.memoryKey}]：${entry.content}` };
+    }
+
     const entry = saveMemory(content, importance ?? 0.6, ctx.sessionId);
+    if (!entry) {
+      return {
+        success: true,
+        output: '该记忆与已有条目相近，未重复保存。',
+      };
+    }
     return { success: true, output: `已保存记忆：${entry.content}` };
   },
 };

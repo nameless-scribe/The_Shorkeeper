@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { closeDatabase, initDatabase, type AppDatabase } from '../../db';
 import { seedShorekeeper } from '../../db/seed';
 import { isDuplicateMemory } from '../dedupe';
-import { saveMemory, searchMemories } from '../long-term';
+import { saveMemory, searchMemories, upsertMemory } from '../long-term';
 import { getProfileSummary, setProfileValue } from '../user-profile';
 import {
   createWorldbookEntry,
@@ -39,10 +39,21 @@ describe('user profile', () => {
 
 describe('long term memory', () => {
   it('saves and searches memories', () => {
-    saveMemory('用户喜欢喝拿铁', 0.8, 'session-1');
+    const entry = saveMemory('用户喜欢喝拿铁', 0.8, 'session-1');
+    expect(entry).not.toBeNull();
     const hits = searchMemories('拿铁');
     expect(hits).toHaveLength(1);
     expect(hits[0].content).toContain('拿铁');
+  });
+
+  it('upserts by memory_key instead of duplicating', () => {
+    upsertMemory('user.nickname', '用户名叫汐', 0.8, 'session-1');
+    upsertMemory('user.nickname', '用户名叫汐汐', 0.9, 'session-1');
+
+    const hits = searchMemories('汐');
+    expect(hits).toHaveLength(1);
+    expect(hits[0].memoryKey).toBe('user.nickname');
+    expect(hits[0].content).toBe('用户名叫汐汐');
   });
 });
 
@@ -72,9 +83,19 @@ describe('worldbook', () => {
 });
 
 describe('dedupe', () => {
-  it('detects substring duplicates', () => {
+  it('detects exact and substring duplicates for legacy free-text', () => {
     expect(isDuplicateMemory('用户喜欢咖啡', ['喜欢咖啡'])).toBe(true);
     expect(isDuplicateMemory('完全不同的内容', ['喜欢咖啡'])).toBe(false);
+  });
+});
+
+describe('saveMemory dedupe', () => {
+  it('skips identical free-text writes', () => {
+    const first = saveMemory('用户喜欢喝拿铁', 0.8, 'session-1');
+    const second = saveMemory('用户喜欢喝拿铁', 0.8, 'session-1');
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+    expect(searchMemories('拿铁')).toHaveLength(1);
   });
 });
 
