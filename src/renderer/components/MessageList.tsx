@@ -38,12 +38,27 @@ export function MessageList({ messages }: MessageListProps) {
             <AgentAvatar size="md" className="mt-0.5" />
             <div className="flex min-w-0 max-w-[78%] flex-col gap-1">
               <div className="keeper-glass-soft rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed text-keeper-ice shadow-sm">
-                <p className="whitespace-pre-wrap break-words">
-                  {msg.content}
-                  {msg.streaming && (
-                    <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-keeper-cyan shadow-[0_0_8px_#30BCED]" />
-                  )}
-                </p>
+                {msg.thinking && !msg.content ? (
+                  <span className="inline-flex items-center gap-2 text-keeper-ice/60">
+                    思考中
+                    <span className="inline-flex gap-1">
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-keeper-cyan shadow-[0_0_6px_#30BCED]"
+                          style={{ animationDelay: `${i * 160}ms` }}
+                        />
+                      ))}
+                    </span>
+                  </span>
+                ) : (
+                  <p className="whitespace-pre-wrap break-words">
+                    {msg.content}
+                    {msg.streaming && (
+                      <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-keeper-cyan shadow-[0_0_8px_#30BCED]" />
+                    )}
+                  </p>
+                )}
               </div>
               {msg.createdAt && !msg.streaming && (
                 <span className="pl-1 text-[10px] text-keeper-ice/35">{formatTime(msg.createdAt)}</span>

@@ -6,6 +6,7 @@ export interface UiMessage {
   role: 'user' | 'assistant';
   content: string;
   streaming?: boolean;
+  thinking?: boolean;
   createdAt?: number;
 }
 
@@ -34,23 +35,61 @@ export function useAgentEvents(
   }, [sessionId]);
 
   useEffect(() => {
+    let currentRunId: string | null = null;
+
     const unsubscribe = window.shorekeeper.agent.onEvent((raw) => {
       const event = raw as AgUiEvent;
 
       if (event.type === 'run_started') {
+        currentRunId = event.runId;
+        const streamId = `stream-${event.runId}`;
         setIsRunning(true);
         setError(null);
         setMessages((prev) => [
           ...prev,
-          { id: `stream-${event.runId}`, role: 'assistant', content: '', streaming: true, createdAt: Date.now() },
+          {
+            id: streamId,
+            role: 'assistant',
+            content: '',
+            streaming: true,
+            thinking: true,
+            createdAt: Date.now(),
+          },
         ]);
+        return;
+      }
+
+      if (!currentRunId) return;
+      const streamId = `stream-${currentRunId}`;
+
+      if (event.type === 'reasoning_delta') {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamId ? { ...m, thinking: true, streaming: true } : m,
+          ),
+        );
       }
 
       if (event.type === 'text_delta') {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === `stream-${event.runId}`
-              ? { ...m, content: m.content + event.delta }
+            m.id === streamId
+              ? {
+                  ...m,
+                  content: m.content + event.delta,
+                  thinking: false,
+                  streaming: true,
+                }
+              : m,
+          ),
+        );
+      }
+
+      if (event.type === 'tool_call_start' || event.type === 'tool_call_end') {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamId && !m.content
+              ? { ...m, thinking: true, streaming: true }
               : m,
           ),
         );
@@ -58,29 +97,41 @@ export function useAgentEvents(
 
       if (event.type === 'run_finished') {
         setIsRunning(false);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === `stream-${event.runId}` ? { ...m, streaming: false } : m,
-          ),
-        );
-        if (sessionId) {
-          window.shorekeeper.messages.list(sessionId).then((list) => {
-            setMessages(
-              list
+        currentRunId = null;
+        setMessages((prev) => {
+          const streamMsg = prev.find((m) => m.id === streamId);
+          const withoutEmpty = prev
+            .map((m) =>
+              m.id === streamId
+                ? { ...m, streaming: false, thinking: false }
+                : m,
+            )
+            .filter((m) => !(m.id === streamId && !m.content.trim()));
+
+          if (sessionId) {
+            window.shorekeeper.messages.list(sessionId).then((list) => {
+              const dbMessages = list
                 .filter((m) => m.role === 'user' || m.role === 'assistant')
                 .map((m) => ({
                   id: m.id,
                   role: m.role as 'user' | 'assistant',
                   content: m.content,
                   createdAt: m.createdAt,
-                })),
-            );
-          });
-        }
+                }));
+
+              if (dbMessages.length > 0 || !streamMsg?.content.trim()) {
+                setMessages(dbMessages);
+              }
+            });
+          }
+
+          return withoutEmpty;
+        });
       }
 
       if (event.type === 'run_error') {
         setIsRunning(false);
+        currentRunId = null;
         setError(event.message);
         setMessages((prev) => prev.filter((m) => !m.streaming));
       }

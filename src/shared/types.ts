@@ -1,15 +1,19 @@
+import type { OpenAIToolCall } from '../agent/types';
+
+export type { AgUiEvent, AgentPresenceState } from '../agent/types';
+export type { ToolResult } from '../tools/types';
+
 export type ModelEvent =
   | { type: 'text_delta'; delta: string }
+  | { type: 'reasoning_delta'; delta: string }
   | { type: 'usage'; promptTokens: number; completionTokens: number }
+  | {
+      type: 'round_complete';
+      content: string | null;
+      toolCalls: OpenAIToolCall[];
+    }
   | { type: 'done' }
   | { type: 'error'; message: string };
-
-export type AgUiEvent =
-  | { type: 'run_started'; runId: string; sessionId: string }
-  | { type: 'run_finished'; runId: string }
-  | { type: 'run_error'; runId: string; message: string }
-  | { type: 'text_delta'; runId: string; delta: string }
-  | { type: 'usage'; runId: string; promptTokens: number; completionTokens: number };
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';

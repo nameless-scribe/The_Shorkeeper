@@ -1,6 +1,6 @@
 import { ipcMain, type WebContents } from 'electron';
 import type { AgentSendPayload } from '../../src/shared/types';
-import { runSimpleChat } from '../../src/agent/simple-chat';
+import { runOrchestrator } from '../../src/agent/orchestrator';
 
 const activeRuns = new Map<string, AbortController>();
 
@@ -16,7 +16,11 @@ export function registerAgentIpc(getWindow: () => Electron.BrowserWindow | null)
     activeRuns.set(runKey, controller);
 
     try {
-      for await (const agEvent of runSimpleChat(payload.message, payload.sessionId)) {
+      for await (const agEvent of runOrchestrator(
+        payload.message,
+        payload.sessionId,
+        controller.signal,
+      )) {
         if (controller.signal.aborted) break;
         broadcastEvent(window?.webContents ?? null, agEvent);
       }

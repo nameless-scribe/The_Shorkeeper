@@ -1,7 +1,8 @@
 # The Shorekeeper 实施计划
 
 > **执行说明：** 按里程碑 M1 → M7 顺序推进。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
-> **设计依据：** [DESIGN.md](./DESIGN.md)
+> **设计依据：** [DESIGN.md](./DESIGN.md)  
+> **当前进度：** **M2 实现中**（代码已落地，待手动验收）→ 下一步：M2 验收后进入 M3
 
 **Goal：** 从零构建自用桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG、Live2D 桌宠与多窗伴侣 UI。
 
@@ -15,7 +16,7 @@
 
 | 里程碑 | 名称 | 预计工期 | 验收标准 |
 |--------|------|----------|----------|
-| M1 | 基础脚手架 | 3–5 天 | 能流式聊天，会话入库 |
+| M1 | 基础脚手架 | 3–5 天 | ✅ **已完成** — 能流式聊天，会话入库 |
 | M2 | Agent 核心 | 4–6 天 | 工具循环可用，AG-UI 事件可见 |
 | M3 | 记忆系统 | 3–5 天 | 长期记忆与 Worldbook 注入 context |
 | M4 | 多窗 UI | 4–5 天 | 状态/日程窗、Token 统计 |
@@ -27,9 +28,9 @@
 
 ## 前置准备
 
-- [ ] **Step 0.1** 安装 Node.js 20+、pnpm（或 npm）
-- [ ] **Step 0.2** 准备 LLM API Key（OpenAI-compatible 或 Ollama 本地端点）
-- [ ] **Step 0.3** 克隆/初始化仓库，确认 `docs/DESIGN.md` 已阅读
+- [x] **Step 0.1** 安装 Node.js 20+、pnpm（或 npm）
+- [x] **Step 0.2** 准备 LLM API Key（OpenAI-compatible 或 Ollama 本地端点）
+- [x] **Step 0.3** 克隆/初始化仓库，确认 `docs/DESIGN.md` 已阅读
 
 ```bash
 node -v    # >= 20
@@ -38,9 +39,28 @@ pnpm -v
 
 ---
 
-# M1：基础脚手架
+# M1：基础脚手架 ✅
 
 **交付物：** Electron + Vite + React 可运行；单聊天窗；流式 LLM；SQLite 存储 sessions/messages。
+
+**状态：** 已完成（2026-06-29）。四项验收自测均已通过。
+
+**实现说明（与原文差异，不阻塞 M2）：**
+
+- 数据库：**sql.js** + 手写 migration/repositories（替代 Drizzle + better-sqlite3，兼容 Electron Windows）
+- 开发命令：`pnpm dev`（等同原计划 `electron:dev`）
+- UI：Shorekeeper 蓝白主题、左右气泡、AI/用户头像（超出 M1 最小范围）
+- 人设 / Worldbook **种子**已写入（`pnpm db:seed`），context 注入留 **M3**
+- 延后：vitest 单测、electron-builder 安装包
+
+---
+
+## M1 验收清单
+
+- [x] `pnpm dev` 正常启动 Electron 窗口
+- [x] 流式对话可用
+- [x] 会话与消息写入 `D:\SQLlite\shorekeeper.db`
+- [x] 渲染进程无法访问 `process.env.OPENAI_API_KEY`（仅主进程读取）
 
 ---
 
@@ -49,7 +69,7 @@ pnpm -v
 **Files:**
 - Create: `package.json`, `tsconfig.json`, `tsconfig.node.json`, `.gitignore`, `.env.example`
 
-- [ ] **Step 1** 创建 `package.json`
+- [x] **Step 1** 创建 `package.json`
 
 ```json
 {
@@ -95,7 +115,7 @@ pnpm -v
 }
 ```
 
-- [ ] **Step 2** 创建 `.gitignore`
+- [x] **Step 2** 创建 `.gitignore`
 
 ```
 node_modules/
@@ -108,7 +128,7 @@ assets/live2d/
 .DS_Store
 ```
 
-- [ ] **Step 3** 创建 `.env.example`
+- [x] **Step 3** 创建 `.env.example`
 
 ```
 OPENAI_API_KEY=
@@ -116,7 +136,7 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 DEFAULT_MODEL=gpt-4o-mini
 ```
 
-- [ ] **Step 4** 安装依赖
+- [x] **Step 4** 安装依赖
 
 ```bash
 pnpm install
@@ -124,7 +144,7 @@ pnpm install
 
 Expected: `node_modules` 创建成功，无 fatal error。
 
-- [ ] **Step 5** Commit
+- [x] **Step 5** Commit
 
 ```bash
 git add package.json .gitignore .env.example tsconfig.json tsconfig.node.json
@@ -138,7 +158,7 @@ git commit -m "chore: initialize project dependencies"
 **Files:**
 - Create: `vite.config.ts`, `electron/main.ts`, `electron/preload.ts`, `index.html`
 
-- [ ] **Step 1** 创建 `vite.config.ts`（多入口：chat 为主窗口）
+- [x] **Step 1** 创建 `vite.config.ts`（多入口：chat 为主窗口）
 
 ```typescript
 import { defineConfig } from 'vite';
@@ -156,7 +176,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 2** 创建 `electron/main.ts`
+- [x] **Step 2** 创建 `electron/main.ts`
 
 ```typescript
 import { app, BrowserWindow, ipcMain } from 'electron';
@@ -187,7 +207,7 @@ app.whenReady().then(createChatWindow);
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 ```
 
-- [ ] **Step 3** 创建 `electron/preload.ts`（空壳 API，后续扩展）
+- [x] **Step 3** 创建 `electron/preload.ts`（空壳 API，后续扩展）
 
 ```typescript
 import { contextBridge, ipcRenderer } from 'electron';
@@ -204,9 +224,9 @@ contextBridge.exposeInMainWorld('shorekeeper', {
 });
 ```
 
-- [ ] **Step 4** 创建 `src/renderer/chat/index.html` 与入口 `main.tsx`（React 空壳 + Tailwind）
+- [x] **Step 4** 创建 `src/renderer/chat/index.html` 与入口 `main.tsx`（React 空壳 + Tailwind）
 
-- [ ] **Step 5** 运行验证
+- [x] **Step 5** 运行验证
 
 ```bash
 pnpm electron:dev
@@ -214,7 +234,7 @@ pnpm electron:dev
 
 Expected: 透明无边框窗口打开，显示 React 页面。
 
-- [ ] **Step 6** Commit
+- [x] **Step 6** Commit
 
 ```bash
 git commit -m "feat(m1): electron vite react scaffold"
@@ -227,54 +247,13 @@ git commit -m "feat(m1): electron vite react scaffold"
 **Files:**
 - Create: `src/db/schema.ts`, `src/db/index.ts`, `src/db/migrate.ts`, `drizzle.config.ts`
 
-- [ ] **Step 1** 创建 `src/db/schema.ts`（M1 仅 sessions + messages）
+- [x] **Step 1** 创建 `src/db/schema.ts`（M1 仅 sessions + messages）→ 实际：`src/db/repositories/` + sql.js
 
-```typescript
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+- [x] **Step 2** 创建 `src/db/index.ts`（主进程初始化）→ 实际：sql.js `SqliteDb`
 
-export const sessions = sqliteTable('sessions', {
-  id: text('id').primaryKey(),
-  title: text('title').notNull().default('新对话'),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
-});
+- [x] **Step 3** 创建 `drizzle.config.ts` 并生成迁移 → 实际：`src/db/migrations/` + `pnpm db:init` / `db:seed`
 
-export const messages = sqliteTable('messages', {
-  id: text('id').primaryKey(),
-  sessionId: text('session_id').notNull().references(() => sessions.id),
-  role: text('role').notNull(),
-  content: text('content').notNull(),
-  tokenCount: integer('token_count'),
-  createdAt: integer('created_at').notNull(),
-});
-```
-
-- [ ] **Step 2** 创建 `src/db/index.ts`（主进程初始化）
-
-```typescript
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import * as schema from './schema';
-
-export function createDb(dbPath: string) {
-  const sqlite = new Database(dbPath);
-  sqlite.pragma('journal_mode = WAL');
-  return drizzle(sqlite, { schema });
-}
-
-export type Db = ReturnType<typeof createDb>;
-```
-
-- [ ] **Step 3** 创建 `drizzle.config.ts` 并生成迁移
-
-```bash
-pnpm db:generate
-pnpm db:migrate
-```
-
-Expected: `src/db/migrations/` 下生成 SQL，`D:\SQLlite\shorekeeper.db` 可创建。
-
-- [ ] **Step 4** 编写 `src/db/sessions.test.ts` 验证 CRUD
+- [ ] **Step 4** 编写 `src/db/sessions.test.ts` 验证 CRUD（延后，不阻塞 M2）
 
 ```bash
 pnpm test
@@ -282,7 +261,7 @@ pnpm test
 
 Expected: PASS
 
-- [ ] **Step 5** Commit
+- [x] **Step 5** Commit
 
 ```bash
 git commit -m "feat(m1): sqlite drizzle sessions and messages"
@@ -295,24 +274,11 @@ git commit -m "feat(m1): sqlite drizzle sessions and messages"
 **Files:**
 - Create: `src/models/base.ts`, `src/models/openai-compatible.ts`, `src/agent/types.ts`
 
-- [ ] **Step 1** 定义 `src/agent/types.ts`
+- [x] **Step 1** 定义 `src/agent/types.ts` → 实际：`src/shared/types.ts`
 
-```typescript
-export type ModelEvent =
-  | { type: 'text_delta'; delta: string }
-  | { type: 'usage'; promptTokens: number; completionTokens: number }
-  | { type: 'done' }
-  | { type: 'error'; message: string };
+- [x] **Step 2** 实现 `src/models/openai-compatible.ts`（`fetch` + SSE 解析 `data: {...}`）
 
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-```
-
-- [ ] **Step 2** 实现 `src/models/openai-compatible.ts`（`fetch` + SSE 解析 `data: {...}`）
-
-- [ ] **Step 3** 单元测试：mock fetch 验证 `text_delta` 解析
+- [ ] **Step 3** 单元测试：mock fetch 验证 `text_delta` 解析（延后，不阻塞 M2）
 
 ```bash
 pnpm test src/models/
@@ -320,7 +286,7 @@ pnpm test src/models/
 
 Expected: PASS
 
-- [ ] **Step 4** Commit
+- [x] **Step 4** Commit
 
 ```bash
 git commit -m "feat(m1): openai compatible streaming model adapter"
@@ -333,13 +299,13 @@ git commit -m "feat(m1): openai compatible streaming model adapter"
 **Files:**
 - Create: `src/agent/simple-chat.ts`, `electron/ipc/agent.ts`
 
-- [ ] **Step 1** 实现 `simpleChat(sessionId, userMessage)`：读历史 → 调模型 → 流式 yield `text_delta` → 写入 messages
+- [x] **Step 1** 实现 `simpleChat(sessionId, userMessage)`：读历史 → 调模型 → 流式 yield `text_delta` → 写入 messages
 
-- [ ] **Step 2** 在 `electron/ipc/agent.ts` 注册 `agent:send`，向渲染进程 `webContents.send('agent:event', event)`
+- [x] **Step 2** 在 `electron/ipc/agent.ts` 注册 `agent:send`，向渲染进程 `webContents.send('agent:event', event)`
 
-- [ ] **Step 3** 在 `electron/main.ts` 启动时调用 `initDatabase()`（默认 `D:\SQLlite\shorekeeper.db`，见 `src/config/paths.ts`）
+- [x] **Step 3** 在 `electron/main.ts` 启动时调用 `initDatabase()`（默认 `D:\SQLlite\shorekeeper.db`，见 `src/config/paths.ts`）
 
-- [ ] **Step 4** Commit
+- [x] **Step 4** Commit
 
 ```bash
 git commit -m "feat(m1): simple chat orchestration with ipc"
@@ -352,15 +318,15 @@ git commit -m "feat(m1): simple chat orchestration with ipc"
 **Files:**
 - Create: `src/renderer/chat/ChatPage.tsx`, `src/renderer/chat/components/MessageList.tsx`, `src/renderer/chat/components/InputBar.tsx`, `src/renderer/hooks/useAgentEvents.ts`
 
-- [ ] **Step 1** 实现 `useAgentEvents`：订阅 `window.shorekeeper.agent.onEvent`，合并 `text_delta` 到当前 assistant 消息
+- [x] **Step 1** 实现 `useAgentEvents`：订阅 `window.shorekeeper.agent.onEvent`，合并 `text_delta` 到当前 assistant 消息
 
-- [ ] **Step 2** 聊天气泡布局（左 agent / 右 user），Tailwind 紫粉主题（参考 DESIGN §8）
+- [x] **Step 2** 聊天气泡布局（左 agent / 右 user）→ 实际：Shorekeeper 蓝白主题 + 头像
 
-- [ ] **Step 3** 顶栏显示模型名、连接状态（硬编码或读 settings）
+- [x] **Step 3** 顶栏显示模型名、连接状态（硬编码或读 settings）
 
-- [ ] **Step 4** 端到端验证：输入「你好」→ 流式回复 → 重启应用后历史仍在
+- [x] **Step 4** 端到端验证：输入「你好」→ 流式回复 → 重启应用后历史仍在
 
-- [ ] **Step 5** Commit
+- [x] **Step 5** Commit
 
 ```bash
 git commit -m "feat(m1): chat ui with streaming messages"
@@ -368,16 +334,7 @@ git commit -m "feat(m1): chat ui with streaming messages"
 
 ---
 
-### M1 验收清单
-
-- [ ] `pnpm electron:dev` 正常启动
-- [ ] 流式对话可用
-- [ ] 会话与消息写入 `D:\SQLlite\shorekeeper.db`
-- [ ] 渲染进程无法访问 `process.env.OPENAI_API_KEY`（仅主进程读取）
-
----
-
-# M2：Agent 核心
+# M2：Agent 核心 ← **当前里程碑**
 
 **交付物：** Function-calling 循环、AG-UI 完整事件、3 个内置工具、权限骨架。
 
@@ -389,9 +346,9 @@ git commit -m "feat(m1): chat ui with streaming messages"
 - Modify: `src/agent/types.ts`
 - Create: `src/agent/events.ts`
 
-- [ ] **Step 1** 按 DESIGN §6.1 补全 `AgUiEvent` 联合类型
+- [x] **Step 1** 按 DESIGN §6.1 补全 `AgUiEvent` 联合类型
 
-- [ ] **Step 2** 创建 `createRunId()` 与事件工厂函数 `ev.runStarted()` 等
+- [x] **Step 2** 创建 `createRunId()` 与事件工厂函数 `ev.runStarted()` 等
 
 - [ ] **Step 3** Commit
 
@@ -406,11 +363,11 @@ git commit -m "feat(m2): ag-ui event types"
 **Files:**
 - Create: `src/tools/registry.ts`, `src/tools/types.ts`
 
-- [ ] **Step 1** 实现 `ToolRegistry`：`register(tool)`, `list()`, `get(name)`, `toOpenAITools()`
+- [x] **Step 1** 实现 `ToolRegistry`：`register(tool)`, `list()`, `get(name)`, `toOpenAITools()`
 
-- [ ] **Step 2** 定义 `ToolResult { success, output, error? }`
+- [x] **Step 2** 定义 `ToolResult { success, output, error? }`
 
-- [ ] **Step 3** 测试注册与列表
+- [x] **Step 3** 测试注册与列表
 
 - [ ] **Step 4** Commit
 
@@ -425,13 +382,13 @@ git commit -m "feat(m2): tool registry"
 **Files:**
 - Create: `src/tools/file/read-file.ts`, `src/tools/file/list-dir.ts`, `src/tools/web/web-search.ts`
 
-- [ ] **Step 1** `read_file`：限制路径在 `workspaceRoot` 内，超出抛错
+- [x] **Step 1** `read_file`：限制路径在 `workspaceRoot` 内，超出抛错
 
-- [ ] **Step 2** `list_dir`：同上
+- [x] **Step 2** `list_dir`：同上
 
-- [ ] **Step 3** `web_search`：对接搜索 API（或 DuckDuckGo 简易实现），需 `network` 权限
+- [x] **Step 3** `web_search`：对接搜索 API（或 DuckDuckGo 简易实现），需 `network` 权限
 
-- [ ] **Step 4** 各工具单测
+- [x] **Step 4** 各工具单测
 
 - [ ] **Step 5** Commit
 
@@ -446,11 +403,11 @@ git commit -m "feat(m2): builtin tools read list search"
 **Files:**
 - Create: `src/agent/permissions.ts`
 
-- [ ] **Step 1** 实现 `PermissionPolicy` 默认值（workspace = userData/workspace）
+- [x] **Step 1** 实现 `PermissionPolicy` 默认值（workspace = userData/workspace）
 
-- [ ] **Step 2** `checkPermission(tool, policy)` 返回 allow / deny / confirm
+- [x] **Step 2** `checkPermission(tool, policy)` 返回 allow / deny / confirm
 
-- [ ] **Step 3** 写操作弹 `dialog.showMessageBox`（M2 可先实现 read 权限）
+- [x] **Step 3** 写操作弹 `dialog.showMessageBox`（M2 可先实现 read 权限）
 
 - [ ] **Step 4** Commit
 
@@ -465,13 +422,13 @@ git commit -m "feat(m2): permission policy skeleton"
 **Files:**
 - Create: `src/agent/loop.ts`, `src/agent/orchestrator.ts`
 
-- [ ] **Step 1** 扩展 `openai-compatible.ts` 支持 `tools` 参数与 `tool_calls` 流式解析
+- [x] **Step 1** 扩展 `openai-compatible.ts` 支持 `tools` 参数与 `tool_calls` 流式解析
 
-- [ ] **Step 2** 实现 `runAgentLoop(messages, tools, maxRounds=10)` 按 DESIGN §5.2 流程
+- [x] **Step 2** 实现 `runAgentLoop(messages, tools, maxRounds=10)` 按 DESIGN §5.2 流程
 
-- [ ] **Step 3** 每轮 tool 执行前后 yield `tool_call_start` / `tool_call_end`
+- [x] **Step 3** 每轮 tool 执行前后 yield `tool_call_start` / `tool_call_end`
 
-- [ ] **Step 4** 集成测试：让模型调用 `list_dir`（system prompt 引导）
+- [x] **Step 4** 集成测试：让模型调用 `list_dir`（system prompt 引导）
 
 - [ ] **Step 5** Commit
 
@@ -486,9 +443,9 @@ git commit -m "feat(m2): function calling agent loop"
 **Files:**
 - Create: `src/renderer/chat/components/ToolCallCard.tsx`
 
-- [ ] **Step 1** 监听 `tool_call_start/end`，在消息流中插入可折叠卡片
+- [x] **Step 1** 监听 `tool_call_start/end`，在消息流中插入可折叠卡片
 
-- [ ] **Step 2** 运行中显示 loading，完成后显示 result
+- [x] **Step 2** 运行中显示 loading，完成后显示 result
 
 - [ ] **Step 3** 验收：提问「列出工作区文件」触发工具
 
@@ -1110,7 +1067,7 @@ git tag v0.2.0-m2
 
 | 里程碑 | 检查项 |
 |--------|--------|
-| M1 结束 | better-sqlite3 electron rebuild 是否通过 |
+| M1 结束 | ~~better-sqlite3 electron rebuild~~ → 已改用 **sql.js**，Electron 运行正常 |
 | M2 结束 | tool loop 是否会死循环（maxRounds） |
 | M5 结束 | Live2D 模型版权与路径 |
 | M6 结束 | MCP server 超时处理 |
@@ -1123,7 +1080,8 @@ git tag v0.2.0-m2
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | 0.1.0 | 2026-06-29 | 初稿，覆盖 M1–M7 任务分解 |
+| 0.1.1 | 2026-06-29 | M1 验收完成，标记可进入 M2 |
 
 ---
 
-*下一步建议从 **M1 Task M1-1** 开始执行。如需在本会话直接开工，说明即可从脚手架初始化做起。*
+*下一步：从 **M2 Task M2-1**（AG-UI 事件类型扩展）开始执行。*

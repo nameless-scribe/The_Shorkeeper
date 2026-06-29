@@ -1,9 +1,28 @@
-import type { ChatMessage, ModelConfig, ModelEvent } from '../shared/types';
+import type { LlmMessage, OpenAIToolCall } from '../agent/types';
+import type { ModelConfig, ModelEvent } from '../shared/types';
+import type { OpenAIToolSchema } from '../tools/types';
 import { shouldIncludeStreamUsage } from './config';
 
 interface OpenAIStreamChunk {
   choices?: Array<{
-    delta?: { content?: string };
+    delta?: {
+      content?: string;
+      reasoning_content?: string;
+      tool_calls?: Array<{
+        index: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+    message?: {
+      content?: string | null;
+      tool_calls?: Array<{
+        index?: number;
+        id: string;
+        type?: string;
+        function: { name: string; arguments: string };
+      }>;
+    };
     finish_reason?: string | null;
   }>;
   usage?: {
@@ -12,10 +31,64 @@ interface OpenAIStreamChunk {
   };
 }
 
+type ToolCallAccumulator = Record<
+  number,
+  { id: string; name: string; arguments: string }
+>;
+
+function accumulateToolCallDelta(
+  acc: ToolCallAccumulator,
+  delta: NonNullable<OpenAIStreamChunk['choices']>[0]['delta'],
+): void {
+  if (!delta?.tool_calls) return;
+  for (const tc of delta.tool_calls) {
+    if (!acc[tc.index]) {
+      acc[tc.index] = { id: '', name: '', arguments: '' };
+    }
+    if (tc.id) acc[tc.index].id = tc.id;
+    if (tc.function?.name) acc[tc.index].name = tc.function.name;
+    if (tc.function?.arguments) acc[tc.index].arguments += tc.function.arguments;
+  }
+}
+
+function toOpenAIToolCalls(acc: ToolCallAccumulator): OpenAIToolCall[] {
+  return Object.keys(acc)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((index) => ({
+      id: acc[index].id,
+      type: 'function' as const,
+      function: {
+        name: acc[index].name,
+        arguments: acc[index].arguments,
+      },
+    }))
+    .filter((tc) => tc.id && tc.function.name);
+}
+
+function mergeMessageToolCalls(
+  acc: ToolCallAccumulator,
+  toolCalls: NonNullable<NonNullable<OpenAIStreamChunk['choices']>[0]['message']>['tool_calls'],
+): void {
+  if (!toolCalls?.length) return;
+  toolCalls.forEach((tc, index) => {
+    const slot = tc.index ?? index;
+    if (!acc[slot]) {
+      acc[slot] = { id: '', name: '', arguments: '' };
+    }
+    if (tc.id) acc[slot].id = tc.id;
+    if (tc.function?.name) acc[slot].name = tc.function.name;
+    if (tc.function?.arguments) acc[slot].arguments = tc.function.arguments;
+  });
+}
+
 export async function* streamChat(
-  messages: ChatMessage[],
+  messages: LlmMessage[],
   config: ModelConfig,
-  signal?: AbortSignal,
+  options?: {
+    tools?: OpenAIToolSchema[];
+    signal?: AbortSignal;
+  },
 ): AsyncGenerator<ModelEvent> {
   const body: Record<string, unknown> = {
     model: config.model,
@@ -23,7 +96,11 @@ export async function* streamChat(
     stream: true,
   };
 
-  // 阿里云百炼等部分 OpenAI 兼容接口不支持 stream_options
+  if (options?.tools?.length) {
+    body.tools = options.tools;
+    body.tool_choice = 'auto';
+  }
+
   if (shouldIncludeStreamUsage()) {
     body.stream_options = { include_usage: true };
   }
@@ -35,7 +112,7 @@ export async function* streamChat(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(body),
-    signal,
+    signal: options?.signal,
   });
 
   if (!response.ok) {
@@ -52,6 +129,8 @@ export async function* streamChat(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const toolAcc: ToolCallAccumulator = {};
+  let assistantContent = '';
 
   try {
     while (true) {
@@ -68,6 +147,12 @@ export async function* streamChat(
 
         const data = trimmed.slice(5).trim();
         if (data === '[DONE]') {
+          const toolCalls = toOpenAIToolCalls(toolAcc);
+          yield {
+            type: 'round_complete',
+            content: assistantContent || null,
+            toolCalls,
+          };
           yield { type: 'done' };
           return;
         }
@@ -79,9 +164,27 @@ export async function* streamChat(
           continue;
         }
 
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
-          yield { type: 'text_delta', delta };
+        const delta = parsed.choices?.[0]?.delta;
+        const message = parsed.choices?.[0]?.message;
+
+        if (delta?.reasoning_content) {
+          yield { type: 'reasoning_delta', delta: delta.reasoning_content };
+        }
+
+        if (delta?.content) {
+          assistantContent += delta.content;
+          yield { type: 'text_delta', delta: delta.content };
+        }
+
+        accumulateToolCallDelta(toolAcc, delta);
+        mergeMessageToolCalls(toolAcc, message?.tool_calls);
+
+        if (message?.content && !delta?.content) {
+          const remainder = message.content.slice(assistantContent.length);
+          if (remainder) {
+            assistantContent += remainder;
+            yield { type: 'text_delta', delta: remainder };
+          }
         }
 
         if (parsed.usage) {
@@ -94,9 +197,15 @@ export async function* streamChat(
       }
     }
 
+    const toolCalls = toOpenAIToolCalls(toolAcc);
+    yield {
+      type: 'round_complete',
+      content: assistantContent || null,
+      toolCalls,
+    };
     yield { type: 'done' };
   } catch (err) {
-    if (signal?.aborted) return;
+    if (options?.signal?.aborted) return;
     const message = err instanceof Error ? err.message : String(err);
     yield { type: 'error', message };
   }
