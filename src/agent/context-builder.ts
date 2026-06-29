@@ -3,6 +3,7 @@ import { getDatabase } from '../db';
 import { getProfileSummary } from '../memory/user-profile';
 import { formatMemoriesForPrompt, searchMemories } from '../memory/long-term';
 import { formatWorldbookForPrompt, matchWorldbook } from '../memory/worldbook';
+import { formatRagForPrompt, retrieveRelevantChunks } from '../rag/retriever';
 
 export interface ContextBuildInput {
   userMessage: string;
@@ -24,7 +25,8 @@ const TOOL_GUIDE = `【可用工具】
 当用户说「明天/指定日期时间提醒一次」→ schedule_kind=once + run_at（ISO 本地时间）。
 当用户询问工作区文件时，请主动调用 list_dir 或 read_file，不要编造文件列表。
 当用户消息中含「已上传以下文件到工作区」时，用 read_file 读取对应路径。
-当对话涉及用户偏好或过往事实时，可先 recall_memory 再回答。`;
+当对话涉及用户偏好或过往事实时，可先 recall_memory 再回答。
+当用户明确要求「将本次对话计入/保存/写入知识库」时，系统会自动提炼对话并归档，无需你手动处理。`;
 
 function loadPersonaPrompt(): string {
   const db = getDatabase();
@@ -41,9 +43,9 @@ function loadPersonaPrompt(): string {
 
 /**
  * 按 DESIGN §5.1 顺序组装 system prompt：
- * 人设 → 用户画像 → 长期记忆 → (RAG 留 M5) → Worldbook → (技能留 M6) → 工具说明
+ * 人设 → 用户画像 → 长期记忆 → RAG → Worldbook → (技能留 M6) → 工具说明
  */
-export function buildSystemPrompt(input: ContextBuildInput): string {
+export async function buildSystemPrompt(input: ContextBuildInput): Promise<string> {
   const sections: string[] = [loadPersonaPrompt()];
 
   const profile = getProfileSummary();
@@ -52,6 +54,14 @@ export function buildSystemPrompt(input: ContextBuildInput): string {
   const memories = searchMemories(input.userMessage, 5);
   const memoryBlock = formatMemoriesForPrompt(memories);
   if (memoryBlock) sections.push(memoryBlock);
+
+  try {
+    const ragChunks = await retrieveRelevantChunks(input.userMessage, 5);
+    const ragBlock = formatRagForPrompt(ragChunks);
+    if (ragBlock) sections.push(ragBlock);
+  } catch (err) {
+    console.warn('[rag] 检索失败，跳过 RAG 注入:', err);
+  }
 
   const worldbookHits = matchWorldbook(input.userMessage, 5);
   const worldbookBlock = formatWorldbookForPrompt(worldbookHits);

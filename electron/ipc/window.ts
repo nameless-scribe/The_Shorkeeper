@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { getWindowManager } from '../windows/manager';
+import { syncDockVisibility } from '../dock/visibility';
 
 function windowFromSender(sender: Electron.WebContents): BrowserWindow | null {
   return BrowserWindow.fromWebContents(sender);
@@ -19,6 +20,7 @@ export function registerWindowIpc() {
 
   ipcMain.handle('window:hide', (_event, kind: 'chat' | 'status' | 'schedule') => {
     manager.hide(kind);
+    syncDockVisibility();
     return { ok: true };
   });
 
@@ -29,6 +31,7 @@ export function registerWindowIpc() {
 
   ipcMain.on('window:minimize', (event) => {
     windowFromSender(event.sender)?.minimize();
+    syncDockVisibility();
   });
 
   ipcMain.on('window:close', (event) => {
@@ -39,5 +42,6 @@ export function registerWindowIpc() {
       return;
     }
     win.hide();
+    syncDockVisibility();
   });
 }

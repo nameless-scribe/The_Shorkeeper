@@ -1,13 +1,14 @@
 const AVATAR_SRC = '/keeper-avatar.png';
 
 interface AgentAvatarProps {
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
 
 const sizeMap = {
   sm: 'h-8 w-8',
   md: 'h-10 w-10',
+  lg: 'h-16 w-16',
 };
 
 export function AgentAvatar({ size = 'md', className = '' }: AgentAvatarProps) {

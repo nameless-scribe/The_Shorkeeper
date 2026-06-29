@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { app, Menu, Tray, nativeImage } from 'electron';
 import { getWindowManager } from './windows/manager';
+import { syncDockVisibility } from './dock/visibility';
 import { showChatWindow } from './windows/chat';
 import { showStatusWindow } from './windows/status';
 import { showScheduleWindow } from './windows/schedule';
@@ -72,6 +73,7 @@ export function hideAllWindowsToTray(): void {
   for (const win of manager.getAllWindows()) {
     win.hide();
   }
+  syncDockVisibility();
 }
 
 export function shouldMinimizeToTray(): boolean {

@@ -7,7 +7,7 @@ import {
 } from '../../src/db/scheduled-tasks';
 import { notifyTasksChanged } from '../../src/scheduler/task-events';
 import { runOrchestrator } from '../../src/agent/orchestrator';
-import { getOrCreateDefaultSession } from '../../src/db/repositories/sessions';
+import { getActiveSession } from '../../src/session/active';
 import { broadcastAgentEvent } from '../state/presence';
 import { showReminderPopup } from '../reminder/popup';
 
@@ -41,7 +41,7 @@ async function executeAgentPrompt(task: ScheduledTaskInfo, payload: Record<strin
         ? payload.message
         : task.name;
 
-  const session = getOrCreateDefaultSession();
+  const session = getActiveSession();
   for await (const event of runOrchestrator(prompt, session.id)) {
     broadcastAgentEvent(event);
   }

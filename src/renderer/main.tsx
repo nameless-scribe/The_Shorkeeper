@@ -4,13 +4,21 @@ import { ChatPage } from './ChatPage';
 import { StatusPage } from './status/StatusPage';
 import { SchedulePage } from './schedule/SchedulePage';
 import { ReminderPage } from './reminder/ReminderPage';
+import { DockPage } from './dock/DockPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RuntimeGate } from './components/RuntimeGate';
 import './styles/globals.css';
 
-function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' {
+function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' | 'dock' {
   const panel = new URLSearchParams(window.location.search).get('panel');
-  if (panel === 'status' || panel === 'schedule' || panel === 'reminder') return panel;
+  if (
+    panel === 'status' ||
+    panel === 'schedule' ||
+    panel === 'reminder' ||
+    panel === 'dock'
+  ) {
+    return panel;
+  }
   return 'chat';
 }
 
@@ -19,6 +27,7 @@ function App() {
   if (panel === 'status') return <StatusPage />;
   if (panel === 'schedule') return <SchedulePage />;
   if (panel === 'reminder') return <ReminderPage />;
+  if (panel === 'dock') return <DockPage />;
   return <ChatPage />;
 }
 

@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../db';
-import { isDuplicateMemory } from './dedupe';
+import { embedText } from '../rag/embedding';
+import { serializeEmbedding } from '../rag/vector';
+import { isDuplicateMemory, isSemanticallyDuplicateMemory } from './dedupe';
 
 export interface MemoryEntry {
   id: string;
@@ -103,16 +105,45 @@ export function searchMemories(query: string, limit = 5): MemoryEntry[] {
   return listMemories(Math.min(limit, 3));
 }
 
+function listMemoryEmbeddings(limit = 200): Array<{
+  content: string;
+  embedding: Uint8Array | null;
+}> {
+  const db = getDatabase();
+  const rows = db
+    .prepare(
+      `SELECT content, embedding FROM long_term_memory ORDER BY created_at DESC LIMIT ?`,
+    )
+    .all(limit) as Array<{ content: string; embedding: Uint8Array | null }>;
+
+  return rows;
+}
+
+async function computeEmbeddingBlob(
+  content: string,
+  skipEmbedding?: boolean,
+): Promise<Uint8Array | null> {
+  if (skipEmbedding) return null;
+  try {
+    const vec = await embedText(content);
+    return serializeEmbedding(vec);
+  } catch (err) {
+    console.warn('[memory] embedding 失败，跳过向量写入:', err);
+    return null;
+  }
+}
+
 /**
  * 按 memory_key 更新或插入——结构化记忆的唯一定稿入口。
  * 同一 key 永远只有一条记录。
  */
-export function upsertMemory(
+export async function upsertMemory(
   memoryKey: string,
   content: string,
   importance = 0.5,
   sessionId?: string,
-): MemoryEntry {
+  options?: { skipEmbedding?: boolean },
+): Promise<MemoryEntry> {
   const key = memoryKey.trim();
   const trimmed = content.trim();
   if (!key || !trimmed) {
@@ -123,13 +154,21 @@ export function upsertMemory(
   const clampedImportance = Math.max(0, Math.min(1, importance));
   const now = Date.now();
   const existing = getMemoryByKey(key);
+  const embeddingBlob = await computeEmbeddingBlob(trimmed, options?.skipEmbedding);
 
   if (existing) {
     db.prepare(
       `UPDATE long_term_memory
-       SET content = ?, importance = ?, source_session_id = ?, created_at = ?
+       SET content = ?, importance = ?, source_session_id = ?, created_at = ?, embedding = ?
        WHERE memory_key = ?`,
-    ).run(trimmed, clampedImportance, sessionId ?? null, now, key);
+    ).run(
+      trimmed,
+      clampedImportance,
+      sessionId ?? null,
+      now,
+      embeddingBlob,
+      key,
+    );
 
     return {
       ...existing,
@@ -142,9 +181,9 @@ export function upsertMemory(
 
   const id = uuidv4();
   db.prepare(
-    `INSERT INTO long_term_memory (id, memory_key, content, importance, source_session_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, key, trimmed, clampedImportance, sessionId ?? null, now);
+    `INSERT INTO long_term_memory (id, memory_key, content, importance, source_session_id, created_at, embedding)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, key, trimmed, clampedImportance, sessionId ?? null, now, embeddingBlob);
 
   return {
     id,
@@ -157,17 +196,37 @@ export function upsertMemory(
 }
 
 /** 无 key 的自由文本写入（仅 save_memory 工具等场景）；自动提取应优先 upsertMemory */
-export function saveMemory(
+export async function saveMemory(
   content: string,
   importance = 0.5,
   sessionId?: string,
-  options?: { skipDedupe?: boolean },
-): MemoryEntry | null {
+  options?: { skipDedupe?: boolean; skipEmbedding?: boolean },
+): Promise<MemoryEntry | null> {
   const trimmed = content.trim();
   if (!trimmed) return null;
 
   if (!options?.skipDedupe && isDuplicateMemory(trimmed, listMemoryContents())) {
     return null;
+  }
+
+  let embeddingBlob: Uint8Array | null = null;
+  if (!options?.skipEmbedding) {
+    try {
+      const vec = await embedText(trimmed);
+      embeddingBlob = serializeEmbedding(vec);
+      const queryVec = new Float32Array(vec);
+      if (
+        !options?.skipDedupe &&
+        isSemanticallyDuplicateMemory(queryVec, listMemoryEmbeddings())
+      ) {
+        return null;
+      }
+    } catch (err) {
+      console.warn('[memory] embedding 失败，仅使用文本去重:', err);
+      if (!options?.skipDedupe && isDuplicateMemory(trimmed, listMemoryContents())) {
+        return null;
+      }
+    }
   }
 
   const db = getDatabase();
@@ -176,9 +235,9 @@ export function saveMemory(
   const clampedImportance = Math.max(0, Math.min(1, importance));
 
   db.prepare(
-    `INSERT INTO long_term_memory (id, memory_key, content, importance, source_session_id, created_at)
-     VALUES (?, NULL, ?, ?, ?, ?)`,
-  ).run(id, trimmed, clampedImportance, sessionId ?? null, now);
+    `INSERT INTO long_term_memory (id, memory_key, content, importance, source_session_id, created_at, embedding)
+     VALUES (?, NULL, ?, ?, ?, ?, ?)`,
+  ).run(id, trimmed, clampedImportance, sessionId ?? null, now, embeddingBlob);
 
   return {
     id,

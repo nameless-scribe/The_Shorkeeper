@@ -107,11 +107,17 @@ export const saveMemoryTool: ToolDefinition = {
     }
 
     if (key?.trim()) {
-      const entry = upsertMemory(key.trim(), content, importance ?? 0.6, ctx.sessionId);
+      const entry = await upsertMemory(
+        key.trim(),
+        content,
+        importance ?? 0.6,
+        ctx.sessionId,
+        { skipEmbedding: true },
+      );
       return { success: true, output: `已保存记忆 [${entry.memoryKey}]：${entry.content}` };
     }
 
-    const entry = saveMemory(content, importance ?? 0.6, ctx.sessionId);
+    const entry = await saveMemory(content, importance ?? 0.6, ctx.sessionId);
     if (!entry) {
       return {
         success: true,

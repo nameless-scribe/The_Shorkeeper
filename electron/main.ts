@@ -11,7 +11,9 @@ import { registerPresenceIpc } from './ipc/presence';
 import { registerWindowIpc } from './ipc/window';
 import { registerTasksIpc } from './ipc/tasks';
 import { initDatabase, closeDatabase } from '../src/db';
+import { resetActiveSession } from '../src/session/active';
 import { createTray, hideAllWindowsToTray, shouldMinimizeToTray } from './tray';
+import { attachMainPanelDockSync, syncDockVisibility } from './dock/visibility';
 import { createChatWindow } from './windows/chat';
 import { createStatusWindow } from './windows/status';
 import { createScheduleWindow } from './windows/schedule';
@@ -19,6 +21,8 @@ import { getWindowManager } from './windows/manager';
 import { emitInitialState } from './state/presence';
 import { setTaskChangeHandler } from '../src/scheduler/task-events';
 import { registerWorkspaceIpc } from './ipc/workspace';
+import { registerDockIpc } from './ipc/dock';
+import { registerDocumentsIpc } from './ipc/documents';
 import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron';
 import { broadcastTasksUpdated } from './tasks/events';
 
@@ -38,6 +42,7 @@ function attachTrayCloseBehavior(win: BrowserWindow): void {
 app.whenReady().then(async () => {
   try {
     await initDatabase();
+    resetActiveSession();
   } catch (err) {
     console.error('数据库初始化失败:', err);
   }
@@ -51,6 +56,8 @@ app.whenReady().then(async () => {
   registerWindowIpc();
   registerTasksIpc();
   registerWorkspaceIpc();
+  registerDockIpc();
+  registerDocumentsIpc();
 
   setTaskChangeHandler(() => {
     reloadScheduler();
@@ -62,6 +69,9 @@ app.whenReady().then(async () => {
   for (const win of [createChatWindow(), createStatusWindow(), createScheduleWindow()]) {
     attachTrayCloseBehavior(win);
   }
+
+  attachMainPanelDockSync();
+  syncDockVisibility();
 
   emitInitialState();
   startScheduler();

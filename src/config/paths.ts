@@ -12,3 +12,8 @@ export const DATABASE_PATH =
 export const WORKSPACE_DIR =
   process.env.SHOREKEEPER_WORKSPACE_DIR ??
   path.join(DATABASE_DIR, 'workspace');
+
+/** 运行时解析工作区路径（测试可改 env 后生效） */
+export function getWorkspaceDir(): string {
+  return process.env.SHOREKEEPER_WORKSPACE_DIR ?? path.join(DATABASE_DIR, 'workspace');
+}

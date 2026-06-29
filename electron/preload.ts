@@ -9,8 +9,11 @@ import type {
   ScheduledTaskInfo,
   SessionInfo,
   TokenUsageSummaryInfo,
+  DockPreferencesInfo,
   WorkspaceAttachment,
   WorldbookEntryInfo,
+  DocumentInfo,
+  ImportProgress,
 } from '../src/shared/types';
 
 const shorekeeperApi = {
@@ -32,6 +35,7 @@ const shorekeeperApi = {
     list: (): Promise<SessionInfo[]> => ipcRenderer.invoke('sessions:list'),
     current: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:current'),
     create: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:create'),
+    switch: (id: string): Promise<SessionInfo> => ipcRenderer.invoke('sessions:switch', id),
   },
   messages: {
     list: (sessionId: string): Promise<MessageInfo[]> =>
@@ -60,6 +64,18 @@ const shorekeeperApi = {
       },
     ) => ipcRenderer.invoke('worldbook:update', id, patch),
     delete: (id: string) => ipcRenderer.invoke('worldbook:delete', id),
+  },
+  documents: {
+    list: (): Promise<DocumentInfo[]> => ipcRenderer.invoke('documents:list'),
+    import: (): Promise<DocumentInfo | null> => ipcRenderer.invoke('documents:import'),
+    delete: (id: string) => ipcRenderer.invoke('documents:delete', id),
+    onImportProgress: (callback: (progress: ImportProgress) => void) => {
+      const listener = (_: Electron.IpcRendererEvent, data: ImportProgress) => callback(data);
+      ipcRenderer.on('documents:importProgress', listener);
+      return () => {
+        ipcRenderer.removeListener('documents:importProgress', listener);
+      };
+    },
   },
   stats: {
     getTokenUsage: (): Promise<TokenUsageSummaryInfo> =>
@@ -119,6 +135,16 @@ const shorekeeperApi = {
       ipcRenderer.on('chat:openSettings', listener);
       return () => ipcRenderer.removeListener('chat:openSettings', listener);
     },
+  },
+  dock: {
+    openChat: () => ipcRenderer.invoke('dock:openChat'),
+    openSchedule: () => ipcRenderer.invoke('dock:openSchedule'),
+    moveBy: (dx: number, dy: number) => ipcRenderer.invoke('dock:moveBy', dx, dy),
+    getPreferences: (): Promise<DockPreferencesInfo> => ipcRenderer.invoke('dock:getPreferences'),
+    setAlwaysOnTop: (enabled: boolean): Promise<DockPreferencesInfo> =>
+      ipcRenderer.invoke('dock:setAlwaysOnTop', enabled),
+    setPositionLocked: (locked: boolean): Promise<DockPreferencesInfo> =>
+      ipcRenderer.invoke('dock:setPositionLocked', locked),
   },
 };
 

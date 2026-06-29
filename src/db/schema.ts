@@ -51,3 +51,20 @@ export interface WindowBounds {
   width: number;
   height: number;
 }
+
+export interface DocumentRow {
+  id: string;
+  filename: string;
+  filepath: string;
+  mime_type: string | null;
+  chunk_count: number;
+  imported_at: number;
+}
+
+export interface DocumentChunkRow {
+  id: string;
+  document_id: string;
+  chunk_index: number;
+  content: string;
+  embedding: Uint8Array;
+}

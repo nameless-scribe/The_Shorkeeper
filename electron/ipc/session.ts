@@ -1,11 +1,8 @@
 import { ipcMain } from 'electron';
 import { DATABASE_PATH } from '../../src/config/paths';
 import { getModelConfigSafe } from '../../src/models/config';
-import {
-  createSession,
-  getOrCreateDefaultSession,
-  listSessions,
-} from '../../src/db/repositories/sessions';
+import { listSessions } from '../../src/db/repositories/sessions';
+import { getActiveSession, resetActiveSession, switchActiveSession } from '../../src/session/active';
 import { listMessages } from '../../src/db/repositories/messages';
 import type { AppStatus, MessageInfo, SessionInfo } from '../../src/shared/types';
 
@@ -30,7 +27,7 @@ export function registerSessionIpc() {
   });
 
   ipcMain.handle('sessions:current', (): SessionInfo => {
-    const session = getOrCreateDefaultSession();
+    const session = getActiveSession();
     return {
       id: session.id,
       title: session.title,
@@ -40,7 +37,17 @@ export function registerSessionIpc() {
   });
 
   ipcMain.handle('sessions:create', (): SessionInfo => {
-    const session = createSession();
+    const session = resetActiveSession();
+    return {
+      id: session.id,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    };
+  });
+
+  ipcMain.handle('sessions:switch', (_event, id: string): SessionInfo => {
+    const session = switchActiveSession(id);
     return {
       id: session.id,
       title: session.title,

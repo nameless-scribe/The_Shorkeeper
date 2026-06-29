@@ -75,6 +75,11 @@ export interface AppStatus {
   databasePath: string;
 }
 
+export interface DockPreferencesInfo {
+  alwaysOnTop: boolean;
+  positionLocked: boolean;
+}
+
 export interface TokenUsageSummaryInfo {
   today: number;
   week: number;
@@ -95,3 +100,18 @@ export interface ScheduledTaskInfo {
   enabled: boolean;
   lastRunAt: number | null;
 }
+
+export interface DocumentInfo {
+  id: string;
+  filename: string;
+  filepath: string;
+  mimeType: string | null;
+  chunkCount: number;
+  importedAt: number;
+}
+
+export type ImportProgress =
+  | { phase: 'reading' }
+  | { phase: 'chunking'; chunkCount: number }
+  | { phase: 'embedding'; done: number; total: number }
+  | { phase: 'done'; document: DocumentInfo };

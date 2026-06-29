@@ -132,7 +132,7 @@ export async function extractMemoriesFromSession(sessionId: string): Promise<num
 
   let saved = 0;
   for (const fact of facts) {
-    upsertMemory(fact.key, fact.content, 0.55, sessionId);
+    await upsertMemory(fact.key, fact.content, 0.55, sessionId, { skipEmbedding: true });
     saved += 1;
   }
 

@@ -3,9 +3,18 @@ import type { AppStatus } from '@/shared/types';
 interface TitleBarProps {
   status: AppStatus | null;
   onOpenSettings?: () => void;
+  onNewChat?: () => void;
+  onToggleHistory?: () => void;
+  historyOpen?: boolean;
 }
 
-export function TitleBar({ status, onOpenSettings }: TitleBarProps) {
+export function TitleBar({
+  status,
+  onOpenSettings,
+  onNewChat,
+  onToggleHistory,
+  historyOpen,
+}: TitleBarProps) {
   return (
     <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between border-b border-keeper-cyan/15 px-4 py-3">
       <div className="no-drag">
@@ -24,6 +33,26 @@ export function TitleBar({ status, onOpenSettings }: TitleBarProps) {
         </p>
       </div>
       <div className="no-drag flex gap-1">
+        <button
+          type="button"
+          onClick={onToggleHistory}
+          className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+            historyOpen
+              ? 'bg-keeper-cyan/20 text-keeper-cyan'
+              : 'text-keeper-ice/50 hover:bg-keeper-cyan/10 hover:text-keeper-cyan'
+          }`}
+          title="历史会话"
+        >
+          ☰
+        </button>
+        <button
+          type="button"
+          onClick={onNewChat}
+          className="flex h-7 items-center rounded-lg px-2 text-xs text-keeper-ice/60 hover:bg-keeper-cyan/10 hover:text-keeper-cyan"
+          title="新对话"
+        >
+          ＋
+        </button>
         <button
           type="button"
           onClick={onOpenSettings}

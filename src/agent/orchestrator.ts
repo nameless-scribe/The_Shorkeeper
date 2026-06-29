@@ -4,13 +4,26 @@ import type { AgUiEvent } from './types';
 import { buildSystemPrompt } from './context-builder';
 import { getBuiltinRegistry } from '../tools/builtin';
 import { loadModelConfig } from '../models/config';
-import { getOrCreateDefaultSession, getSession } from '../db/repositories/sessions';
+import { getSession } from '../db/repositories/sessions';
+import { getActiveSession } from '../session/active';
 import {
   insertMessage,
   listMessages,
   toChatMessages,
 } from '../db/repositories/messages';
 import { extractMemoriesFromSession } from '../memory/summarizer';
+import {
+  archiveConversationToKnowledge,
+  buildArchiveConfirmation,
+  parseKnowledgeArchiveIntent,
+} from '../rag/conversation-knowledge';
+
+async function* streamText(runId: string, text: string): AsyncGenerator<AgUiEvent> {
+  const chunkSize = 12;
+  for (let i = 0; i < text.length; i += chunkSize) {
+    yield ev.textDelta(runId, text.slice(i, i + chunkSize));
+  }
+}
 
 export async function* runOrchestrator(
   userMessage: string,
@@ -20,7 +33,7 @@ export async function* runOrchestrator(
   const runId = createRunId();
   const session = sessionId
     ? getSession(sessionId)
-    : getOrCreateDefaultSession();
+    : getActiveSession();
 
   if (!session) {
     yield ev.runError(runId, '会话不存在');
@@ -33,8 +46,22 @@ export async function* runOrchestrator(
     loadModelConfig();
     insertMessage(session.id, 'user', userMessage);
 
+    const archiveIntent = parseKnowledgeArchiveIntent(userMessage);
+    if (archiveIntent.triggered) {
+      const result = await archiveConversationToKnowledge(
+        session.id,
+        archiveIntent.scope,
+        signal,
+      );
+      const reply = buildArchiveConfirmation(result);
+      insertMessage(session.id, 'assistant', reply);
+      yield* streamText(runId, reply);
+      yield ev.runFinished(runId);
+      return;
+    }
+
     const history = toChatMessages(listMessages(session.id));
-    const systemPrompt = buildSystemPrompt({
+    const systemPrompt = await buildSystemPrompt({
       userMessage,
       sessionId: session.id,
     });

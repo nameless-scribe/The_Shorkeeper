@@ -15,6 +15,7 @@ export interface UiMessage {
 export function useAgentEvents(
   sessionId: string | null,
   onSessionNeeded?: () => Promise<string>,
+  options?: { onRunFinished?: () => void },
 ) {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -22,6 +23,7 @@ export function useAgentEvents(
 
   useEffect(() => {
     if (!sessionId) return;
+    setError(null);
     window.shorekeeper.messages.list(sessionId).then((list) => {
       setMessages(
         list
@@ -139,6 +141,7 @@ export function useAgentEvents(
       if (event.type === 'run_finished') {
         setIsRunning(false);
         currentRunId = null;
+        options?.onRunFinished?.();
         setMessages((prev) => {
           const streamMsg = prev.find((m) => m.id === streamId);
           const toolCalls = streamMsg?.toolCalls;
@@ -196,7 +199,7 @@ export function useAgentEvents(
     return () => {
       unsubscribe();
     };
-  }, [sessionId]);
+  }, [sessionId, options?.onRunFinished]);
 
   const send = async (text: string, attachments: WorkspaceAttachment[] = []) => {
     const trimmed = text.trim();

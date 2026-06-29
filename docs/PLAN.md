@@ -1,14 +1,14 @@
 # The Shorekeeper 实施计划
 
-> **执行说明：** 按里程碑 M1 → M7 顺序推进。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
+> **执行说明：** 按里程碑 M1 → M7 顺序推进（**M8 桌宠延后**，M7 完成后再做）。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
 > **设计依据：** [DESIGN.md](./DESIGN.md)  
-> **当前进度：** **M3 已完成**（2026-06-29 手动验收）→ 下一步：**M4 多窗 UI**
+> **当前进度：** **M4 已完成**（2026-06-29）→ 下一步：**M5 RAG**（详见 [M5 实施计划](./superpowers/plans/2026-06-29-m5-rag.md)）
 
-**Goal：** 从零构建自用桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG、Live2D 桌宠与多窗伴侣 UI。
+**Goal：** 从零构建自用桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG 与多窗伴侣 UI；桌宠（Live2D / 精灵图）延后至 **M8**。
 
 **Architecture：** Electron 主进程承载 Agent 运行时与 SQLite；渲染进程仅负责 UI，通过 Preload IPC 与 AG-UI 事件流通信；能力按里程碑递增，每阶段可独立运行。
 
-**Tech Stack：** Electron · TypeScript · Vite · React · Tailwind · better-sqlite3 · Drizzle · PixiJS · pixi-live2d-display
+**Tech Stack：** Electron · TypeScript · Vite · React · Tailwind · better-sqlite3 · Drizzle ·（M8：PixiJS · pixi-live2d-display）
 
 ---
 
@@ -19,10 +19,11 @@
 | M1 | 基础脚手架 | 3–5 天 | ✅ **已完成** — 能流式聊天，会话入库 |
 | M2 | Agent 核心 | 4–6 天 | ✅ **已完成** — 工具循环、AG-UI 事件、工具卡片 |
 | M3 | 记忆系统 | 3–5 天 | ✅ **已完成** — 结构化长期记忆、Worldbook、设置页 |
-| M4 | 多窗 UI | 4–5 天 | 状态/日程窗、Token 统计 |
-| M5 | Live2D + RAG | 5–7 天 | 桌宠联动，文档检索回答 |
+| M4 | 多窗 UI | 4–5 天 | ✅ **已完成** — 状态/日程窗、Token 统计 |
+| M5 | RAG | 3–5 天 | 文档导入与向量检索回答 |
 | M6 | 扩展能力 | 4–6 天 | MCP、技能、TTS |
 | M7 | 工具补齐 | 5–7 天 | 文档生成与生活类工具 |
+| M8 | 桌宠（延后） | 3–5 天 | Live2D 或精灵图窗，动作与对话联动 |
 
 ---
 
@@ -757,53 +758,15 @@ git commit -m "feat(m4): scheduled tasks"
 
 ---
 
-# M5：Live2D + RAG
+# M5：RAG
 
-**交付物：** 透明桌宠窗、动作联动、文档导入与向量检索。
+**交付物：** 文档导入、向量存储与检索，问答可引用导入内容。
 
----
-
-### Task M5-1：Live2D 窗口
-
-**Files:**
-- Create: `electron/windows/live2d.ts`, `src/renderer/live2d/main.tsx`, `src/renderer/live2d/Live2DStage.tsx`
-
-- [ ] **Step 1** 安装 `pixi.js`, `pixi-live2d-display`
-
-- [ ] **Step 2** 透明置顶窗配置 `transparent: true`, `alwaysOnTop: true`
-
-- [ ] **Step 3** 加载 `assets/live2d/` 下模型（用户自行放置，README 说明）
-
-- [ ] **Step 4** 默认播放 idle 动作
-
-- [ ] **Step 5** Commit
-
-```bash
-git commit -m "feat(m5): live2d transparent window"
-```
+> **排期说明：** 桌宠（Live2D / 精灵图）已移至 **M8**，M5 仅做 RAG。`live2d_motion` 等 AG-UI 事件类型保留，供 M8 订阅。
 
 ---
 
-### Task M5-2：Live2D 动作联动
-
-**Files:**
-- Modify: `src/agent/orchestrator.ts`, `src/renderer/live2d/Live2DStage.tsx`
-
-- [ ] **Step 1** orchestrator 在 think/speak/happy 阶段 `broadcast('agent:event', { type: 'live2d_motion', motion })`
-
-- [ ] **Step 2** Live2D 窗订阅并 `model.motion(motionName)`
-
-- [ ] **Step 3** 点击角色 IPC 打开聊天窗 + 播放 tap 动作
-
-- [ ] **Step 4** Commit
-
-```bash
-git commit -m "feat(m5): live2d motion sync"
-```
-
----
-
-### Task M5-3：RAG schema + sqlite-vec
+### Task M5-1：RAG schema + sqlite-vec
 
 **Files:**
 - Create: `src/db/schema.ts` 扩展 documents/document_chunks
@@ -821,7 +784,7 @@ git commit -m "feat(m5): rag schema and sqlite-vec"
 
 ---
 
-### Task M5-4：文档导入管线
+### Task M5-2：文档导入管线
 
 **Files:**
 - Create: `src/rag/importer.ts`, `src/rag/chunker.ts`, `src/rag/retriever.ts`
@@ -840,7 +803,7 @@ git commit -m "feat(m5): document import and chunking"
 
 ---
 
-### Task M5-5：RAG 注入 context
+### Task M5-3：RAG 注入 context
 
 **Files:**
 - Modify: `src/agent/context-builder.ts`
@@ -861,9 +824,8 @@ git commit -m "feat(m5): rag retrieval in context builder"
 
 ### M5 验收清单
 
-- [ ] Live2D 角色显示在桌面，动作与对话状态联动
 - [ ] 导入 md 文件后，问答能引用文档内容
-- [ ] `assets/live2d/` 在 gitignore 中
+- [ ] 语义记忆去重（向量）可在此阶段一并验收（见 M3 延后项）
 
 ---
 
@@ -915,23 +877,29 @@ git commit -m "feat(m6): skill system"
 
 ---
 
-### Task M6-3：TTS
+### Task M6-3：TTS（消息朗读）
 
 **Files:**
-- Create: `src/tts/engine.ts`
+- Create: `src/tts/engine.ts`, `electron/ipc/tts.ts`
+- Create: `src/renderer/components/MessageSpeechButton.tsx`
+- Modify: `src/renderer/components/MessageList.tsx`, `electron/preload.ts`
 
-- [ ] **Step 1** 集成 edge-tts 或等价库，主进程合成
+**交互约定：** 每条 **已完成** 的 AI 消息气泡下方显示 🔊；**按需播放**（非每条自动朗读）；同时仅一条在播；合成与 API 调用均在主进程。
 
-- [ ] **Step 2** `run_finished` 或流式累积后发送 `tts_chunk`
+- [ ] **Step 1** 集成 edge-tts 或等价库；IPC `tts:synthesize({ text })` 返回 audio buffer（主进程）
 
-- [ ] **Step 3** 聊天窗或 Live2D 窗播放 Audio
+- [ ] **Step 2** `MessageSpeechButton`：idle / 合成中 / 播放中 / 失败；挂载于 assistant 消息时间戳旁（`!streaming && content`）
 
-- [ ] **Step 4** 设置页 TTS 开关与音色
+- [ ] **Step 3** 渲染进程 `Audio` 播放；文本预处理（去 markdown/表情）；新播放停止上一条
 
-- [ ] **Step 5** Commit
+- [ ] **Step 4** 设置页：TTS 总开关、音色；可选「自动朗读最新回复」（默认关）
+
+- [ ] **Step 5** （可选）播放时广播 `tts_chunk`，供 M8 桌宠口型
+
+- [ ] **Step 6** Commit
 
 ```bash
-git commit -m "feat(m6): tts playback"
+git commit -m "feat(m6): per-message tts playback"
 ```
 
 ---
@@ -959,7 +927,7 @@ git commit -m "feat(m6): anthropic like model adapter"
 
 - [ ] 至少一个 MCP Server 工具可调用
 - [ ] 启用技能后 system prompt 有变化
-- [ ] TTS 可朗读最后一条回复
+- [ ] 任意已完成 AI 消息可点 🔊 朗读；播放中可停止；设置页可切换音色
 
 ---
 
@@ -1025,10 +993,18 @@ git commit -m "feat(m7): bookkeeping and travel plan tools"
 
 ---
 
-### Task M7-4：会话摘要压缩
+### Task M7-4：会话摘要压缩 + 完整历史会话
 
 **Files:**
 - Modify: `src/memory/summarizer.ts`, `src/db/schema.ts` → `session_summaries`
+- Modify: `src/renderer/components/SessionHistoryPanel.tsx`（扩展）
+
+**轻量版（已完成）：** 侧边栏列表、切换会话、首条消息自动标题、启动新建会话。
+
+**完整版（本 Task）：**
+- [ ] 会话搜索 / 删除 / 归档
+- [ ] 长会话「已压缩」标识
+- [ ] Agent 跨会话 recall（可选）
 
 - [ ] **Step 1** messages 超阈值时压缩早期消息为 summary
 
@@ -1051,7 +1027,7 @@ git commit -m "feat(m7): session context compression"
 
 - [ ] **Step 2** `pnpm build` 生成 Windows 安装包
 
-- [ ] **Step 3** README：环境变量、Live2D 模型放置说明
+- [ ] **Step 3** README：环境变量、数据库路径；桌宠资源说明见 M8
 
 - [ ] **Step 4** Commit
 
@@ -1066,6 +1042,72 @@ git commit -m "chore(m7): electron builder config and readme"
 - [ ] 文档生成工具可产出可打开的文件
 - [ ] 长会话不超限（摘要生效）
 - [ ] 本地可打包运行
+
+---
+
+# M8：桌宠（延后）
+
+**交付物：** 透明桌宠窗、动作与 Agent 状态联动。实现路径二选一（或先做 Live2D，精灵图作备选）：
+
+| 路径 | 资源 | 技术 |
+|------|------|------|
+| Live2D | `assets/live2d/*.model3.json` 导出包 | PixiJS + pixi-live2d-display |
+| 精灵图 | `assets/sprites/` PNG 序列（如 Bongo Cat 素材） | 透明窗 + 状态换图 / 帧动画 |
+
+> **前置：** M2 已有 `live2d_motion` 事件类型；M4 已有 `state_update`（mood / activity）。M8 桌宠窗订阅 `agent:event` 即可联动，无需改事件协议。
+
+---
+
+### Task M8-1：桌宠窗口
+
+**Files:**
+- Create: `electron/windows/pet.ts`（或 `live2d.ts`）, `src/renderer/pet/main.tsx`, `src/renderer/pet/PetStage.tsx`
+
+- [ ] **Step 1** Live2D 路径：安装 `pixi.js`, `pixi-live2d-display`；精灵图路径：仅用 Canvas / Pixi 贴图
+
+- [ ] **Step 2** 透明置顶窗 `transparent: true`, `alwaysOnTop: true`
+
+- [ ] **Step 3** 从配置加载资源路径（Live2D：`assets/live2d/`；精灵图：`assets/sprites/`）
+
+- [ ] **Step 4** 默认 idle 状态
+
+- [ ] **Step 5** README：模型 / 精灵图放置说明
+
+- [ ] **Step 6** Commit
+
+```bash
+git commit -m "feat(m8): pet transparent window"
+```
+
+---
+
+### Task M8-2：动作联动
+
+**Files:**
+- Modify: `src/agent/orchestrator.ts`, `src/renderer/pet/PetStage.tsx`
+
+- [ ] **Step 1** orchestrator 在 think / speak / happy 阶段 `broadcast('agent:event', { type: 'live2d_motion', motion })`
+
+- [ ] **Step 2** 桌宠窗订阅 `live2d_motion` 与 `state_update`，映射到动作或换图
+
+- [ ] **Step 3** 点击角色 IPC 打开聊天窗 + tap 反应
+
+- [ ] **Step 4** TTS 播放时口型 / 说话帧（若模型或素材支持）
+
+- [ ] **Step 5** Commit
+
+```bash
+git commit -m "feat(m8): pet motion sync with agent"
+```
+
+---
+
+### M8 验收清单
+
+- [ ] 桌宠显示在桌面，与对话状态（思考 / 说话 / 开心）联动
+- [ ] 点击桌宠可打开聊天窗
+- [ ] `assets/live2d/` 或 `assets/sprites/` 在 gitignore 中
+- [ ] Live2D 路径：模型版权与授权范围已确认
 
 ---
 
@@ -1109,9 +1151,10 @@ git tag v0.2.0-m2
 |--------|--------|
 | M1 结束 | ~~better-sqlite3 electron rebuild~~ → 已改用 **sql.js**，Electron 运行正常 |
 | M2 结束 | tool loop 是否会死循环（maxRounds） |
-| M5 结束 | Live2D 模型版权与路径 |
+| M5 结束 | sqlite-vec 集成与 embedding 成本 |
 | M6 结束 | MCP server 超时处理 |
 | M7 结束 | write_file 权限与确认弹窗 |
+| M8 结束 | Live2D 模型版权与路径；精灵图素材授权 |
 
 ---
 
@@ -1124,7 +1167,8 @@ git tag v0.2.0-m2
 | 0.1.2 | 2026-06-29 | M2 验收完成，进入 M3 |
 | 0.1.3 | 2026-06-29 | M3 验收完成，进入 M4 |
 | 0.1.4 | 2026-06-29 | M3 文档补充：结构化 memory_key、upsert、增量提取 |
+| 0.1.5 | 2026-06-29 | 桌宠延后至 M8；M5 收窄为 RAG only |
 
 ---
 
-*下一步：从 **M4 Task M4-1**（窗口管理器）开始执行。*
+*下一步：从 **M5 Task M5-1**（RAG schema + embedding）开始执行。详见 [2026-06-29-m5-rag.md](./superpowers/plans/2026-06-29-m5-rag.md)。*

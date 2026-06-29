@@ -4,8 +4,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { closeDatabase, initDatabase, type AppDatabase } from '../../db';
 import { seedShorekeeper } from '../../db/seed';
-import { isDuplicateMemory } from '../dedupe';
+import { isDuplicateMemory, isSemanticallyDuplicateMemory } from '../dedupe';
 import { saveMemory, searchMemories, upsertMemory } from '../long-term';
+import { serializeEmbedding } from '../../rag/vector';
 import { getProfileSummary, setProfileValue } from '../user-profile';
 import {
   createWorldbookEntry,
@@ -38,17 +39,17 @@ describe('user profile', () => {
 });
 
 describe('long term memory', () => {
-  it('saves and searches memories', () => {
-    const entry = saveMemory('用户喜欢喝拿铁', 0.8, 'session-1');
+  it('saves and searches memories', async () => {
+    const entry = await saveMemory('用户喜欢喝拿铁', 0.8, 'session-1', { skipEmbedding: true });
     expect(entry).not.toBeNull();
     const hits = searchMemories('拿铁');
     expect(hits).toHaveLength(1);
     expect(hits[0].content).toContain('拿铁');
   });
 
-  it('upserts by memory_key instead of duplicating', () => {
-    upsertMemory('user.nickname', '用户名叫汐', 0.8, 'session-1');
-    upsertMemory('user.nickname', '用户名叫汐汐', 0.9, 'session-1');
+  it('upserts by memory_key instead of duplicating', async () => {
+    await upsertMemory('user.nickname', '用户名叫汐', 0.8, 'session-1', { skipEmbedding: true });
+    await upsertMemory('user.nickname', '用户名叫汐汐', 0.9, 'session-1', { skipEmbedding: true });
 
     const hits = searchMemories('汐');
     expect(hits).toHaveLength(1);
@@ -87,12 +88,37 @@ describe('dedupe', () => {
     expect(isDuplicateMemory('用户喜欢咖啡', ['喜欢咖啡'])).toBe(true);
     expect(isDuplicateMemory('完全不同的内容', ['喜欢咖啡'])).toBe(false);
   });
+
+  it('detects semantic duplicates via embedding similarity', () => {
+    const coffee = serializeEmbedding([1, 0, 0, 0]);
+    const latte = serializeEmbedding([0.99, 0.01, 0, 0]);
+    const unrelated = serializeEmbedding([0, 1, 0, 0]);
+
+    expect(
+      isSemanticallyDuplicateMemory(new Float32Array([0.98, 0.02, 0, 0]), [
+        { content: '用户喜欢咖啡', embedding: coffee },
+      ]),
+    ).toBe(true);
+
+    expect(
+      isSemanticallyDuplicateMemory(new Float32Array([0, 1, 0, 0]), [
+        { content: '用户喜欢咖啡', embedding: coffee },
+      ]),
+    ).toBe(false);
+
+    expect(
+      isSemanticallyDuplicateMemory(new Float32Array([0.99, 0.01, 0, 0]), [
+        { content: '用户爱喝拿铁', embedding: latte },
+        { content: '无关', embedding: unrelated },
+      ]),
+    ).toBe(true);
+  });
 });
 
 describe('saveMemory dedupe', () => {
-  it('skips identical free-text writes', () => {
-    const first = saveMemory('用户喜欢喝拿铁', 0.8, 'session-1');
-    const second = saveMemory('用户喜欢喝拿铁', 0.8, 'session-1');
+  it('skips identical free-text writes', async () => {
+    const first = await saveMemory('用户喜欢喝拿铁', 0.8, 'session-1', { skipEmbedding: true });
+    const second = await saveMemory('用户喜欢喝拿铁', 0.8, 'session-1', { skipEmbedding: true });
     expect(first).not.toBeNull();
     expect(second).toBeNull();
     expect(searchMemories('拿铁')).toHaveLength(1);
@@ -100,14 +126,14 @@ describe('saveMemory dedupe', () => {
 });
 
 describe('context builder', () => {
-  it('includes worldbook hits in system prompt', () => {
+  it('includes worldbook hits in system prompt', async () => {
     createWorldbookEntry({
       keys: '守岸人',
       content: '守岸人是黑海岸的守望者。',
       priority: 99,
     });
 
-    const prompt = buildSystemPrompt({
+    const prompt = await buildSystemPrompt({
       userMessage: '介绍一下守岸人',
       sessionId: 's1',
     });

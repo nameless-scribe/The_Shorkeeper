@@ -1,3 +1,5 @@
+import { cosineSimilarity, deserializeEmbedding } from '../rag/vector';
+
 function normalize(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -12,6 +14,26 @@ export function isDuplicateMemory(newContent: string, existing: string[]): boole
     if (!other) return false;
     return normalized === other || normalized.includes(other) || other.includes(normalized);
   });
+}
+
+export const SEMANTIC_DEDUPE_THRESHOLD = 0.88;
+
+export function isSemanticallyDuplicateMemory(
+  newEmbedding: Float32Array,
+  existing: Array<{ content: string; embedding: Uint8Array | null | undefined }>,
+): boolean {
+  for (const item of existing) {
+    if (!item.embedding) continue;
+    const other = deserializeEmbedding(
+      item.embedding instanceof Uint8Array
+        ? item.embedding
+        : new Uint8Array(item.embedding as ArrayBuffer),
+    );
+    if (cosineSimilarity(newEmbedding, other) >= SEMANTIC_DEDUPE_THRESHOLD) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** 批内去重（同一次 LLM 输出内的完全重复） */
