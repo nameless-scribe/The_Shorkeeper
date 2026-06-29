@@ -125,6 +125,7 @@ export async function extractMemoriesFromSession(sessionId: string): Promise<num
       },
     ],
     config,
+    { sessionId },
   );
 
   markExtractedUpToMessageId(sessionId, latestUserMessage.id);

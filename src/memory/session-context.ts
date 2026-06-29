@@ -94,6 +94,7 @@ export async function maybeCompressSession(sessionId: string): Promise<boolean> 
       { role: 'user', content: `请摘要以下对话：\n\n${dialogue}` },
     ],
     config,
+    { sessionId },
   );
 
   const trimmed = summary.trim();

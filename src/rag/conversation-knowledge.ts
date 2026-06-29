@@ -156,7 +156,7 @@ export async function archiveConversationToKnowledge(
       },
     ],
     config,
-    { signal },
+    { signal, sessionId },
   );
 
   const content = sanitizeMarkdown(markdown);

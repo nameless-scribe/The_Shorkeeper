@@ -31,10 +31,15 @@ export function DockTokenBar() {
     return Math.min(100, Math.round((stats.today / DAILY_TOKEN_BUDGET) * 100));
   }, [stats]);
 
+  const cacheHint =
+    (stats?.todayCached ?? 0) > 0
+      ? ` · 缓存 ${stats!.cacheHitRateToday}%`
+      : '';
+
   return (
     <div
       data-dock-action="schedule"
-      title="打开日程面板 · 查看 Token 详情 · 按住拖动可移动"
+      title={`打开日程面板 · 今日 ${(stats?.today ?? 0).toLocaleString()} tokens${cacheHint} · 按住拖动可移动`}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
@@ -57,6 +62,12 @@ export function DockTokenBar() {
           style={{ width: `${progress}%` }}
         />
       </div>
+
+      {(stats?.todayCached ?? 0) > 0 && (
+        <p className="text-[9px] leading-tight text-keeper-ice/45">
+          缓存命中 {stats!.cacheHitRateToday}%
+        </p>
+      )}
     </div>
   );
 }

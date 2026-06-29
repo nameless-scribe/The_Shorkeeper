@@ -116,10 +116,35 @@ export function ensureDataDirs(): void {
   }
 }
 
+function backupCorruptDatabase(dbPath: string): void {
+  const backupPath = `${dbPath}.corrupt-${Date.now()}.bak`;
+  fs.renameSync(dbPath, backupPath);
+  console.warn(`[db] 数据库文件损坏，已备份至 ${backupPath}，将创建新库。`);
+}
+
+function loadDatabaseBuffer(
+  SQL: import('sql.js').SqlJsStatic,
+  dbPath: string,
+): Buffer | undefined {
+  if (!fs.existsSync(dbPath)) return undefined;
+
+  const buffer = fs.readFileSync(dbPath);
+  try {
+    const probe = new SQL.Database(buffer);
+    probe.run('PRAGMA foreign_keys = ON');
+    probe.exec('SELECT 1');
+    probe.close();
+    return buffer;
+  } catch {
+    backupCorruptDatabase(dbPath);
+    return undefined;
+  }
+}
+
 export async function openDatabase(dbPath: string = DATABASE_PATH): Promise<SqliteDb> {
   ensureDataDirs();
   const SQL = await initSqlJs({ locateFile: getWasmPath });
-  const fileBuffer = fs.existsSync(dbPath) ? fs.readFileSync(dbPath) : undefined;
+  const fileBuffer = loadDatabaseBuffer(SQL, dbPath);
   const db = new SQL.Database(fileBuffer);
   db.run('PRAGMA foreign_keys = ON');
   const wrapped = new SqliteDb(SQL, db, dbPath);

@@ -1,6 +1,7 @@
 import type { LlmMessage, OpenAIToolCall } from '../agent/types';
 import type { ModelConfig, ModelEvent } from '../shared/types';
 import type { OpenAIToolSchema } from '../tools/types';
+import { recordTokenUsage } from '../db/token-usage';
 
 type AnthropicContentBlock =
   | { type: 'text'; text: string }
@@ -256,4 +257,73 @@ export async function* streamChatAnthropic(
     const message = err instanceof Error ? err.message : String(err);
     yield { type: 'error', message };
   }
+}
+
+function extractAnthropicText(
+  content: Array<{ type: string; text?: string }> | undefined,
+): string {
+  if (!content?.length) return '';
+  return content
+    .filter((block) => block.type === 'text' && block.text)
+    .map((block) => block.text!)
+    .join('\n')
+    .trim();
+}
+
+/** 非流式 Anthropic 调用（记忆提取、会话压缩等） */
+export async function completeChatAnthropic(
+  messages: LlmMessage[],
+  config: ModelConfig,
+  options?: { signal?: AbortSignal; sessionId?: string },
+): Promise<string> {
+  const { system, messages: anthropicMessages } = convertMessages(messages);
+
+  const body: Record<string, unknown> = {
+    model: config.model,
+    max_tokens: 8192,
+    messages: anthropicMessages,
+    stream: false,
+  };
+  if (system) body.system = system;
+
+  const response = await fetch(`${config.baseUrl}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': config.apiKey,
+      'anthropic-version': '2023-06-01',
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`API ${response.status}: ${text}`);
+  }
+
+  const data = (await response.json()) as {
+    content?: Array<{ type: string; text?: string }>;
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
+  };
+
+  const promptTokens = data.usage?.input_tokens ?? 0;
+  const completionTokens = data.usage?.output_tokens ?? 0;
+  const cachedTokens = data.usage?.cache_read_input_tokens ?? 0;
+  if (promptTokens > 0 || completionTokens > 0) {
+    recordTokenUsage({
+      sessionId: options?.sessionId,
+      model: config.model,
+      promptTokens,
+      completionTokens,
+      cachedTokens,
+    });
+  }
+
+  return extractAnthropicText(data.content);
 }
