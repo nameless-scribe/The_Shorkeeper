@@ -5,6 +5,10 @@ function windowFromSender(sender: Electron.WebContents): BrowserWindow | null {
   return BrowserWindow.fromWebContents(sender);
 }
 
+function isReminderWindow(win: BrowserWindow): boolean {
+  return win.webContents.getURL().includes('panel=reminder');
+}
+
 export function registerWindowIpc() {
   const manager = getWindowManager();
 
@@ -29,8 +33,11 @@ export function registerWindowIpc() {
 
   ipcMain.on('window:close', (event) => {
     const win = windowFromSender(event.sender);
-    if (win) {
-      win.hide();
+    if (!win) return;
+    if (isReminderWindow(win)) {
+      win.destroy();
+      return;
     }
+    win.hide();
   });
 }

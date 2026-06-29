@@ -7,6 +7,11 @@ import {
   saveMemoryTool,
   searchWorldbookTool,
 } from './memory/memory-tools';
+import {
+  createScheduledTaskTool,
+  deleteScheduledTaskTool,
+  listScheduledTasksTool,
+} from './schedule/schedule-tools';
 
 let defaultRegistry: ToolRegistry | null = null;
 
@@ -18,6 +23,9 @@ export function createBuiltinRegistry(): ToolRegistry {
   registry.register(recallMemoryTool);
   registry.register(searchWorldbookTool);
   registry.register(saveMemoryTool);
+  registry.register(createScheduledTaskTool);
+  registry.register(listScheduledTasksTool);
+  registry.register(deleteScheduledTaskTool);
   return registry;
 }
 

@@ -8,6 +8,7 @@ import {
   YAxis,
 } from 'recharts';
 import type { ScheduledTaskInfo, TokenUsageSummaryInfo } from '@/shared/types';
+import { formatScheduleLabel } from '@/scheduler/format';
 import { AppBackground } from '../components/AppBackground';
 import { PanelTitleBar } from '../components/PanelTitleBar';
 
@@ -49,8 +50,13 @@ export function SchedulePage() {
     };
     window.addEventListener('focus', onFocus);
 
+    const offTasks = window.shorekeeper.tasks.onUpdated(() => {
+      loadData().catch(console.error);
+    });
+
     return () => {
       offAgent();
+      offTasks();
       window.removeEventListener('focus', onFocus);
     };
   }, [loadData]);
@@ -149,7 +155,7 @@ export function SchedulePage() {
                   >
                     <div>
                       <p className="text-xs font-medium text-keeper-ice">{task.name}</p>
-                      <p className="text-[10px] text-keeper-ice/40">{task.cron}</p>
+                      <p className="text-[10px] text-keeper-ice/40">{formatScheduleLabel(task)}</p>
                     </div>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] ${

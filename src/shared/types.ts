@@ -20,9 +20,16 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface WorkspaceAttachment {
+  relativePath: string;
+  originalName: string;
+  size: number;
+}
+
 export interface AgentSendPayload {
   sessionId?: string;
   message: string;
+  attachments?: WorkspaceAttachment[];
 }
 
 export interface ModelConfig {
@@ -75,10 +82,14 @@ export interface TokenUsageSummaryInfo {
   dailyLast7: { date: string; tokens: number }[];
 }
 
+export type ScheduleKind = 'recurring' | 'once';
+
 export interface ScheduledTaskInfo {
   id: string;
   name: string;
+  scheduleKind: ScheduleKind;
   cron: string;
+  runAt: number | null;
   actionType: string;
   actionPayload: string;
   enabled: boolean;

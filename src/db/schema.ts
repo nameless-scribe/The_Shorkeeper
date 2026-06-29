@@ -41,6 +41,8 @@ export interface ScheduledTaskRow {
   action_payload: string;
   enabled: number;
   last_run_at: number | null;
+  schedule_kind: string;
+  run_at: number | null;
 }
 
 export interface WindowBounds {

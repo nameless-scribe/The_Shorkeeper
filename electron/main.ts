@@ -17,7 +17,10 @@ import { createStatusWindow } from './windows/status';
 import { createScheduleWindow } from './windows/schedule';
 import { getWindowManager } from './windows/manager';
 import { emitInitialState } from './state/presence';
-import { startScheduler, stopScheduler } from './scheduler/cron';
+import { setTaskChangeHandler } from '../src/scheduler/task-events';
+import { registerWorkspaceIpc } from './ipc/workspace';
+import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron';
+import { broadcastTasksUpdated } from './tasks/events';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,6 +50,12 @@ app.whenReady().then(async () => {
   registerPresenceIpc();
   registerWindowIpc();
   registerTasksIpc();
+  registerWorkspaceIpc();
+
+  setTaskChangeHandler(() => {
+    reloadScheduler();
+    broadcastTasksUpdated();
+  });
 
   createTray();
 

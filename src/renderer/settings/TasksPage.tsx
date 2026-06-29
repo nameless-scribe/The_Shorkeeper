@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ScheduledTaskInfo } from '@/shared/types';
+import type { ScheduleKind, ScheduledTaskInfo } from '@/shared/types';
+import { formatScheduleLabel } from '@/scheduler/format';
 
-const EMPTY_FORM: {
-  name: string;
-  cron: string;
-  actionType: 'reminder' | 'agent_prompt';
-  message: string;
-} = {
+function defaultRunAtLocal(): string {
+  const d = new Date(Date.now() + 3600_000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const EMPTY_FORM = {
   name: '',
+  scheduleKind: 'recurring' as ScheduleKind,
   cron: '0 9 * * *',
-  actionType: 'reminder',
+  runAtLocal: defaultRunAtLocal(),
+  actionType: 'reminder' as 'reminder' | 'agent_prompt',
   message: '',
 };
 
@@ -25,6 +29,12 @@ export function TasksPage() {
 
   useEffect(() => {
     load().catch(console.error);
+    const off = window.shorekeeper.tasks.onUpdated(() => {
+      load().catch(console.error);
+    });
+    return () => {
+      off();
+    };
   }, [load]);
 
   const handleCreate = async () => {
@@ -38,12 +48,14 @@ export function TasksPage() {
 
       await window.shorekeeper.tasks.create({
         name: form.name.trim(),
-        cron: form.cron.trim(),
+        scheduleKind: form.scheduleKind,
+        cron: form.scheduleKind === 'recurring' ? form.cron.trim() : '',
+        runAt: form.scheduleKind === 'once' ? new Date(form.runAtLocal).getTime() : null,
         actionType: form.actionType,
         actionPayload: payload,
         enabled: true,
       });
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, runAtLocal: defaultRunAtLocal() });
       await load();
     } finally {
       setSaving(false);
@@ -70,12 +82,34 @@ export function TasksPage() {
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
         />
-        <input
-          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
-          placeholder="Cron 表达式，如 0 9 * * *"
-          value={form.cron}
-          onChange={(e) => setForm((f) => ({ ...f, cron: e.target.value }))}
-        />
+        <select
+          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none"
+          value={form.scheduleKind}
+          onChange={(e) =>
+            setForm((f) => ({
+              ...f,
+              scheduleKind: e.target.value as ScheduleKind,
+            }))
+          }
+        >
+          <option value="recurring">周期性（每天/按 cron）</option>
+          <option value="once">仅一次</option>
+        </select>
+        {form.scheduleKind === 'recurring' ? (
+          <input
+            className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
+            placeholder="Cron 表达式，如 0 9 * * *"
+            value={form.cron}
+            onChange={(e) => setForm((f) => ({ ...f, cron: e.target.value }))}
+          />
+        ) : (
+          <input
+            type="datetime-local"
+            className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
+            value={form.runAtLocal}
+            onChange={(e) => setForm((f) => ({ ...f, runAtLocal: e.target.value }))}
+          />
+        )}
         <select
           className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none"
           value={form.actionType}
@@ -114,7 +148,7 @@ export function TasksPage() {
           >
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium text-keeper-ice">{task.name}</p>
-              <p className="text-[10px] text-keeper-ice/40">{task.cron}</p>
+              <p className="text-[10px] text-keeper-ice/40">{formatScheduleLabel(task)}</p>
               <p className="text-[10px] text-keeper-ice/30">{task.actionType}</p>
             </div>
             <div className="no-drag flex shrink-0 flex-col gap-1">

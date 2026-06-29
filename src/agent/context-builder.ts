@@ -16,8 +16,14 @@ const TOOL_GUIDE = `【可用工具】
 - recall_memory：按关键词检索长期记忆
 - search_worldbook：搜索世界观 / 背景设定条目
 - save_memory：将值得长期记住的事实写入记忆库
+- create_scheduled_task：创建定时提醒。schedule_kind=recurring 时用 cron（如 "0 9 * * *" 每天9点）；schedule_kind=once 时用 run_at（ISO 时间，只提醒一次）
+- list_scheduled_tasks：列出已有定时任务
+- delete_scheduled_task：按 id 删除定时任务
 
+当用户说「每天几点提醒我…」→ schedule_kind=recurring + cron。
+当用户说「明天/指定日期时间提醒一次」→ schedule_kind=once + run_at（ISO 本地时间）。
 当用户询问工作区文件时，请主动调用 list_dir 或 read_file，不要编造文件列表。
+当用户消息中含「已上传以下文件到工作区」时，用 read_file 读取对应路径。
 当对话涉及用户偏好或过往事实时，可先 recall_memory 再回答。`;
 
 function loadPersonaPrompt(): string {

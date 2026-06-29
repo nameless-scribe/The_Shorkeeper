@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AgUiEvent } from '@/shared/types';
+import type { AgUiEvent, WorkspaceAttachment } from '@/shared/types';
 import type { UiToolCall } from '../components/ToolCallCard';
 
 export interface UiMessage {
@@ -198,9 +198,9 @@ export function useAgentEvents(
     };
   }, [sessionId]);
 
-  const send = async (text: string) => {
+  const send = async (text: string, attachments: WorkspaceAttachment[] = []) => {
     const trimmed = text.trim();
-    if (!trimmed || isRunning) return;
+    if ((!trimmed && !attachments.length) || isRunning) return;
 
     let activeSessionId = sessionId;
     if (!activeSessionId && onSessionNeeded) {
@@ -208,10 +208,15 @@ export function useAgentEvents(
     }
     if (!activeSessionId) return;
 
+    const displayContent =
+      attachments.length > 0
+        ? `[附件: ${attachments.map((a) => a.originalName).join(', ')}]${trimmed ? `\n${trimmed}` : ''}`
+        : trimmed;
+
     const userMsg: UiMessage = {
       id: `local-${Date.now()}`,
       role: 'user',
-      content: trimmed,
+      content: displayContent,
       createdAt: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
@@ -220,6 +225,7 @@ export function useAgentEvents(
     await window.shorekeeper.agent.send({
       sessionId: activeSessionId,
       message: trimmed,
+      attachments,
     });
   };
 

@@ -44,7 +44,7 @@ export function ChatPage() {
             {error}
           </div>
         )}
-        <InputBar disabled={isRunning || !status?.apiConfigured} onSend={send} />
+        <InputBar disabled={isRunning || !status?.apiConfigured} onSend={(text, attachments) => send(text, attachments)} />
         <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </div>
     </div>

@@ -1,13 +1,15 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
   AgentPresenceState,
   AgentSendPayload,
   AppStatus,
   MessageInfo,
   ProfileEntryInfo,
+  ScheduleKind,
   ScheduledTaskInfo,
   SessionInfo,
   TokenUsageSummaryInfo,
+  WorkspaceAttachment,
   WorldbookEntryInfo,
 } from '../src/shared/types';
 
@@ -71,7 +73,9 @@ const shorekeeperApi = {
     list: (): Promise<ScheduledTaskInfo[]> => ipcRenderer.invoke('tasks:list'),
     create: (input: {
       name: string;
-      cron: string;
+      scheduleKind?: ScheduleKind;
+      cron?: string;
+      runAt?: number | null;
       actionType: string;
       actionPayload: string;
       enabled?: boolean;
@@ -80,13 +84,29 @@ const shorekeeperApi = {
       id: string,
       patch: Partial<{
         name: string;
+        scheduleKind: ScheduleKind;
         cron: string;
+        runAt: number | null;
         actionType: string;
         actionPayload: string;
         enabled: boolean;
       }>,
     ) => ipcRenderer.invoke('tasks:update', id, patch),
     delete: (id: string) => ipcRenderer.invoke('tasks:delete', id),
+    onUpdated: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('tasks:updated', listener);
+      return () => {
+        ipcRenderer.removeListener('tasks:updated', listener);
+      };
+    },
+  },
+  workspace: {
+    pickAndImport: (): Promise<WorkspaceAttachment | null> =>
+      ipcRenderer.invoke('workspace:pickAndImport'),
+    importPaths: (paths: string[]): Promise<WorkspaceAttachment[]> =>
+      ipcRenderer.invoke('workspace:importPaths', paths),
+    getPathForFile: (file: File) => webUtils.getPathForFile(file),
   },
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),

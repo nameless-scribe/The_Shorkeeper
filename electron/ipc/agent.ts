@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import type { AgentSendPayload } from '../../src/shared/types';
+import { formatAttachmentsForMessage } from '../../src/workspace/import';
 import { runOrchestrator } from '../../src/agent/orchestrator';
 import { getModelConfigSafe } from '../../src/models/config';
 import { recordTokenUsage } from '../../src/db/token-usage';
@@ -20,9 +21,14 @@ export function registerAgentIpc() {
 
     onRunStarted();
 
+    const userMessage = formatAttachmentsForMessage(
+      payload.message,
+      payload.attachments ?? [],
+    );
+
     try {
       for await (const agEvent of runOrchestrator(
-        payload.message,
+        userMessage,
         payload.sessionId,
         controller.signal,
       )) {

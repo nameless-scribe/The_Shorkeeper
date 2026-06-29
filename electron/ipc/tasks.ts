@@ -5,8 +5,8 @@ import {
   listScheduledTasks,
   updateScheduledTask,
 } from '../../src/db/scheduled-tasks';
-import type { ScheduledTaskInfo } from '../../src/shared/types';
-import { reloadScheduler } from '../scheduler/cron';
+import type { ScheduleKind, ScheduledTaskInfo } from '../../src/shared/types';
+import { notifyTasksChanged } from '../../src/scheduler/task-events';
 
 export function registerTasksIpc() {
   ipcMain.handle('tasks:list', (): ScheduledTaskInfo[] => listScheduledTasks());
@@ -17,14 +17,16 @@ export function registerTasksIpc() {
       _event,
       input: {
         name: string;
-        cron: string;
+        scheduleKind?: ScheduleKind;
+        cron?: string;
+        runAt?: number | null;
         actionType: string;
         actionPayload: string;
         enabled?: boolean;
       },
     ) => {
       const task = createScheduledTask(input);
-      reloadScheduler();
+      notifyTasksChanged();
       return task;
     },
   );
@@ -36,21 +38,23 @@ export function registerTasksIpc() {
       id: string,
       patch: Partial<{
         name: string;
+        scheduleKind: ScheduleKind;
         cron: string;
+        runAt: number | null;
         actionType: string;
         actionPayload: string;
         enabled: boolean;
       }>,
     ) => {
       const task = updateScheduledTask(id, patch);
-      reloadScheduler();
+      notifyTasksChanged();
       return task;
     },
   );
 
   ipcMain.handle('tasks:delete', (_event, id: string) => {
     deleteScheduledTask(id);
-    reloadScheduler();
+    notifyTasksChanged();
     return { ok: true };
   });
 }
