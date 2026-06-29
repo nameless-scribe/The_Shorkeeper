@@ -59,6 +59,7 @@ export type PermissionFlag =
 export interface PermissionPolicy {
   filesystem: {
     allowedRoots: string[];
+    writeAllowed: boolean;
     requireConfirmOnWrite: boolean;
   };
   network: boolean;

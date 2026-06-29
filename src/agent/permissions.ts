@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dialog } from 'electron';
 import { WORKSPACE_DIR } from '../config/paths';
+import { buildPermissionPolicy } from './policy-loader';
 import type { PermissionDecision, PermissionPolicy } from './types';
 import type { ToolDefinition } from '../tools/types';
 
@@ -12,15 +13,7 @@ export function ensureWorkspaceDir(): string {
 }
 
 export function defaultPermissionPolicy(): PermissionPolicy {
-  const workspaceRoot = ensureWorkspaceDir();
-  return {
-    filesystem: {
-      allowedRoots: [workspaceRoot],
-      requireConfirmOnWrite: true,
-    },
-    network: true,
-    mcp: false,
-  };
+  return buildPermissionPolicy();
 }
 
 function isPathWithinRoots(targetPath: string, roots: string[]): boolean {
@@ -67,6 +60,7 @@ export function checkPermission(
     }
 
     if (flag === 'filesystem:write') {
+      if (!policy.filesystem.writeAllowed) return 'deny';
       if (policy.filesystem.requireConfirmOnWrite) return 'confirm';
     }
 

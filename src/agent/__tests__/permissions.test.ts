@@ -6,7 +6,7 @@ import os from 'node:os';
 describe('permissions', () => {
   const root = path.join(os.tmpdir(), 'sk-perm-workspace');
   const policy = {
-    filesystem: { allowedRoots: [root], requireConfirmOnWrite: true },
+    filesystem: { allowedRoots: [root], writeAllowed: true, requireConfirmOnWrite: true },
     network: true,
     mcp: false,
   };

@@ -1,3 +1,8 @@
+import {
+  getPluginSettings,
+  isPluginToolEnabled,
+  pluginSettingsCacheKey,
+} from '../config/plugins';
 import { getMcpToolDefinitions } from '../mcp/client';
 import { getEnabledSkills } from '../skills/state';
 import { createBuiltinRegistry } from './builtin';
@@ -6,8 +11,19 @@ import { ToolRegistry } from './registry';
 let cachedRegistry: ToolRegistry | null = null;
 let cacheKey = '';
 
-function buildCacheKey(skillIds: string[], mcpCount: number): string {
-  return `${skillIds.sort().join(',')}:${mcpCount}`;
+function buildCacheKey(skillIds: string[], mcpCount: number, pluginsKey: string): string {
+  return `${skillIds.sort().join(',')}:${mcpCount}:${pluginsKey}`;
+}
+
+function applyPluginFilter(registry: ToolRegistry): ToolRegistry {
+  const settings = getPluginSettings();
+  const filtered = new ToolRegistry();
+  for (const tool of registry.list()) {
+    if (isPluginToolEnabled(tool.name, settings)) {
+      filtered.register(tool);
+    }
+  }
+  return filtered;
 }
 
 function applySkillToolFilter(registry: ToolRegistry): ToolRegistry {
@@ -34,7 +50,8 @@ function applySkillToolFilter(registry: ToolRegistry): ToolRegistry {
 export async function getAgentRegistry(): Promise<ToolRegistry> {
   const mcpTools = await getMcpToolDefinitions();
   const skillIds = getEnabledSkills().map((s) => s.id);
-  const key = buildCacheKey(skillIds, mcpTools.length);
+  const pluginsKey = pluginSettingsCacheKey(getPluginSettings());
+  const key = buildCacheKey(skillIds, mcpTools.length, pluginsKey);
 
   if (cachedRegistry && cacheKey === key) {
     return cachedRegistry;
@@ -49,7 +66,7 @@ export async function getAgentRegistry(): Promise<ToolRegistry> {
     }
   }
 
-  cachedRegistry = applySkillToolFilter(registry);
+  cachedRegistry = applyPluginFilter(applySkillToolFilter(registry));
   cacheKey = key;
   return cachedRegistry;
 }

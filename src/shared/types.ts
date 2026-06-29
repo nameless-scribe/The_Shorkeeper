@@ -57,6 +57,18 @@ export interface PerformanceSettingsInfo {
   compressThreshold: number;
 }
 
+export type FilesystemMode = 'readonly' | 'confirm' | 'full';
+
+export interface PluginSettingsInfo {
+  webSearch: boolean;
+  fetchUrl: boolean;
+  docGen: boolean;
+  bookkeeping: boolean;
+  lifeTools: boolean;
+  filesystemMode: FilesystemMode;
+  mcpEnabledCount: number;
+}
+
 export interface SkillInfo {
   id: string;
   name: string;

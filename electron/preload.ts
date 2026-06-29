@@ -17,6 +17,8 @@ import type {
   ModelProtocol,
   McpServerInfo,
   PerformanceSettingsInfo,
+  PluginSettingsInfo,
+  FilesystemMode,
   SkillInfo,
 } from '../src/shared/types';
 
@@ -193,6 +195,13 @@ const shorekeeperApi = {
     get: (): Promise<PerformanceSettingsInfo> => ipcRenderer.invoke('performance:get'),
     set: (patch: Partial<PerformanceSettingsInfo>): Promise<PerformanceSettingsInfo> =>
       ipcRenderer.invoke('performance:set', patch),
+  },
+  plugins: {
+    get: (): Promise<PluginSettingsInfo> => ipcRenderer.invoke('plugins:get'),
+    set: (patch: Partial<PluginSettingsInfo>): Promise<PluginSettingsInfo> =>
+      ipcRenderer.invoke('plugins:set', patch),
+    setFilesystemMode: (mode: FilesystemMode): Promise<PluginSettingsInfo> =>
+      ipcRenderer.invoke('plugins:setFilesystemMode', mode),
   },
 };
 

@@ -3,8 +3,7 @@ import { runAgentLoop } from './loop';
 import type { AgUiEvent } from './types';
 import { buildSystemPrompt } from './context-builder';
 import { getAgentRegistry } from '../tools/agent-registry';
-import { listEnabledMcpServers } from '../db/mcp-servers';
-import { defaultPermissionPolicy } from './permissions';
+import { buildPermissionPolicy } from './policy-loader';
 import { loadModelConfig } from '../models/config';
 import { getSession } from '../db/repositories/sessions';
 import { getActiveSession } from '../session/active';
@@ -77,10 +76,7 @@ export async function* runOrchestrator(
     ];
 
     const registry = await getAgentRegistry();
-    const policy = {
-      ...defaultPermissionPolicy(),
-      mcp: listEnabledMcpServers().length > 0,
-    };
+    const policy = buildPermissionPolicy();
 
     let assistantText = '';
 
