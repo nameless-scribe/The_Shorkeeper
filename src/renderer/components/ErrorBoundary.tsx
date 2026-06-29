@@ -22,10 +22,13 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="flex h-screen items-center justify-center bg-shore-bg p-6 text-white">
-          <div className="max-w-sm rounded-2xl border border-red-400/30 bg-red-950/40 p-5 text-sm">
-            <p className="mb-2 font-semibold text-red-200">界面加载失败</p>
-            <p className="text-red-100/80">{this.state.error.message}</p>
+        <div className="relative h-screen overflow-hidden">
+          <div className="keeper-sky absolute inset-0" />
+          <div className="relative z-10 flex h-full items-center justify-center p-6">
+          <div className="max-w-sm rounded-2xl border border-red-400/30 bg-keeper-navy/80 p-5 text-sm backdrop-blur-md">
+            <p className="mb-2 font-semibold text-red-300">界面加载失败</p>
+            <p className="text-keeper-ice/70">{this.state.error.message}</p>
+          </div>
           </div>
         </div>
       );

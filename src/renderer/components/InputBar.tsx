@@ -28,8 +28,11 @@ export function InputBar({ disabled, onSend }: InputBarProps) {
   };
 
   return (
-    <form onSubmit={onSubmit} className="border-t border-white/10 p-3 no-drag">
-      <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-black/20 p-2 backdrop-blur-md">
+    <form
+      onSubmit={onSubmit}
+      className="keeper-glass-panel shrink-0 border-t border-keeper-cyan/10 p-3 no-drag"
+    >
+      <div className="flex items-end gap-2 rounded-2xl border border-keeper-silver/20 bg-keeper-navyDeep/50 p-2">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -37,12 +40,12 @@ export function InputBar({ disabled, onSend }: InputBarProps) {
           disabled={disabled}
           rows={1}
           placeholder="输入消息，Enter 发送…"
-          className="max-h-28 min-h-[36px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-white placeholder:text-white/35 focus:outline-none disabled:opacity-50"
+          className="max-h-28 min-h-[36px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-keeper-ice placeholder:text-keeper-ice/35 focus:outline-none disabled:opacity-50"
         />
         <button
           type="submit"
           disabled={disabled || !text.trim()}
-          className="rounded-xl bg-shore-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-shore-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-xl bg-keeper-cyan px-4 py-2 text-sm font-medium text-keeper-navyDeep shadow-cyanSm transition hover:bg-keeper-cyanDim hover:shadow-cyan disabled:cursor-not-allowed disabled:bg-keeper-navy disabled:text-keeper-ice/30 disabled:shadow-none"
         >
           发送
         </button>

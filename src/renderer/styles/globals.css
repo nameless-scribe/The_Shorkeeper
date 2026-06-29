@@ -14,9 +14,9 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;
+  background: #0a1128;
 }
 
-/* 透明窗体下让拖拽区域生效 */
 .drag-region {
   -webkit-app-region: drag;
 }
@@ -25,11 +25,41 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* 滚动条 */
+/* 全幅立绘背景（public/keeper-bg.png） */
+.keeper-scene {
+  background-color: #0a1128;
+  background-image: url('/keeper-bg.png');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
+  transform: scale(1.02);
+}
+
+/* 左侧聊天区阅读遮罩，右侧保留角色与光效 */
+.keeper-veil {
+  background: linear-gradient(
+    90deg,
+    rgba(10, 17, 40, 0.9) 0%,
+    rgba(10, 17, 40, 0.72) 38%,
+    rgba(10, 17, 40, 0.28) 62%,
+    rgba(10, 17, 40, 0.08) 100%
+  );
+}
+
+@layer components {
+  .keeper-glass-panel {
+    @apply border border-keeper-silver/20 bg-keeper-glass shadow-glass backdrop-blur-xl;
+  }
+
+  .keeper-glass-soft {
+    @apply border border-keeper-ice/15 bg-white/5 backdrop-blur-md;
+  }
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(232, 121, 168, 0.35);
+  background: linear-gradient(180deg, #274690, #30bced);
   border-radius: 3px;
 }

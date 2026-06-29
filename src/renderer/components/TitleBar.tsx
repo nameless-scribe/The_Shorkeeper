@@ -6,16 +6,19 @@ interface TitleBarProps {
 
 export function TitleBar({ status }: TitleBarProps) {
   return (
-    <header className="drag-region flex items-center justify-between border-b border-white/10 px-4 py-3">
+    <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between border-b border-keeper-cyan/15 px-4 py-3">
       <div className="no-drag">
-        <h1 className="text-sm font-semibold text-white">The Shorekeeper</h1>
-        <p className="text-xs text-white/50">
+        <h1 className="text-sm font-semibold tracking-wide text-keeper-ice">
+          The Shorekeeper
+        </h1>
+        <p className="text-xs text-keeper-ice/60">
           {status?.apiConfigured ? (
             <>
-              <span className="text-emerald-400">●</span> {status.model} 已连接
+              <span className="text-keeper-cyan drop-shadow-[0_0_6px_rgba(0,212,255,0.8)]">◆</span>{' '}
+              {status.model} 已连接
             </>
           ) : (
-            <span className="text-amber-400">未配置 API Key</span>
+            <span className="text-amber-300/90">未配置 API Key</span>
           )}
         </p>
       </div>
@@ -23,7 +26,7 @@ export function TitleBar({ status }: TitleBarProps) {
         <button
           type="button"
           onClick={() => window.shorekeeper.window.minimize()}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-white/60 hover:bg-white/10"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-keeper-ice/50 hover:bg-keeper-cyan/10 hover:text-keeper-cyan"
           title="最小化"
         >
           ─
@@ -31,7 +34,7 @@ export function TitleBar({ status }: TitleBarProps) {
         <button
           type="button"
           onClick={() => window.shorekeeper.window.close()}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-white/60 hover:bg-red-500/30 hover:text-red-200"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-keeper-ice/50 hover:bg-red-500/20 hover:text-red-300"
           title="关闭"
         >
           ✕

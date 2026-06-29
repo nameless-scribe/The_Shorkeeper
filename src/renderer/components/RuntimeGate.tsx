@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { AppBackground } from './AppBackground';
 
 function isElectronRuntime(): boolean {
   return navigator.userAgent.includes('Electron');
@@ -9,29 +10,30 @@ export function RuntimeGate({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  if (isElectronRuntime()) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-gradient-to-b from-shore-bg to-shore-panel p-8 text-center text-white">
-        <h1 className="text-lg font-semibold">The Shorekeeper</h1>
-        <p className="max-w-xs text-sm text-amber-200/90">
-          Electron 已启动，但 Preload 未加载成功。
-        </p>
-        <p className="max-w-xs text-xs text-white/50">
-          请完全退出后重新运行 <code className="text-shore-accent">pnpm dev</code>，并查看终端是否有 Preload 报错。
-        </p>
+  const shell = (body: ReactNode) => (
+    <div className="relative h-screen overflow-hidden rounded-3xl">
+      <AppBackground />
+      <div className="relative z-10 flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+        {body}
       </div>
+    </div>
+  );
+
+  if (isElectronRuntime()) {
+    return shell(
+      <>
+        <h1 className="text-lg font-semibold text-keeper-ice">The Shorekeeper</h1>
+        <p className="max-w-xs text-sm text-amber-200/90">Preload 未加载成功，请重启 pnpm dev。</p>
+      </>,
     );
   }
 
-  return (
-    <div className="flex h-screen flex-col items-center justify-center gap-3 bg-gradient-to-b from-shore-bg to-shore-panel p-8 text-center text-white">
-      <h1 className="text-lg font-semibold">The Shorekeeper</h1>
-      <p className="max-w-xs text-sm text-white/70">
-        这是浏览器页面。请关闭此标签，使用 <code className="text-shore-accent">pnpm dev</code> 弹出的
-        <strong className="text-white"> 独立桌面窗口 </strong>
-        （任务栏里找 The Shorekeeper）。
+  return shell(
+    <>
+      <h1 className="text-lg font-semibold text-keeper-ice">The Shorekeeper</h1>
+      <p className="max-w-xs text-sm text-keeper-ice/60">
+        请使用 <code className="font-mono text-keeper-cyan">pnpm dev</code> 弹出的桌面窗口。
       </p>
-      <p className="text-xs text-white/45">不要手动打开 localhost 地址。</p>
-    </div>
+    </>,
   );
 }
