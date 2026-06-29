@@ -2,7 +2,7 @@
 
 > **执行说明：** 按里程碑 M1 → M7 顺序推进。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
 > **设计依据：** [DESIGN.md](./DESIGN.md)  
-> **当前进度：** **M2 实现中**（代码已落地，待手动验收）→ 下一步：M2 验收后进入 M3
+> **当前进度：** **M2 已完成**（2026-06-29 手动验收）→ 下一步：**M3 记忆系统**
 
 **Goal：** 从零构建自用桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG、Live2D 桌宠与多窗伴侣 UI。
 
@@ -17,7 +17,7 @@
 | 里程碑 | 名称 | 预计工期 | 验收标准 |
 |--------|------|----------|----------|
 | M1 | 基础脚手架 | 3–5 天 | ✅ **已完成** — 能流式聊天，会话入库 |
-| M2 | Agent 核心 | 4–6 天 | 工具循环可用，AG-UI 事件可见 |
+| M2 | Agent 核心 | 4–6 天 | ✅ **已完成** — 工具循环、AG-UI 事件、工具卡片 |
 | M3 | 记忆系统 | 3–5 天 | 长期记忆与 Worldbook 注入 context |
 | M4 | 多窗 UI | 4–5 天 | 状态/日程窗、Token 统计 |
 | M5 | Live2D + RAG | 5–7 天 | 桌宠联动，文档检索回答 |
@@ -334,9 +334,19 @@ git commit -m "feat(m1): chat ui with streaming messages"
 
 ---
 
-# M2：Agent 核心 ← **当前里程碑**
+# M2：Agent 核心 ✅
 
 **交付物：** Function-calling 循环、AG-UI 完整事件、3 个内置工具、权限骨架。
+
+**状态：** 已完成（2026-06-29）。手动验收通过，可进入 M3。
+
+**实现说明（验收记录）：**
+
+- 默认模型 **qwen3.6-plus**（百炼 OpenAI 兼容）；流式 tool_calls 去重已处理（delta + message 双份）
+- 已验：`list_dir`、`read_file`+摘要、工具卡片 UI、消息列表自动滚底
+- `web_search` 可触发并展示错误；DuckDuckGo 在国内常 `fetch failed`，不阻塞 M2
+- 越权路径：**工具层**有单测（`permissions.test.ts`、`read_file` 路径穿越）；**对话层** Qwen 倾向不调用工具而口头拒绝，E2E 卡片验收跳过（可接受）
+- UI 路径：`src/renderer/components/ToolCallCard.tsx`（非 PLAN 原路径 `chat/components/`）
 
 ---
 
@@ -447,7 +457,7 @@ git commit -m "feat(m2): function calling agent loop"
 
 - [x] **Step 2** 运行中显示 loading，完成后显示 result
 
-- [ ] **Step 3** 验收：提问「列出工作区文件」触发工具
+- [x] **Step 3** 验收：提问「列出工作区文件」触发工具
 
 - [ ] **Step 4** Commit
 
@@ -459,13 +469,13 @@ git commit -m "feat(m2): tool call cards in chat ui"
 
 ### M2 验收清单
 
-- [ ] 多轮 tool loop 正常终止（不超过 maxRounds）
-- [ ] AG-UI 事件在 DevTools 可观察到
-- [ ] 无权限的文件路径被拒绝
+- [x] 多轮 tool loop 正常终止（不超过 maxRounds）— 读文件+list_dir 实测正常
+- [x] AG-UI 事件在 DevTools 可观察到 — tool_call_start/end 经 UI 验证
+- [x] 无权限的文件路径被拒绝 — **单测覆盖**；E2E 因模型不调用工具跳过
 
 ---
 
-# M3：记忆系统
+# M3：记忆系统 ← **当前里程碑**
 
 **交付物：** 长期记忆、Worldbook + FTS5、上下文组装器。
 
@@ -1081,7 +1091,8 @@ git tag v0.2.0-m2
 |------|------|------|
 | 0.1.0 | 2026-06-29 | 初稿，覆盖 M1–M7 任务分解 |
 | 0.1.1 | 2026-06-29 | M1 验收完成，标记可进入 M2 |
+| 0.1.2 | 2026-06-29 | M2 验收完成，进入 M3 |
 
 ---
 
-*下一步：从 **M2 Task M2-1**（AG-UI 事件类型扩展）开始执行。*
+*下一步：从 **M3 Task M3-1**（记忆 schema 扩展）开始执行。*

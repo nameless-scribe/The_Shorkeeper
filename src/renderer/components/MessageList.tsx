@@ -1,5 +1,7 @@
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { AgentAvatar } from './AgentAvatar';
 import { UserAvatar } from './UserAvatar';
+import { ToolCallCard } from './ToolCallCard';
 import type { UiMessage } from '../hooks/useAgentEvents';
 
 interface MessageListProps {
@@ -12,16 +14,58 @@ function formatTime(ts?: number) {
   return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
+const SCROLL_PIN_THRESHOLD = 80;
+
 export function MessageList({ messages }: MessageListProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottomRef = useRef(true);
+  const prevMessageCountRef = useRef(messages.length);
+
+  const scrollToBottom = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  };
+
+  const handleScroll = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    pinnedToBottomRef.current = distanceFromBottom <= SCROLL_PIN_THRESHOLD;
+  };
+
+  useEffect(() => {
+    if (messages.length > prevMessageCountRef.current) {
+      const last = messages[messages.length - 1];
+      if (last?.role === 'user') {
+        pinnedToBottomRef.current = true;
+      }
+    }
+    prevMessageCountRef.current = messages.length;
+  }, [messages]);
+
+  useLayoutEffect(() => {
+    if (!pinnedToBottomRef.current) return;
+    scrollToBottom();
+  }, [messages]);
+
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-3 no-drag">
+    <div
+      ref={containerRef}
+      onScroll={handleScroll}
+      className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-3 no-drag"
+    >
       {messages.length === 0 && (
         <div className="mt-8 text-center text-sm text-keeper-ice/40">
           向 Shorekeeper 打个招呼吧
         </div>
       )}
-      {messages.map((msg) =>
-        msg.role === 'user' ? (
+      {messages.map((msg) => {
+        const hasRunningTools = msg.toolCalls?.some((tc) => tc.status === 'running');
+        const showTextBubble =
+          Boolean(msg.content) || (msg.thinking && !hasRunningTools);
+
+        return msg.role === 'user' ? (
           <div key={msg.id} className="flex flex-col items-end gap-1">
             <div className="flex items-start justify-end gap-2.5">
               <div className="max-w-[78%] rounded-2xl rounded-tr-md bg-keeper-user px-4 py-2.5 text-sm leading-relaxed text-white shadow-cyanSm">
@@ -36,37 +80,46 @@ export function MessageList({ messages }: MessageListProps) {
         ) : (
           <div key={msg.id} className="flex items-start gap-2.5">
             <AgentAvatar size="md" className="mt-0.5" />
-            <div className="flex min-w-0 max-w-[78%] flex-col gap-1">
-              <div className="keeper-glass-soft rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed text-keeper-ice shadow-sm">
-                {msg.thinking && !msg.content ? (
-                  <span className="inline-flex items-center gap-2 text-keeper-ice/60">
-                    思考中
-                    <span className="inline-flex gap-1">
-                      {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-keeper-cyan shadow-[0_0_6px_#30BCED]"
-                          style={{ animationDelay: `${i * 160}ms` }}
-                        />
-                      ))}
+            <div className="flex min-w-0 max-w-[78%] flex-col gap-1.5">
+              {msg.toolCalls && msg.toolCalls.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  {msg.toolCalls.map((tc) => (
+                    <ToolCallCard key={tc.callId} toolCall={tc} />
+                  ))}
+                </div>
+              )}
+              {showTextBubble && (
+                <div className="keeper-glass-soft rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed text-keeper-ice shadow-sm">
+                  {msg.thinking && !msg.content ? (
+                    <span className="inline-flex items-center gap-2 text-keeper-ice/60">
+                      思考中
+                      <span className="inline-flex gap-1">
+                        {[0, 1, 2].map((i) => (
+                          <span
+                            key={i}
+                            className="h-1.5 w-1.5 animate-bounce rounded-full bg-keeper-cyan shadow-[0_0_6px_#30BCED]"
+                            style={{ animationDelay: `${i * 160}ms` }}
+                          />
+                        ))}
+                      </span>
                     </span>
-                  </span>
-                ) : (
-                  <p className="whitespace-pre-wrap break-words">
-                    {msg.content}
-                    {msg.streaming && (
-                      <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-keeper-cyan shadow-[0_0_8px_#30BCED]" />
-                    )}
-                  </p>
-                )}
-              </div>
+                  ) : (
+                    <p className="whitespace-pre-wrap break-words">
+                      {msg.content}
+                      {msg.streaming && (
+                        <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-keeper-cyan shadow-[0_0_8px_#30BCED]" />
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
               {msg.createdAt && !msg.streaming && (
                 <span className="pl-1 text-[10px] text-keeper-ice/35">{formatTime(msg.createdAt)}</span>
               )}
             </div>
           </div>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }

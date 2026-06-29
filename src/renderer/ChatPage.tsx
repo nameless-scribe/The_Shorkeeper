@@ -29,7 +29,7 @@ export function ChatPage() {
     <div className="relative h-screen overflow-hidden rounded-3xl border border-keeper-silver/25 shadow-cyanSm">
       <AppBackground />
 
-      <div className="relative z-10 flex h-full flex-col">
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
         <TitleBar status={status} />
         <MessageList messages={messages} />
         {error && (

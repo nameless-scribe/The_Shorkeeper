@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AgUiEvent } from '@/shared/types';
+import type { UiToolCall } from '../components/ToolCallCard';
 
 export interface UiMessage {
   id: string;
@@ -7,6 +8,7 @@ export interface UiMessage {
   content: string;
   streaming?: boolean;
   thinking?: boolean;
+  toolCalls?: UiToolCall[];
   createdAt?: number;
 }
 
@@ -85,11 +87,50 @@ export function useAgentEvents(
         );
       }
 
-      if (event.type === 'tool_call_start' || event.type === 'tool_call_end') {
+      if (event.type === 'tool_call_start') {
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== streamId) return m;
+            const existing = m.toolCalls ?? [];
+            if (existing.some((tc) => tc.callId === event.callId)) {
+              return m;
+            }
+            return {
+              ...m,
+              thinking: false,
+              streaming: true,
+              toolCalls: [
+                ...existing,
+                {
+                  callId: event.callId,
+                  name: event.name,
+                  args: event.args,
+                  status: 'running' as const,
+                },
+              ],
+            };
+          }),
+        );
+      }
+
+      if (event.type === 'tool_call_end') {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === streamId && !m.content
-              ? { ...m, thinking: true, streaming: true }
+            m.id === streamId
+              ? {
+                  ...m,
+                  toolCalls: (m.toolCalls ?? []).map((tc) =>
+                    tc.callId === event.callId
+                      ? {
+                          ...tc,
+                          status: event.result.success
+                            ? ('done' as const)
+                            : ('error' as const),
+                          result: event.result,
+                        }
+                      : tc,
+                  ),
+                }
               : m,
           ),
         );
@@ -100,17 +141,24 @@ export function useAgentEvents(
         currentRunId = null;
         setMessages((prev) => {
           const streamMsg = prev.find((m) => m.id === streamId);
+          const toolCalls = streamMsg?.toolCalls;
+          const hasToolCalls = Boolean(toolCalls?.length);
+          const hasContent = Boolean(streamMsg?.content.trim());
+
           const withoutEmpty = prev
             .map((m) =>
               m.id === streamId
                 ? { ...m, streaming: false, thinking: false }
                 : m,
             )
-            .filter((m) => !(m.id === streamId && !m.content.trim()));
+            .filter(
+              (m) =>
+                !(m.id === streamId && !m.content.trim() && !hasToolCalls),
+            );
 
           if (sessionId) {
             window.shorekeeper.messages.list(sessionId).then((list) => {
-              const dbMessages = list
+              const dbMessages: UiMessage[] = list
                 .filter((m) => m.role === 'user' || m.role === 'assistant')
                 .map((m) => ({
                   id: m.id,
@@ -119,7 +167,16 @@ export function useAgentEvents(
                   createdAt: m.createdAt,
                 }));
 
-              if (dbMessages.length > 0 || !streamMsg?.content.trim()) {
+              if (toolCalls?.length) {
+                for (let i = dbMessages.length - 1; i >= 0; i -= 1) {
+                  if (dbMessages[i].role === 'assistant') {
+                    dbMessages[i] = { ...dbMessages[i], toolCalls };
+                    break;
+                  }
+                }
+              }
+
+              if (dbMessages.length > 0 || (!hasContent && !hasToolCalls)) {
                 setMessages(dbMessages);
               }
             });

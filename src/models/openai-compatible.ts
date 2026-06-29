@@ -42,16 +42,38 @@ function accumulateToolCallDelta(
 ): void {
   if (!delta?.tool_calls) return;
   for (const tc of delta.tool_calls) {
-    if (!acc[tc.index]) {
-      acc[tc.index] = { id: '', name: '', arguments: '' };
+    let slot =
+      tc.id !== undefined && tc.id !== ''
+        ? findSlotById(acc, tc.id)
+        : undefined;
+    if (slot === undefined) {
+      slot = tc.index ?? nextFreeSlot(acc);
     }
-    if (tc.id) acc[tc.index].id = tc.id;
-    if (tc.function?.name) acc[tc.index].name = tc.function.name;
-    if (tc.function?.arguments) acc[tc.index].arguments += tc.function.arguments;
+    if (!acc[slot]) {
+      acc[slot] = { id: '', name: '', arguments: '' };
+    }
+    if (tc.id) acc[slot].id = tc.id;
+    if (tc.function?.name) acc[slot].name = tc.function.name;
+    if (tc.function?.arguments) {
+      acc[slot].arguments += tc.function.arguments;
+    }
   }
 }
 
+function findSlotById(acc: ToolCallAccumulator, id: string): number | undefined {
+  const hit = Object.entries(acc).find(([, value]) => value.id === id);
+  return hit ? Number(hit[0]) : undefined;
+}
+
+function nextFreeSlot(acc: ToolCallAccumulator): number {
+  const indices = Object.keys(acc).map(Number);
+  return indices.length ? Math.max(...indices) + 1 : 0;
+}
+
 function toOpenAIToolCalls(acc: ToolCallAccumulator): OpenAIToolCall[] {
+  const seenIds = new Set<string>();
+  const seenFallback = new Set<string>();
+
   return Object.keys(acc)
     .map(Number)
     .sort((a, b) => a - b)
@@ -63,7 +85,16 @@ function toOpenAIToolCalls(acc: ToolCallAccumulator): OpenAIToolCall[] {
         arguments: acc[index].arguments,
       },
     }))
-    .filter((tc) => tc.id && tc.function.name);
+    .filter((tc) => tc.id && tc.function.name)
+    .filter((tc) => {
+      if (seenIds.has(tc.id)) return false;
+      seenIds.add(tc.id);
+
+      const fallbackKey = `${tc.function.name}\0${tc.function.arguments}`;
+      if (seenFallback.has(fallbackKey)) return false;
+      seenFallback.add(fallbackKey);
+      return true;
+    });
 }
 
 function mergeMessageToolCalls(
@@ -72,7 +103,18 @@ function mergeMessageToolCalls(
 ): void {
   if (!toolCalls?.length) return;
   toolCalls.forEach((tc, index) => {
-    const slot = tc.index ?? index;
+    let slot =
+      tc.id !== undefined && tc.id !== ''
+        ? findSlotById(acc, tc.id)
+        : undefined;
+
+    if (slot === undefined) {
+      slot = tc.index ?? index;
+      if (acc[slot]?.id && tc.id && acc[slot].id !== tc.id) {
+        slot = nextFreeSlot(acc);
+      }
+    }
+
     if (!acc[slot]) {
       acc[slot] = { id: '', name: '', arguments: '' };
     }
