@@ -483,11 +483,28 @@ git commit -m "feat(m2): tool call cards in chat ui"
 
 **实现说明（验收记录）：**
 
-- Schema：`0001_memory_worldbook.sql` + 可选 `0002_worldbook_fts5.sql`（sql.js 运行时以关键词匹配为主）
-- 上下文：`context-builder.ts` 按 DESIGN §5.1 组装；orchestrator 已接入
-- 工具：`recall_memory`、`search_worldbook`、`save_memory`
-- 设置：顶栏 ⚙ → 用户画像 / Worldbook 管理（`SettingsDrawer`）
-- 已验：Worldbook 命中（如「介绍一下守岸人」）、`long_term_memory` / `user_profile` 表有数据
+- Schema：`0001_memory_worldbook.sql`、`0002_worldbook_fts5.sql`（可选）、`0003_memory_key.sql`（`memory_key` 唯一索引）
+- 长期记忆：**结构化 key + `upsertMemory`**（同 key 更新不重复插入）；自动提取仅分析**本轮对话增量**，并附带已有记忆列表供 LLM 去重
+- 辅助模块：`extraction-state.ts`（每条用户消息只提取一次）、`dedupe.ts`（无 key 的自由文本兜底）
+- 上下文：`context-builder.ts` 按 DESIGN §5.1 组装；`orchestrator` 已接入
+- 工具：`recall_memory`、`search_worldbook`、`save_memory`（支持 `key` 参数）
+- 设置：顶栏 ⚙ → **用户画像** / **Worldbook**（`SettingsDrawer`、`ProfilePage`、`WorldbookPage`）
+- IPC：`electron/ipc/profile.ts`、`electron/ipc/worldbook.ts`
+- Worldbook：sql.js 运行时以**关键词匹配**为主；系统 SQLite / 完整 FTS5 为可选增强
+- 已验：Worldbook 命中（如「介绍一下守岸人」）、`long_term_memory` / `user_profile` 有数据
+- 延后 M5：向量语义去重（如「拿铁」vs「咖啡」）、RAG 片段注入
+
+**主要源文件：**
+
+| 区域 | 路径 |
+|------|------|
+| 记忆 CRUD / upsert | `src/memory/long-term.ts` |
+| 用户画像 | `src/memory/user-profile.ts` |
+| Worldbook | `src/memory/worldbook.ts` |
+| 对话后提取 | `src/memory/summarizer.ts` |
+| 上下文组装 | `src/agent/context-builder.ts` |
+| 记忆工具 | `src/tools/memory/memory-tools.ts` |
+| 单测 | `src/memory/__tests__/memory.test.ts` |
 
 ---
 
@@ -501,7 +518,7 @@ git commit -m "feat(m2): tool call cards in chat ui"
 
 - [x] **Step 2** 手写 migration 创建 `worldbook_fts` 虚表及 trigger 同步
 
-- [x] **Step 3** `pnpm db:migrate`
+- [x] **Step 3** `pnpm db:migrate`（应用启动时自动执行；亦可 `pnpm db:init`）
 
 - [ ] **Step 4** Commit
 
@@ -520,7 +537,7 @@ git commit -m "feat(m3): memory and worldbook schema"
 
 - [x] **Step 2** `searchMemories(query, limit)` 先用 SQL `LIKE` 或按 importance 排序（向量 M5 再加）
 
-- [x] **Step 3** `saveMemory(content, importance, sessionId)`
+- [x] **Step 3** `saveMemory` / `upsertMemory(memoryKey, content, …)`
 
 - [x] **Step 4** 单测
 
@@ -573,11 +590,11 @@ git commit -m "feat(m3): context builder and memory tools"
 ### Task M3-5：记忆提取（run 结束后）
 
 **Files:**
-- Create: `src/memory/summarizer.ts`
+- Create: `src/memory/summarizer.ts`, `src/memory/extraction-state.ts`
 
-- [x] **Step 1** `run_finished` 后异步调用 LLM：「从对话提取值得长期记住的事实」
+- [x] **Step 1** `run_finished` 后异步调用 LLM，**仅分析本轮 user+assistant**，输出结构化 `[{key, content}]`
 
-- [x] **Step 2** 去重：与已有记忆相似度简单字符串比较或后续向量
+- [x] **Step 2** 去重：`upsertMemory` 按 `memory_key` 更新；提取 prompt 含已有记忆；无 key 文本用简单子串去重（语义向量 → M5）
 
 - [ ] **Step 3** Commit
 
@@ -587,17 +604,20 @@ git commit -m "feat(m3): post-run memory extraction"
 
 ---
 
-### Task M3-6：设置页 Worldbook 管理（基础）
+### Task M3-6：设置页（用户画像 + Worldbook）
 
 **Files:**
-- Create: `src/renderer/settings/WorldbookPage.tsx`, `electron/ipc/worldbook.ts`
+- Create: `src/renderer/settings/SettingsDrawer.tsx`, `ProfilePage.tsx`, `WorldbookPage.tsx`
+- Create: `electron/ipc/profile.ts`, `electron/ipc/worldbook.ts`
 
-- [x] **Step 1** 列表、新增、编辑、删除、启用开关
+- [x] **Step 1** Worldbook：列表、新增、编辑、删除、启用开关
 
-- [ ] **Step 2** Commit
+- [x] **Step 2** 用户画像：键值编辑（如 `nickname`）
+
+- [ ] **Step 3** Commit
 
 ```bash
-git commit -m "feat(m3): worldbook settings ui"
+git commit -m "feat(m3): settings ui for profile and worldbook"
 ```
 
 ---
@@ -605,7 +625,7 @@ git commit -m "feat(m3): worldbook settings ui"
 ### M3 验收清单
 
 - [x] Worldbook 命中内容出现在回复语境中
-- [x] 多轮对话后长期记忆表有新增
+- [x] 多轮对话后长期记忆表有新增（`memory_key` 同主题不重复膨胀）
 - [x] 用户画像可在设置中编辑
 
 ---
@@ -1103,6 +1123,7 @@ git tag v0.2.0-m2
 | 0.1.1 | 2026-06-29 | M1 验收完成，标记可进入 M2 |
 | 0.1.2 | 2026-06-29 | M2 验收完成，进入 M3 |
 | 0.1.3 | 2026-06-29 | M3 验收完成，进入 M4 |
+| 0.1.4 | 2026-06-29 | M3 文档补充：结构化 memory_key、upsert、增量提取 |
 
 ---
 

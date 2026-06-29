@@ -16,6 +16,11 @@ export function ChatPage() {
     if (!window.shorekeeper) return;
     window.shorekeeper.app.status().then(setStatus).catch(console.error);
     window.shorekeeper.sessions.current().then((s) => setSessionId(s.id)).catch(console.error);
+
+    const off = window.shorekeeper.window.onOpenSettings(() => setSettingsOpen(true));
+    return () => {
+      off();
+    };
   }, []);
 
   const ensureSession = useCallback(async () => {

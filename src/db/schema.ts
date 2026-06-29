@@ -23,3 +23,29 @@ export interface WorldbookEntryRow {
   enabled: number;
   created_at: number;
 }
+
+export interface TokenUsageRow {
+  id: string;
+  session_id: string | null;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  created_at: number;
+}
+
+export interface ScheduledTaskRow {
+  id: string;
+  name: string;
+  cron: string;
+  action_type: string;
+  action_payload: string;
+  enabled: number;
+  last_run_at: number | null;
+}
+
+export interface WindowBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}

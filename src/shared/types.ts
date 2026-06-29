@@ -67,3 +67,20 @@ export interface AppStatus {
   apiConfigured: boolean;
   databasePath: string;
 }
+
+export interface TokenUsageSummaryInfo {
+  today: number;
+  week: number;
+  total: number;
+  dailyLast7: { date: string; tokens: number }[];
+}
+
+export interface ScheduledTaskInfo {
+  id: string;
+  name: string;
+  cron: string;
+  actionType: string;
+  actionPayload: string;
+  enabled: boolean;
+  lastRunAt: number | null;
+}

@@ -1,10 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  AgentPresenceState,
   AgentSendPayload,
   AppStatus,
   MessageInfo,
   ProfileEntryInfo,
+  ScheduledTaskInfo,
   SessionInfo,
+  TokenUsageSummaryInfo,
   WorldbookEntryInfo,
 } from '../src/shared/types';
 
@@ -15,7 +18,9 @@ const shorekeeperApi = {
     onEvent: (callback: (event: unknown) => void) => {
       const listener = (_: Electron.IpcRendererEvent, data: unknown) => callback(data);
       ipcRenderer.on('agent:event', listener);
-      return () => ipcRenderer.removeListener('agent:event', listener);
+      return () => {
+        ipcRenderer.removeListener('agent:event', listener);
+      };
     },
   },
   app: {
@@ -54,9 +59,46 @@ const shorekeeperApi = {
     ) => ipcRenderer.invoke('worldbook:update', id, patch),
     delete: (id: string) => ipcRenderer.invoke('worldbook:delete', id),
   },
+  stats: {
+    getTokenUsage: (): Promise<TokenUsageSummaryInfo> =>
+      ipcRenderer.invoke('stats:getTokenUsage'),
+  },
+  presence: {
+    get: (): Promise<AgentPresenceState> => ipcRenderer.invoke('presence:get'),
+    feed: () => ipcRenderer.invoke('presence:feed'),
+  },
+  tasks: {
+    list: (): Promise<ScheduledTaskInfo[]> => ipcRenderer.invoke('tasks:list'),
+    create: (input: {
+      name: string;
+      cron: string;
+      actionType: string;
+      actionPayload: string;
+      enabled?: boolean;
+    }) => ipcRenderer.invoke('tasks:create', input),
+    update: (
+      id: string,
+      patch: Partial<{
+        name: string;
+        cron: string;
+        actionType: string;
+        actionPayload: string;
+        enabled: boolean;
+      }>,
+    ) => ipcRenderer.invoke('tasks:update', id, patch),
+    delete: (id: string) => ipcRenderer.invoke('tasks:delete', id),
+  },
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),
     close: () => ipcRenderer.send('window:close'),
+    show: (kind: 'chat' | 'status' | 'schedule') => ipcRenderer.invoke('window:show', kind),
+    hide: (kind: 'chat' | 'status' | 'schedule') => ipcRenderer.invoke('window:hide', kind),
+    openSettings: () => ipcRenderer.invoke('window:openSettings'),
+    onOpenSettings: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('chat:openSettings', listener);
+      return () => ipcRenderer.removeListener('chat:openSettings', listener);
+    },
   },
 };
 

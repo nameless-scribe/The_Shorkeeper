@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { ProfilePage } from './ProfilePage';
 import { WorldbookPage } from './WorldbookPage';
+import { TasksPage } from './TasksPage';
 
-type SettingsTab = 'profile' | 'worldbook';
+type SettingsTab = 'profile' | 'worldbook' | 'tasks';
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -51,10 +52,23 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
         >
           Worldbook
         </button>
+        <button
+          type="button"
+          onClick={() => setTab('tasks')}
+          className={`rounded-lg px-3 py-1.5 text-xs ${
+            tab === 'tasks'
+              ? 'bg-keeper-cyan/20 text-keeper-cyan'
+              : 'text-keeper-ice/60 hover:text-keeper-ice'
+          }`}
+        >
+          定时任务
+        </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {tab === 'profile' ? <ProfilePage /> : <WorldbookPage />}
+        {tab === 'profile' && <ProfilePage />}
+        {tab === 'worldbook' && <WorldbookPage />}
+        {tab === 'tasks' && <TasksPage />}
       </div>
     </div>
   );

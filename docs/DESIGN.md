@@ -124,8 +124,8 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 | 样式 | Tailwind CSS | 主题、毛玻璃、渐变 |
 | 图表 | Recharts | Token 周趋势 |
 | Live2D | PixiJS + pixi-live2d-display | 桌宠渲染 |
-| 数据库 | SQLite (`better-sqlite3`) | 嵌入式主库 |
-| ORM | Drizzle ORM | Schema 与迁移 |
+| 数据库 | SQLite（运行时 **sql.js**；设计原案 better-sqlite3） | 嵌入式主库 |
+| Schema | `src/db/schema.ts` + 手写 SQL migration | 类型与迁移 |
 | 全文检索 | SQLite FTS5 | Worldbook 关键词 |
 | 向量检索 | sqlite-vec（M5 阶段） | RAG、语义记忆 |
 | 定时任务 | node-cron | 本地调度 |
@@ -134,15 +134,15 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 
 ### 4.2 数据库选型结论
 
-**主库：SQLite + Drizzle**
+**主库：SQLite（sql.js + 手写 migration）**
 
-理由：Electron 主进程友好、单文件备份、覆盖结构化存储与中等规模检索、无守护进程。
+理由：Electron 主进程友好、单文件备份、WASM 实现免 native 编译（Windows 兼容）。详见 [DATABASE.md](./DATABASE.md)。
 
 分阶段扩展：
 
 - M1：基础表（sessions, messages）
-- M3：记忆表 + FTS5（worldbook）
-- M5：sqlite-vec（document_chunks 向量）
+- M3：记忆表 + Worldbook + `memory_key` upsert + FTS5（可选）
+- M5：sqlite-vec（document_chunks 向量）、语义记忆去重
 - 未来若文档量极大（>5 万 chunk）：评估 SQLite + LanceDB 双库
 
 ### 4.3 模型适配
@@ -254,7 +254,7 @@ interface ToolContext {
 | 阶段 | 工具 |
 |------|------|
 | M2 | `read_file`, `list_dir`, `web_search` |
-| M3 | `recall_memory`, `search_worldbook` |
+| M3 | `recall_memory`, `search_worldbook`, `save_memory`（可选 `key`） |
 | M6 | `write_file`, `fetch_url`, `get_weather`, `translate` |
 | M7 | `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`, `bookkeeping`, `travel_plan` |
 
@@ -272,8 +272,25 @@ MCP 工具在运行时动态合并，与内置工具同名时 MCP 优先或加�
 
 **长期记忆写入时机**：
 
-- 每次 `run_finished` 后，异步任务调用 LLM 提取值得记住的事实
-- 或通过工具 `save_memory` 显式写入
+- 每次 `run_finished` 后，异步任务仅分析**本轮** user+assistant 消息，LLM 输出 `[{key, content}]`，经 `upsertMemory` 写入（同 `memory_key` 更新而非新增）
+- 提取前将已有记忆列表注入 prompt，避免重复提取同一主题
+- 每条用户消息通过 `extraction-state` 仅触发一次提取
+- 或通过工具 `save_memory` 显式写入（推荐带 `key`；无 key 时走自由文本 + 子串去重）
+
+**memory_key 命名（示例）**：
+
+| key | 含义 |
+|-----|------|
+| `user.nickname` | 称呼 / 名字 |
+| `user.preference.*` | 偏好 |
+| `user.schedule.*` | 作息、忙碌时段 |
+| `user.habit.*` | 习惯 |
+| `user.other.*` | 其他事实 |
+
+**去重策略**：
+
+- M3：结构化 **key upsert**（主路径）+ 无 key 文本的子串匹配（兜底）
+- M5：向量语义相似度合并（如不同表述的同一偏好）
 
 **压缩策略**：
 
@@ -478,10 +495,11 @@ interface AgentPresenceState {
 | 列 | 类型 | 说明 |
 |----|------|------|
 | id | TEXT PK | UUID |
+| memory_key | TEXT | 可选；结构化键（如 `user.nickname`），唯一索引，同 key upsert |
 | content | TEXT | 记忆内容 |
 | importance | REAL | 0-1 |
 | source_session_id | TEXT | 来源会话 |
-| created_at | INTEGER | Unix ms |
+| created_at | INTEGER | Unix ms（更新时刷新） |
 
 #### worldbook_entries
 
@@ -649,8 +667,9 @@ TheShorekeeper/
 │   │   └── ...
 │   └── ipc/
 │       ├── agent.ts
-│       ├── settings.ts
-│       └── history.ts
+│       ├── session.ts
+│       ├── profile.ts
+│       └── worldbook.ts
 ├── src/
 │   ├── agent/
 │   │   ├── orchestrator.ts
@@ -669,9 +688,12 @@ TheShorekeeper/
 │   ├── mcp/
 │   │   └── client.ts
 │   ├── memory/
-│   │   ├── long-term.ts
+│   │   ├── long-term.ts          # saveMemory / upsertMemory
 │   │   ├── user-profile.ts
-│   │   └── summarizer.ts
+│   │   ├── worldbook.ts
+│   │   ├── summarizer.ts         # 本轮增量提取
+│   │   ├── extraction-state.ts
+│   │   └── dedupe.ts
 │   ├── rag/
 │   │   ├── importer.ts
 │   │   ├── chunker.ts
@@ -684,7 +706,7 @@ TheShorekeeper/
 │   │   └── cron.ts
 │   └── db/
 │       ├── index.ts
-│       ├── schema.ts             # Drizzle schema
+│       ├── schema.ts             # 表类型定义
 │       └── migrations/
 ├── src/renderer/
 │   ├── live2d/
@@ -716,7 +738,7 @@ TheShorekeeper/
 |--------|------|--------|
 | **M1** | 基础脚手架 | Electron+Vite+React，单窗聊天，流式 LLM，SQLite sessions/messages |
 | **M2** | Agent 核心 | Tool loop，AG-UI 事件，3 个内置工具，权限骨架 |
-| **M3** | 记忆 | 长期记忆，Worldbook+FTS5，上下文组装 |
+| **M3** | 记忆 | 结构化长期记忆（memory_key upsert）、Worldbook、上下文组装、设置页 |
 | **M4** | 多窗 UI | 状态面板、Token 统计、定时任务表 |
 | **M5** | Live2D | 透明窗桌宠，动作联动，RAG+sqlite-vec |
 | **M6** | 扩展 | MCP，技能系统，TTS |

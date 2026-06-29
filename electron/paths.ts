@@ -1,0 +1,13 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** 与 main.js、preload.mjs 同级的 dist-electron 目录 */
+const electronDist = path.dirname(fileURLToPath(import.meta.url));
+
+export function getPreloadPath(): string {
+  return path.join(electronDist, 'preload.mjs');
+}
+
+export function getRendererIndexPath(): string {
+  return path.join(electronDist, '../dist/index.html');
+}

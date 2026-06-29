@@ -1,19 +1,24 @@
-import { ipcMain, type WebContents } from 'electron';
+import { ipcMain } from 'electron';
 import type { AgentSendPayload } from '../../src/shared/types';
 import { runOrchestrator } from '../../src/agent/orchestrator';
+import { getModelConfigSafe } from '../../src/models/config';
+import { recordTokenUsage } from '../../src/db/token-usage';
+import {
+  broadcastAgentEvent,
+  onRunError,
+  onRunFinished,
+  onRunStarted,
+} from '../state/presence';
 
 const activeRuns = new Map<string, AbortController>();
 
-function broadcastEvent(webContents: WebContents | null, event: unknown) {
-  webContents?.send('agent:event', event);
-}
-
-export function registerAgentIpc(getWindow: () => Electron.BrowserWindow | null) {
+export function registerAgentIpc() {
   ipcMain.handle('agent:send', async (_event, payload: AgentSendPayload) => {
-    const window = getWindow();
     const controller = new AbortController();
     const runKey = `${payload.sessionId ?? 'default'}:${Date.now()}`;
     activeRuns.set(runKey, controller);
+
+    onRunStarted();
 
     try {
       for await (const agEvent of runOrchestrator(
@@ -22,12 +27,32 @@ export function registerAgentIpc(getWindow: () => Electron.BrowserWindow | null)
         controller.signal,
       )) {
         if (controller.signal.aborted) break;
-        broadcastEvent(window?.webContents ?? null, agEvent);
+
+        if (agEvent.type === 'usage') {
+          const config = getModelConfigSafe();
+          if (config) {
+            recordTokenUsage({
+              sessionId: payload.sessionId,
+              model: config.model,
+              promptTokens: agEvent.promptTokens,
+              completionTokens: agEvent.completionTokens,
+            });
+          }
+        }
+
+        if (agEvent.type === 'run_finished') {
+          onRunFinished();
+        } else if (agEvent.type === 'run_error') {
+          onRunError();
+        }
+
+        broadcastAgentEvent(agEvent);
       }
       return { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      broadcastEvent(window?.webContents ?? null, {
+      onRunError();
+      broadcastAgentEvent({
         type: 'run_error',
         runId: runKey,
         message,
@@ -43,6 +68,7 @@ export function registerAgentIpc(getWindow: () => Electron.BrowserWindow | null)
       controller.abort();
     }
     activeRuns.clear();
+    onRunError();
     return { ok: true };
   });
 }

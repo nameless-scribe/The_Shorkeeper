@@ -1,0 +1,36 @@
+import { BrowserWindow, ipcMain } from 'electron';
+import { getWindowManager } from '../windows/manager';
+
+function windowFromSender(sender: Electron.WebContents): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(sender);
+}
+
+export function registerWindowIpc() {
+  const manager = getWindowManager();
+
+  ipcMain.handle('window:show', (_event, kind: 'chat' | 'status' | 'schedule') => {
+    manager.show(kind);
+    return { ok: true };
+  });
+
+  ipcMain.handle('window:hide', (_event, kind: 'chat' | 'status' | 'schedule') => {
+    manager.hide(kind);
+    return { ok: true };
+  });
+
+  ipcMain.handle('window:openSettings', () => {
+    manager.openChatSettings();
+    return { ok: true };
+  });
+
+  ipcMain.on('window:minimize', (event) => {
+    windowFromSender(event.sender)?.minimize();
+  });
+
+  ipcMain.on('window:close', (event) => {
+    const win = windowFromSender(event.sender);
+    if (win) {
+      win.hide();
+    }
+  });
+}

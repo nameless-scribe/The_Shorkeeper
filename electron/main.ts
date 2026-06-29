@@ -1,52 +1,35 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { registerAgentIpc } from './ipc/agent';
 import { registerSessionIpc } from './ipc/session';
 import { registerProfileIpc } from './ipc/profile';
 import { registerWorldbookIpc } from './ipc/worldbook';
+import { registerStatsIpc } from './ipc/stats';
+import { registerPresenceIpc } from './ipc/presence';
+import { registerWindowIpc } from './ipc/window';
+import { registerTasksIpc } from './ipc/tasks';
 import { initDatabase, closeDatabase } from '../src/db';
+import { createTray, hideAllWindowsToTray, shouldMinimizeToTray } from './tray';
+import { createChatWindow } from './windows/chat';
+import { createStatusWindow } from './windows/status';
+import { createScheduleWindow } from './windows/schedule';
+import { getWindowManager } from './windows/manager';
+import { emitInitialState } from './state/presence';
+import { startScheduler, stopScheduler } from './scheduler/cron';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 config({ path: path.join(process.cwd(), '.env') });
 
-let chatWindow: BrowserWindow | null = null;
-
-function createChatWindow() {
-  chatWindow = new BrowserWindow({
-    width: 420,
-    height: 720,
-    minWidth: 360,
-    minHeight: 520,
-    title: 'The Shorekeeper',
-    frame: false,
-    transparent: true,
-    resizable: true,
-    show: false,
-    backgroundColor: '#00000000',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      // sandbox 必须为 true，preload 才能以 CJS(require) 正常加载
-      sandbox: true,
-    },
+function attachTrayCloseBehavior(win: BrowserWindow): void {
+  win.on('close', (event) => {
+    if (shouldMinimizeToTray()) {
+      event.preventDefault();
+      win.hide();
+    }
   });
-
-  chatWindow.on('ready-to-show', () => chatWindow?.show());
-
-  chatWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
-    console.error('Preload 加载失败:', preloadPath, error);
-  });
-
-  if (process.env.VITE_DEV_SERVER_URL) {
-    chatWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    // 开发时可按 F12 自行打开 DevTools，避免 detached 窗口干扰
-  } else {
-    chatWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
 }
 
 app.whenReady().then(async () => {
@@ -55,26 +38,52 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error('数据库初始化失败:', err);
   }
-  registerAgentIpc(() => chatWindow);
+
+  registerAgentIpc();
   registerSessionIpc();
   registerProfileIpc();
   registerWorldbookIpc();
+  registerStatsIpc();
+  registerPresenceIpc();
+  registerWindowIpc();
+  registerTasksIpc();
 
-  ipcMain.on('window:minimize', () => chatWindow?.minimize());
-  ipcMain.on('window:close', () => chatWindow?.close());
+  createTray();
 
-  createChatWindow();
+  for (const win of [createChatWindow(), createStatusWindow(), createScheduleWindow()]) {
+    attachTrayCloseBehavior(win);
+  }
+
+  emitInitialState();
+  startScheduler();
 });
 
 app.on('window-all-closed', () => {
+  if (shouldMinimizeToTray()) {
+    hideAllWindowsToTray();
+    return;
+  }
   if (process.platform !== 'darwin') {
+    stopScheduler();
     closeDatabase();
     app.quit();
   }
 });
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createChatWindow();
-  }
+app.on('before-quit', () => {
+  stopScheduler();
+  closeDatabase();
 });
+
+app.on('activate', () => {
+  if (managerHasVisibleWindows()) {
+    return;
+  }
+  getWindowManager().show('chat');
+});
+
+function managerHasVisibleWindows(): boolean {
+  return getWindowManager()
+    .getAllWindows()
+    .some((w) => w.isVisible());
+}
