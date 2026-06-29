@@ -8,6 +8,8 @@ import type {
   ScheduleKind,
   ScheduledTaskInfo,
   SessionInfo,
+  SessionListOptions,
+  SessionListResult,
   TokenUsageSummaryInfo,
   DockPreferencesInfo,
   WorkspaceAttachment,
@@ -38,7 +40,7 @@ const shorekeeperApi = {
     status: (): Promise<AppStatus> => ipcRenderer.invoke('app:status'),
   },
   sessions: {
-    list: (options?: { includeArchived?: boolean; query?: string }): Promise<SessionInfo[]> =>
+    list: (options?: SessionListOptions): Promise<SessionListResult> =>
       ipcRenderer.invoke('sessions:list', options),
     current: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:current'),
     create: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:create'),

@@ -10,6 +10,19 @@ export interface Session {
   compressed: boolean;
 }
 
+export interface ListSessionsOptions {
+  includeArchived?: boolean;
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SessionListResult {
+  sessions: Session[];
+  total: number;
+  hasMore: boolean;
+}
+
 function rowToSession(row: {
   id: string;
   title: string;
@@ -28,8 +41,37 @@ function rowToSession(row: {
   };
 }
 
-const SESSION_SELECT = `id, title, created_at, updated_at,
-  COALESCE(archived, 0) AS archived, COALESCE(compressed, 0) AS compressed`;
+const SESSION_SELECT = `s.id, s.title, s.created_at, s.updated_at,
+  COALESCE(s.archived, 0) AS archived, COALESCE(s.compressed, 0) AS compressed`;
+
+function buildSessionFilters(options: ListSessionsOptions): {
+  where: string;
+  params: unknown[];
+} {
+  const includeArchived = options.includeArchived ?? false;
+  const query = options.query?.trim();
+
+  let where = 'WHERE 1=1';
+  const params: unknown[] = [];
+
+  if (!includeArchived) {
+    where += ' AND COALESCE(s.archived, 0) = 0';
+  }
+
+  if (query) {
+    where += ` AND (
+      s.title LIKE ?
+      OR EXISTS (
+        SELECT 1 FROM messages m
+        WHERE m.session_id = s.id AND m.content LIKE ?
+      )
+    )`;
+    const pattern = `%${query}%`;
+    params.push(pattern, pattern);
+  }
+
+  return { where, params };
+}
 
 export function createSession(db: AppDatabase = getDatabase(), title = '新对话'): Session {
   const now = Date.now();
@@ -50,35 +92,46 @@ export function createSession(db: AppDatabase = getDatabase(), title = '新对�
 
 export function getSession(id: string, db: AppDatabase = getDatabase()): Session | null {
   const row = db
-    .prepare(`SELECT ${SESSION_SELECT} FROM sessions WHERE id = ?`)
+    .prepare(
+      `SELECT id, title, created_at, updated_at,
+              COALESCE(archived, 0) AS archived, COALESCE(compressed, 0) AS compressed
+       FROM sessions WHERE id = ?`,
+    )
     .get(id);
   if (!row) return null;
   return rowToSession(row as Parameters<typeof rowToSession>[0]);
 }
 
 export function listSessions(
-  options?: { includeArchived?: boolean; query?: string },
+  options: ListSessionsOptions = {},
   db: AppDatabase = getDatabase(),
-): Session[] {
-  const includeArchived = options?.includeArchived ?? false;
-  const query = options?.query?.trim();
+): SessionListResult {
+  const limit = Math.max(1, options.limit ?? 50);
+  const offset = Math.max(0, options.offset ?? 0);
+  const { where, params } = buildSessionFilters(options);
 
-  let sql = `SELECT ${SESSION_SELECT} FROM sessions WHERE 1=1`;
-  const params: unknown[] = [];
+  const countRow = db
+    .prepare(`SELECT COUNT(*) AS total FROM sessions s ${where}`)
+    .get(...params) as { total: number } | undefined;
+  const total = Number(countRow?.total ?? 0);
 
-  if (!includeArchived) {
-    sql += ` AND COALESCE(archived, 0) = 0`;
-  }
+  const rows = db
+    .prepare(
+      `SELECT ${SESSION_SELECT}
+       FROM sessions s
+       ${where}
+       ORDER BY s.updated_at DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...params, limit, offset);
 
-  if (query) {
-    sql += ` AND title LIKE ?`;
-    params.push(`%${query}%`);
-  }
+  const sessions = rows.map((row) => rowToSession(row as Parameters<typeof rowToSession>[0]));
 
-  sql += ` ORDER BY updated_at DESC`;
-
-  const rows = db.prepare(sql).all(...params);
-  return rows.map((row) => rowToSession(row as Parameters<typeof rowToSession>[0]));
+  return {
+    sessions,
+    total,
+    hasMore: offset + sessions.length < total,
+  };
 }
 
 export function touchSession(id: string, db: AppDatabase = getDatabase()): void {
@@ -108,7 +161,7 @@ export function setSessionArchived(id: string, archived: boolean, db: AppDatabas
 }
 
 export function getOrCreateDefaultSession(db: AppDatabase = getDatabase()): Session {
-  const sessions = listSessions(undefined, db);
+  const { sessions } = listSessions({ limit: 1 }, db);
   if (sessions.length > 0) return sessions[0];
   return createSession(db);
 }

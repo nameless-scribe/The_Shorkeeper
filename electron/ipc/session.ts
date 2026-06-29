@@ -9,7 +9,7 @@ import {
 } from '../../src/db/repositories/sessions';
 import { getActiveSession, resetActiveSession, switchActiveSession } from '../../src/session/active';
 import { listMessages } from '../../src/db/repositories/messages';
-import type { AppStatus, MessageInfo, SessionInfo } from '../../src/shared/types';
+import type { AppStatus, MessageInfo, SessionInfo, SessionListOptions, SessionListResult } from '../../src/shared/types';
 
 function toSessionInfo(session: NonNullable<ReturnType<typeof getSession>>): SessionInfo {
   return {
@@ -35,8 +35,13 @@ export function registerSessionIpc() {
 
   ipcMain.handle(
     'sessions:list',
-    (_event, options?: { includeArchived?: boolean; query?: string }): SessionInfo[] => {
-      return listSessions(options).map(toSessionInfo);
+    (_event, options?: SessionListOptions): SessionListResult => {
+      const result = listSessions(options ?? {});
+      return {
+        items: result.sessions.map(toSessionInfo),
+        total: result.total,
+        hasMore: result.hasMore,
+      };
     },
   );
 

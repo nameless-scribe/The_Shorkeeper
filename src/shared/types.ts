@@ -94,6 +94,19 @@ export interface SessionInfo {
   compressed?: boolean;
 }
 
+export interface SessionListOptions {
+  includeArchived?: boolean;
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SessionListResult {
+  items: SessionInfo[];
+  total: number;
+  hasMore: boolean;
+}
+
 export interface MessageInfo {
   id: string;
   sessionId: string;

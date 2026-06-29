@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SessionInfo } from '@/shared/types';
 
-const MAX_SESSIONS = 50;
+const PAGE_SIZE = 30;
 
 function formatRelativeTime(ms: number): string {
   const diff = Date.now() - ms;
@@ -30,6 +30,9 @@ export function SessionHistoryPanel({
 }: SessionHistoryPanelProps) {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
@@ -39,20 +42,40 @@ export function SessionHistoryPanel({
     return () => clearTimeout(timer);
   }, [query]);
 
-  const refresh = useCallback(async () => {
-    const list = await window.shorekeeper.sessions.list({
-      includeArchived: showArchived,
-      query: debouncedQuery.trim() || undefined,
-    });
-    setSessions(list.slice(0, MAX_SESSIONS));
-    setLoading(false);
-  }, [debouncedQuery, showArchived]);
+  const fetchPage = useCallback(
+    async (offset: number, append: boolean) => {
+      const result = await window.shorekeeper.sessions.list({
+        includeArchived: showArchived,
+        query: debouncedQuery.trim() || undefined,
+        limit: PAGE_SIZE,
+        offset,
+      });
+      setSessions((prev) => (append ? [...prev, ...result.items] : result.items));
+      setHasMore(result.hasMore);
+      setTotal(result.total);
+    },
+    [debouncedQuery, showArchived],
+  );
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    refresh().catch(console.error);
-  }, [open, refresh, refreshKey]);
+    fetchPage(0, false)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [open, fetchPage, refreshKey]);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      await fetchPage(sessions.length, true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handleDelete = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -62,13 +85,17 @@ export function SessionHistoryPanel({
       const session = await window.shorekeeper.sessions.create();
       onSelect(session.id);
     }
-    await refresh();
+    setLoading(true);
+    await fetchPage(0, false);
+    setLoading(false);
   };
 
   const handleArchive = async (sessionId: string, archived: boolean, e: React.MouseEvent) => {
     e.stopPropagation();
     await window.shorekeeper.sessions.archive(sessionId, archived);
-    await refresh();
+    setLoading(true);
+    await fetchPage(0, false);
+    setLoading(false);
   };
 
   if (!open) return null;
@@ -81,7 +108,7 @@ export function SessionHistoryPanel({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索标题…"
+          placeholder="搜索标题或消息…"
           className="w-full rounded-lg border border-keeper-silver/15 bg-keeper-navy/40 px-2 py-1 text-xs text-keeper-ice placeholder:text-keeper-ice/40"
         />
         <label className="flex items-center gap-1.5 text-[10px] text-keeper-ice/55">
@@ -97,55 +124,69 @@ export function SessionHistoryPanel({
         {loading ? (
           <p className="px-2 py-3 text-xs text-keeper-ice/50">加载中…</p>
         ) : sessions.length === 0 ? (
-          <p className="px-2 py-3 text-xs text-keeper-ice/50">暂无历史</p>
+          <p className="px-2 py-3 text-xs text-keeper-ice/50">
+            {debouncedQuery.trim() ? '无匹配会话' : '暂无历史'}
+          </p>
         ) : (
-          <ul className="space-y-1">
-            {sessions.map((session) => {
-              const active = session.id === currentSessionId;
-              return (
-                <li key={session.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect(session.id)}
-                    className={`group w-full rounded-lg px-2.5 py-2 text-left transition ${
-                      active
-                        ? 'bg-keeper-cyan/20 text-keeper-cyan'
-                        : 'text-keeper-ice/75 hover:bg-white/5 hover:text-keeper-ice'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-1">
-                      <p className="truncate text-xs font-medium">{session.title || '新对话'}</p>
-                      <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          title={session.archived ? '取消归档' : '归档'}
-                          onClick={(e) => void handleArchive(session.id, !session.archived, e)}
-                          className="text-[10px] hover:text-keeper-cyan"
-                        >
-                          {session.archived ? '↩' : '📦'}
+          <>
+            <ul className="space-y-1">
+              {sessions.map((session) => {
+                const active = session.id === currentSessionId;
+                return (
+                  <li key={session.id}>
+                    <button
+                      type="button"
+                      onClick={() => onSelect(session.id)}
+                      className={`group w-full rounded-lg px-2.5 py-2 text-left transition ${
+                        active
+                          ? 'bg-keeper-cyan/20 text-keeper-cyan'
+                          : 'text-keeper-ice/75 hover:bg-white/5 hover:text-keeper-ice'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-1">
+                        <p className="truncate text-xs font-medium">{session.title || '新对话'}</p>
+                        <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            title={session.archived ? '取消归档' : '归档'}
+                            onClick={(e) => void handleArchive(session.id, !session.archived, e)}
+                            className="text-[10px] hover:text-keeper-cyan"
+                          >
+                            {session.archived ? '↩' : '📦'}
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            title="删除"
+                            onClick={(e) => void handleDelete(session.id, e)}
+                            className="text-[10px] hover:text-red-400"
+                          >
+                            ✕
+                          </span>
                         </span>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          title="删除"
-                          onClick={(e) => void handleDelete(session.id, e)}
-                          className="text-[10px] hover:text-red-400"
-                        >
-                          ✕
-                        </span>
-                      </span>
-                    </div>
-                    <p className="mt-0.5 text-[10px] opacity-60">
-                      {formatRelativeTime(session.updatedAt)}
-                      {session.compressed ? ' · 已压缩' : ''}
-                      {session.archived ? ' · 归档' : ''}
-                    </p>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                      </div>
+                      <p className="mt-0.5 text-[10px] opacity-60">
+                        {formatRelativeTime(session.updatedAt)}
+                        {session.compressed ? ' · 已压缩' : ''}
+                        {session.archived ? ' · 归档' : ''}
+                      </p>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {hasMore && (
+              <button
+                type="button"
+                onClick={() => void handleLoadMore()}
+                disabled={loadingMore}
+                className="mt-2 w-full rounded-lg py-1.5 text-[10px] text-keeper-cyan/80 hover:bg-white/5 hover:text-keeper-cyan disabled:opacity-50"
+              >
+                {loadingMore ? '加载中…' : `加载更多（${sessions.length}/${total}）`}
+              </button>
+            )}
+          </>
         )}
       </div>
     </aside>

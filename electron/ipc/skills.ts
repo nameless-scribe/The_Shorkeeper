@@ -5,6 +5,7 @@ import {
   toggleSkill,
 } from '../../src/skills/state';
 import { invalidateAgentRegistry } from '../../src/tools/agent-registry';
+import { invalidateStableContext } from '../../src/agent/stable-context';
 
 export function registerSkillsIpc(): void {
   ipcMain.handle('skills:list', () => listSkillsWithState());
@@ -14,6 +15,7 @@ export function registerSkillsIpc(): void {
   ipcMain.handle('skills:toggle', (_event, id: string, enabled: boolean) => {
     toggleSkill(id, enabled);
     invalidateAgentRegistry();
+    invalidateStableContext();
     return listSkillsWithState();
   });
 }
