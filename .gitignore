@@ -1,0 +1,30 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-electron/
+release/
+.vite/
+
+# 环境变量（含 API Key，切勿提交）
+.env
+.env.local
+.env.*.local
+
+# 本地 SQLite（数据库在 D:\SQLlite，此处防误提交）
+*.db
+*.db-shm
+*.db-wal
+
+# Live2D 模型资源（体积大、有版权，见 docs/DESIGN.md）
+assets/live2d/
+
+# 日志与系统文件
+*.log
+.DS_Store
+Thumbs.db
+
+# 编辑器（可选，按需取消注释）
+# .vscode/
+# .idea/
