@@ -1,11 +1,22 @@
 import { createPortal } from 'react-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { PermissionRequestPayload } from '@/shared/types';
 import { toolDisplayName } from './tool-labels';
 
-function truncate(text: string, max = 2400): string {
+function truncate(text: string, max = 1200): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max)}\n…（已截断，共 ${text.length} 字符）`;
+}
+
+function normalizeArgs(args: unknown): unknown {
+  if (typeof args === 'string') {
+    try {
+      return JSON.parse(args) as unknown;
+    } catch {
+      return args;
+    }
+  }
+  return args;
 }
 
 function formatFallbackArgs(args: unknown): string {
@@ -22,16 +33,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function ArgPreview({ args }: { args: unknown }) {
-  if (!isRecord(args)) {
+  const [showContent, setShowContent] = useState(false);
+  const normalized = normalizeArgs(args);
+
+  if (!isRecord(normalized)) {
     return (
       <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-keeper-ice/10 bg-black/35 p-3 font-mono text-[11px] leading-relaxed text-keeper-ice/75">
-        {formatFallbackArgs(args)}
+        {formatFallbackArgs(normalized)}
       </pre>
     );
   }
 
-  const path = typeof args.path === 'string' ? args.path : null;
-  const content = typeof args.content === 'string' ? args.content : null;
+  const path = typeof normalized.path === 'string' ? normalized.path : null;
+  const content = typeof normalized.content === 'string' ? normalized.content : null;
+  const contentLong = (content?.length ?? 0) > 600;
 
   if (path || content) {
     return (
@@ -39,35 +54,39 @@ function ArgPreview({ args }: { args: unknown }) {
         {path && (
           <div>
             <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-keeper-ice/45">
-              目标路径
+              目标文件
             </div>
-            <div className="rounded-xl border border-keeper-cyan/25 bg-keeper-cyan/10 px-3 py-2.5 font-mono text-sm text-keeper-cyan">
+            <div className="rounded-xl border border-keeper-cyan/30 bg-keeper-cyan/10 px-3 py-2.5 font-mono text-sm text-keeper-cyan">
               {path}
             </div>
           </div>
         )}
         {content && (
           <div>
-            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-keeper-ice/45">
-              内容预览
-            </div>
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-keeper-ice/10 bg-black/35 p-3 font-mono text-[11px] leading-relaxed text-keeper-ice/75">
-              {truncate(content)}
-            </pre>
-          </div>
-        )}
-        {Object.keys(args).filter((k) => k !== 'path' && k !== 'content').length > 0 && (
-          <div>
-            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-keeper-ice/45">
-              其他参数
-            </div>
-            <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-keeper-ice/10 bg-black/35 p-3 font-mono text-[11px] leading-relaxed text-keeper-ice/60">
-              {formatFallbackArgs(
-                Object.fromEntries(
-                  Object.entries(args).filter(([k]) => k !== 'path' && k !== 'content'),
-                ),
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-keeper-ice/45">
+                写入内容
+              </span>
+              {contentLong && (
+                <button
+                  type="button"
+                  onClick={() => setShowContent((v) => !v)}
+                  className="keeper-dialog-btn text-[10px] text-keeper-cyan hover:underline"
+                >
+                  {showContent ? '收起' : `展开预览（${content.length} 字符）`}
+                </button>
               )}
-            </pre>
+            </div>
+            {(!contentLong || showContent) && (
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-keeper-ice/10 bg-black/35 p-3 font-mono text-[11px] leading-relaxed text-keeper-ice/75">
+                {truncate(content)}
+              </pre>
+            )}
+            {contentLong && !showContent && (
+              <p className="rounded-xl border border-keeper-ice/10 bg-black/20 px-3 py-2 text-xs text-keeper-ice/50">
+                将覆盖写入完整文件（{content.length} 字符），默认不展开全文。
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -76,7 +95,7 @@ function ArgPreview({ args }: { args: unknown }) {
 
   return (
     <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-keeper-ice/10 bg-black/35 p-3 font-mono text-[11px] leading-relaxed text-keeper-ice/75">
-      {formatFallbackArgs(args)}
+      {formatFallbackArgs(normalized)}
     </pre>
   );
 }

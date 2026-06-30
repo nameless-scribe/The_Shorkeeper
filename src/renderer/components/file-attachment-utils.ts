@@ -1,6 +1,9 @@
 import type { WorkspaceAttachment } from '@/shared/types';
 import type { UiToolCall } from './ToolCallCard';
 
+const WORKSPACE_FILE_PATTERN =
+  /\.(md|markdown|txt|csv|json|xlsx|xls|docx|doc|pdf|yaml|yml|xml|html|htm|log|ini|py|ts|tsx|js|jsx)$/i;
+
 export function formatFileSize(bytes: number): string {
   if (bytes <= 0) return '—';
   if (bytes < 1024) return `${bytes}B`;
@@ -26,19 +29,30 @@ export function fileTypeVisual(name: string): { icon: string; accent: string } {
       return { icon: 'P', accent: 'bg-red-600' };
     case 'md':
     case 'markdown':
-      return { icon: 'M', accent: 'bg-slate-500' };
+      return { icon: 'M', accent: 'bg-slate-600' };
     case 'csv':
       return { icon: 'C', accent: 'bg-teal-600' };
     default:
-      return { icon: '📄', accent: 'bg-keeper-cyan/30' };
+      return { icon: '📄', accent: 'bg-keeper-cyan/25' };
   }
+}
+
+/** 仅接受带合法扩展名、像工作区相对路径的字符串 */
+export function isLikelyWorkspaceFilePath(candidate: string): boolean {
+  const normalized = candidate.replace(/\\/g, '/').trim();
+  if (!normalized || normalized.length > 280) return false;
+  if (/[<>|*?《》]/.test(normalized)) return false;
+  if (!WORKSPACE_FILE_PATTERN.test(normalized)) return false;
+  const base = normalized.split('/').pop() ?? '';
+  return base.length > 2 && !base.includes('(');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function attachmentFromPath(relativePath: string, size = 0): WorkspaceAttachment {
+function attachmentFromPath(relativePath: string, size = 0): WorkspaceAttachment | null {
+  if (!isLikelyWorkspaceFilePath(relativePath)) return null;
   const normalized = relativePath.replace(/\\/g, '/');
   return {
     relativePath: normalized,
@@ -77,48 +91,30 @@ function pathFromArgs(toolName: string, args: Record<string, unknown>): string |
   return null;
 }
 
-function pathsFromOutput(output: string): string[] {
-  const paths: string[] = [];
-  const patterns = [
-    /已(?:写入|生成|转换)\s+([^\s（]+)/g,
-    /→\s+([^\s（]+)/g,
-  ];
-  for (const pattern of patterns) {
-    for (const match of output.matchAll(pattern)) {
-      const p = match[1]?.trim();
-      if (p && !paths.includes(p)) paths.push(p);
-    }
-  }
-  return paths;
-}
-
-/** 从单次工具调用提取可打开的工作区文件 */
+/** 从单次工具调用提取可打开的工作区文件（仅 artifacts + 工具参数 path，不解析文件正文） */
 export function extractFilesFromToolCall(tc: UiToolCall): WorkspaceAttachment[] {
   if (tc.status !== 'done' || !tc.result?.success) return [];
 
   const seen = new Set<string>();
   const files: WorkspaceAttachment[] = [];
 
-  const push = (file: WorkspaceAttachment) => {
+  const push = (file: WorkspaceAttachment | null) => {
+    if (!file) return;
     const key = file.relativePath.replace(/\\/g, '/');
     if (seen.has(key)) return;
     seen.add(key);
-    files.push({ ...file, relativePath: key });
+    files.push(file);
   };
 
   for (const artifact of tc.result.artifacts ?? []) {
-    push(artifact);
+    if (isLikelyWorkspaceFilePath(artifact.relativePath)) {
+      push({ ...artifact, relativePath: artifact.relativePath.replace(/\\/g, '/') });
+    }
   }
 
   if (isRecord(tc.args)) {
     const fromArgs = pathFromArgs(tc.name, tc.args);
     if (fromArgs) push(attachmentFromPath(fromArgs));
-  }
-
-  if (tc.result.output) {
-    for (const p of pathsFromOutput(tc.result.output)) {
-      push(attachmentFromPath(p));
-    }
   }
 
   return files;
@@ -145,7 +141,9 @@ export function collectMessageFiles(message: {
   toolCalls?: UiToolCall[];
   relatedFiles?: WorkspaceAttachment[];
 }): WorkspaceAttachment[] {
-  let files = message.relatedFiles ?? [];
+  let files = (message.relatedFiles ?? []).filter((f) =>
+    isLikelyWorkspaceFilePath(f.relativePath),
+  );
 
   for (const tc of message.toolCalls ?? []) {
     files = mergeAttachments(files, extractFilesFromToolCall(tc));

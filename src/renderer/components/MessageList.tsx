@@ -116,7 +116,7 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
                   <p className="pl-0.5 text-[10px] font-medium uppercase tracking-wide text-keeper-cyan/70">
                     相关文件
                   </p>
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {outputFiles.map((file) => (
                       <FileAttachmentCard key={file.relativePath} file={file} />
                     ))}
