@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import type { ToolDefinition } from '../types';
+import { buildPathNotFoundHint, enrichFsError, isEnoent } from './workspace-hints';
 import { resolveWorkspacePath } from './workspace-path';
 
 export const listDirTool: ToolDefinition = {
@@ -31,8 +32,10 @@ export const listDirTool: ToolDefinition = {
         output: lines.length ? lines.join('\n') : '(空目录)',
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return { success: false, output: '', error: message };
+      const hint = isEnoent(err)
+        ? await buildPathNotFoundHint(ctx.workspaceRoot, dirPath)
+        : null;
+      return { success: false, output: '', error: enrichFsError(err, hint) };
     }
   },
 };

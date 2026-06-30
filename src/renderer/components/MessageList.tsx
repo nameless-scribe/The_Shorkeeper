@@ -3,7 +3,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { UserAvatar } from './UserAvatar';
 import { ToolCallCard } from './ToolCallCard';
 import { FileAttachmentCard } from './FileAttachmentCard';
-import { collectArtifactsFromToolCalls } from './file-attachment-utils';
+import { collectMessageFiles } from './file-attachment-utils';
 import type { UiMessage } from '../hooks/useAgentEvents';
 
 interface MessageListProps {
@@ -71,7 +71,7 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
         const showTextBubble =
           Boolean(msg.content) || (msg.thinking && !hasRunningTools);
         const outputFiles =
-          msg.role === 'assistant' ? collectArtifactsFromToolCalls(msg.toolCalls) : [];
+          msg.role === 'assistant' ? collectMessageFiles(msg) : [];
 
         return msg.role === 'user' ? (
           <div key={msg.id} className="flex flex-col items-end gap-1">
@@ -111,6 +111,18 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
                   ))}
                 </div>
               )}
+              {outputFiles.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <p className="pl-0.5 text-[10px] font-medium uppercase tracking-wide text-keeper-cyan/70">
+                    相关文件
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {outputFiles.map((file) => (
+                      <FileAttachmentCard key={file.relativePath} file={file} />
+                    ))}
+                  </div>
+                </div>
+              )}
               {showTextBubble && (
                 <div className="keeper-glass-soft rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed text-keeper-ice shadow-sm">
                   {msg.thinking && !msg.content ? (
@@ -134,13 +146,6 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
                       )}
                     </p>
                   )}
-                </div>
-              )}
-              {outputFiles.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  {outputFiles.map((file) => (
-                    <FileAttachmentCard key={file.relativePath} file={file} />
-                  ))}
                 </div>
               )}
               {msg.createdAt && !msg.streaming && (

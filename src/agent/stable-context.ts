@@ -46,7 +46,11 @@ export function formatToolGuideForPrompt(tools: ToolDefinition[]): string | null
     sections.push(`【定时提醒】${SCHEDULE_TOOL_HINT}`);
   }
   sections.push(
-    '当用户询问工作区文件时，请主动调用 list_dir 或 read_file。涉及用户偏好或过往事实时，可先 recall_memory。' +
+    '【工作区文件】读取前必须先 list_dir 确认真实路径与文件名；禁止猜测子目录。' +
+      '用户口述的《》书名号、文档标题不等于磁盘文件名；上传附件消息里给出的路径最准确。' +
+      'read_file 失败时按错误提示中的候选路径重试，或 list_dir "." 列出根目录。' +
+      '用户要求修改/更新/保存工作区文件时，必须调用 write_file 或 gen_* 真正写入磁盘；不可只在回复文字中描述已修改。写入成功后用户会看到可点击打开的文件卡片。' +
+      '涉及用户偏好或过往事实时，可先 recall_memory。' +
       (tools.some((t) => t.name === 'search_knowledge')
         ? ' 用户可能在讨论已导入的业务文档（知识库）；需要具体内容时请调用 search_knowledge，不要声称没有知识库。'
         : ''),

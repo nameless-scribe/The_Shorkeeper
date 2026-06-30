@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AgUiEvent, WorkspaceAttachment } from '@/shared/types';
 import type { UiToolCall } from '../components/ToolCallCard';
+import { extractFilesFromToolCall, mergeAttachments } from '../components/file-attachment-utils';
 
 export interface UiMessage {
   id: string;
@@ -10,6 +11,8 @@ export interface UiMessage {
   thinking?: boolean;
   toolCalls?: UiToolCall[];
   attachments?: WorkspaceAttachment[];
+  /** 本轮工具涉及的工作区文件（用于可点击打开） */
+  relatedFiles?: WorkspaceAttachment[];
   createdAt?: number;
 }
 
@@ -143,24 +146,25 @@ export function useAgentEvents(
 
       if (event.type === 'tool_call_end') {
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamId
-              ? {
-                  ...m,
-                  toolCalls: (m.toolCalls ?? []).map((tc) =>
-                    tc.callId === event.callId
-                      ? {
-                          ...tc,
-                          status: event.result.success
-                            ? ('done' as const)
-                            : ('error' as const),
-                          result: event.result,
-                        }
-                      : tc,
-                  ),
-                }
-              : m,
-          ),
+          prev.map((m) => {
+            if (m.id !== streamId) return m;
+            const toolCalls = (m.toolCalls ?? []).map((tc) =>
+              tc.callId === event.callId
+                ? {
+                    ...tc,
+                    status: event.result.success
+                      ? ('done' as const)
+                      : ('error' as const),
+                    result: event.result,
+                  }
+                : tc,
+            );
+            const ended = toolCalls.find((tc) => tc.callId === event.callId);
+            const relatedFiles = ended
+              ? mergeAttachments(m.relatedFiles, extractFilesFromToolCall(ended))
+              : m.relatedFiles;
+            return { ...m, toolCalls, relatedFiles };
+          }),
         );
       }
 
@@ -173,6 +177,7 @@ export function useAgentEvents(
         setMessages((prev) => {
           const streamMsg = prev.find((m) => m.id === streamId);
           const toolCalls = streamMsg?.toolCalls;
+          const relatedFiles = streamMsg?.relatedFiles;
           const hasToolCalls = Boolean(toolCalls?.length);
           const hasContent = Boolean(streamMsg?.content.trim());
 
@@ -202,10 +207,14 @@ export function useAgentEvents(
                   createdAt: m.createdAt,
                 }));
 
-              if (toolCalls?.length) {
+              if (toolCalls?.length || relatedFiles?.length) {
                 for (let i = dbMessages.length - 1; i >= 0; i -= 1) {
                   if (dbMessages[i].role === 'assistant') {
-                    dbMessages[i] = { ...dbMessages[i], toolCalls };
+                    dbMessages[i] = {
+                      ...dbMessages[i],
+                      ...(toolCalls?.length ? { toolCalls } : {}),
+                      ...(relatedFiles?.length ? { relatedFiles } : {}),
+                    };
                     break;
                   }
                 }

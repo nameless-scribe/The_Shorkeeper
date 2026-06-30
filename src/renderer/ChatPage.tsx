@@ -4,6 +4,7 @@ import { useAgentEvents } from './hooks/useAgentEvents';
 import { deriveAgentWorkflow } from './hooks/agent-workflow';
 import { AppBackground } from './components/AppBackground';
 import { TitleBar } from './components/TitleBar';
+import { AgentWorkflowStrip } from './components/AgentWorkflowStrip';
 import { MessageList } from './components/MessageList';
 import { InputBar } from './components/InputBar';
 import { SettingsDrawer } from './settings/SettingsDrawer';
@@ -91,12 +92,12 @@ export function ChatPage() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TitleBar
             status={status}
-            workflow={workflow}
             onOpenSettings={() => setSettingsOpen(true)}
             onNewChat={handleNewChat}
             onToggleHistory={() => setHistoryOpen((v) => !v)}
             historyOpen={historyOpen}
           />
+          <AgentWorkflowStrip status={workflow} />
           <MessageList messages={messages} loading={loadingMessages} />
           {error && (
             <div className="mx-4 mb-2 rounded-xl border border-red-400/30 bg-red-950/40 px-3 py-2 text-xs text-red-200 no-drag">
@@ -112,9 +113,9 @@ export function ChatPage() {
             onClose={() => setSettingsOpen(false)}
             onConfigChange={refreshStatus}
           />
-          <PermissionDialog request={permissionRequest} onRespond={respondPermission} />
         </div>
       </div>
+      <PermissionDialog request={permissionRequest} onRespond={respondPermission} />
     </div>
   );
 }

@@ -36,7 +36,7 @@ export function SkillsPage() {
     <SettingsPageShell>
       <SettingsIntro>
         技能来自项目 <code className="rounded bg-keeper-navyDeep/60 px-1 py-0.5 text-keeper-cyan/90">skills/*/SKILL.md</code>。
-        启用后注入 system prompt，并可限制可用工具；白名单外的工具（如定时提醒）将不可用。
+        启用后注入 system prompt。若技能配置了工具白名单，**多个技能同时启用时，可用工具为各白名单的并集**（取所有已启用技能允许的工具）；未配置白名单的技能不限制工具。
       </SettingsIntro>
 
       <SettingsSection title="已安装技能" hint={`${skills.length} 个`}>
@@ -58,7 +58,11 @@ export function SkillsPage() {
                 }
                 meta={
                   skill.allowedTools?.length
-                    ? `工具白名单：${skill.allowedTools.join(', ')}${skill.enabled ? '（启用后仅以上工具可用）' : ''}`
+                    ? `工具白名单：${skill.allowedTools.join(', ')}${
+                        skill.enabled
+                          ? '（与其他带白名单的技能合并为并集）'
+                          : ''
+                      }`
                     : undefined
                 }
                 actions={

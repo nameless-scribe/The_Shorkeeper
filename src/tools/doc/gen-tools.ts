@@ -170,10 +170,18 @@ export const readXlsxTool: ToolDefinition = {
       });
 
       if (!rawRows.length) {
-        return {
-          success: true,
-          output: JSON.stringify({ path: filePath, sheet: sheet.name, headers: [], rows: [], total_rows: 0 }, null, 2),
-        };
+        const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
+        return withFileArtifact(
+          {
+            success: true,
+            output: JSON.stringify(
+              { path: filePath, sheet: sheet.name, headers: [], rows: [], total_rows: 0 },
+              null,
+              2,
+            ),
+          },
+          artifact,
+        );
       }
 
       const headers = rawRows[0];
@@ -182,22 +190,26 @@ export const readXlsxTool: ToolDefinition = {
       const truncated = totalRows > rowLimit;
       const rows = truncated ? dataRows.slice(0, rowLimit) : dataRows;
 
-      return {
-        success: true,
-        output: JSON.stringify(
-          {
-            path: filePath,
-            sheet: sheet.name,
-            available_sheets: workbook.worksheets.map((ws) => ws.name),
-            headers,
-            rows,
-            total_rows: totalRows,
-            truncated,
-          },
-          null,
-          2,
-        ),
-      };
+      const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
+      return withFileArtifact(
+        {
+          success: true,
+          output: JSON.stringify(
+            {
+              path: filePath,
+              sheet: sheet.name,
+              available_sheets: workbook.worksheets.map((ws) => ws.name),
+              headers,
+              rows,
+              total_rows: totalRows,
+              truncated,
+            },
+            null,
+            2,
+          ),
+        },
+        artifact,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, output: '', error: message };

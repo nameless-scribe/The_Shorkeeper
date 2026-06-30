@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import type { WorkspaceAttachment } from '@/shared/types';
 import { fileTypeVisual, formatFileSize } from './file-attachment-utils';
 
@@ -10,15 +10,24 @@ interface FileAttachmentCardProps {
 export function FileAttachmentCard({ file, align = 'left' }: FileAttachmentCardProps) {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const visual = fileTypeVisual(file.originalName);
+  const [displayFile, setDisplayFile] = useState(file);
+  const visual = fileTypeVisual(displayFile.originalName);
   const isLetterIcon = visual.icon.length === 1;
+
+  useEffect(() => {
+    setDisplayFile(file);
+    if (file.size > 0) return;
+    void window.shorekeeper.workspace.getFileInfo(file.relativePath).then((info) => {
+      if (info) setDisplayFile(info);
+    });
+  }, [file.relativePath, file.size, file.originalName]);
 
   const openFile = async () => {
     if (opening) return;
     setOpening(true);
     setError(null);
     try {
-      const result = await window.shorekeeper.workspace.openRelative(file.relativePath);
+      const result = await window.shorekeeper.workspace.openRelative(displayFile.relativePath);
       if (!result.ok) {
         setError(result.error ?? '无法打开文件');
       }
@@ -31,7 +40,7 @@ export function FileAttachmentCard({ file, align = 'left' }: FileAttachmentCardP
 
   const revealInFolder = async (e: MouseEvent) => {
     e.stopPropagation();
-    await window.shorekeeper.workspace.showRelative(file.relativePath);
+    await window.shorekeeper.workspace.showRelative(displayFile.relativePath);
   };
 
   return (
@@ -46,8 +55,8 @@ export function FileAttachmentCard({ file, align = 'left' }: FileAttachmentCardP
         }`}
       >
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-slate-800">{file.originalName}</p>
-          <p className="mt-0.5 text-[11px] text-slate-500">{formatFileSize(file.size)}</p>
+          <p className="truncate text-sm font-medium text-slate-800">{displayFile.originalName}</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">{formatFileSize(displayFile.size)}</p>
         </div>
         <span
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white shadow-sm ${visual.accent}`}

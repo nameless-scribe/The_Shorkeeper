@@ -1,10 +1,7 @@
 import type { AppStatus } from '@/shared/types';
-import type { AgentWorkflowStatus } from '../hooks/agent-workflow';
-import { AgentWorkflowBar } from './AgentWorkflowBar';
 
 interface TitleBarProps {
   status: AppStatus | null;
-  workflow: AgentWorkflowStatus;
   onOpenSettings?: () => void;
   onNewChat?: () => void;
   onToggleHistory?: () => void;
@@ -21,15 +18,14 @@ function formatConnectionLabel(status: AppStatus): string {
 
 export function TitleBar({
   status,
-  workflow,
   onOpenSettings,
   onNewChat,
   onToggleHistory,
   historyOpen,
 }: TitleBarProps) {
   return (
-    <header className="drag-region keeper-glass-panel flex shrink-0 items-center gap-3 border-b border-keeper-cyan/15 px-4 py-3">
-      <div className="no-drag shrink-0">
+    <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between border-b border-keeper-cyan/15 px-4 py-3">
+      <div className="no-drag min-w-0">
         <h1 className="text-sm font-semibold tracking-wide text-keeper-ice">
           The Shorekeeper
         </h1>
@@ -43,10 +39,6 @@ export function TitleBar({
             <span className="text-amber-300/90">未配置 API Key</span>
           )}
         </p>
-      </div>
-
-      <div className="no-drag min-w-0 flex-1 px-1">
-        <AgentWorkflowBar status={workflow} />
       </div>
 
       <div className="no-drag flex shrink-0 gap-1">

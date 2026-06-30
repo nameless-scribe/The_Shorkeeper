@@ -79,6 +79,10 @@ body {
   .keeper-glass-soft {
     @apply border border-keeper-ice/15 bg-white/5 backdrop-blur-md;
   }
+
+  .keeper-dialog-btn {
+    @apply outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-keeper-cyan/45;
+  }
 }
 
 ::-webkit-scrollbar {
