@@ -14,7 +14,29 @@ interface StoredEmbeddingConfig {
 }
 
 function normalizeBaseUrl(url: string): string {
-  return url.trim().replace(/\/$/, '');
+  let normalized = url
+    .trim()
+    .replace(/\/embeddings\/?$/i, '')
+    .replace(/\/$/, '');
+  if (/dashscope\.aliyuncs\.com\/compatible-mode$/i.test(normalized)) {
+    normalized += '/v1';
+  }
+  return normalized;
+}
+
+export function validateEmbeddingBaseUrl(url: string): void {
+  const normalized = normalizeBaseUrl(url);
+  if (!normalized) {
+    throw new Error('Embedding Base URL 不能为空');
+  }
+  if (!/^https?:\/\//i.test(normalized)) {
+    throw new Error('Embedding Base URL 需以 https:// 开头');
+  }
+  if (/xxxx/i.test(normalized) || /your[-_]?id/i.test(normalized)) {
+    throw new Error(
+      'Base URL 仍是文档占位符（含 xxxx），请从百炼控制台复制「你的」OpenAI 兼容接入地址，或改用 https://dashscope.aliyuncs.com/compatible-mode/v1',
+    );
+  }
 }
 
 function envEmbeddingModel(): string {
@@ -152,6 +174,9 @@ export function saveEmbeddingSettings(patch: EmbeddingSettingsPatch): EmbeddingS
   }
   if (patch.baseUrl !== undefined) {
     current.baseUrl = normalizeBaseUrl(patch.baseUrl);
+    if (!current.useChatApi) {
+      validateEmbeddingBaseUrl(current.baseUrl);
+    }
   }
   if (patch.model !== undefined) {
     current.model = patch.model.trim() || envEmbeddingModel();

@@ -38,7 +38,7 @@ export async function importTextAsKnowledge(
   const ext = path.extname(safeName).toLowerCase();
   const mimeType = ext === '.md' ? 'text/markdown' : 'text/plain';
 
-  const BATCH = 16;
+  const BATCH = 10;
   const embeddedChunks: Array<{ content: string; embedding: Uint8Array }> = [];
 
   for (let i = 0; i < chunks.length; i += BATCH) {

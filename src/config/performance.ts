@@ -79,18 +79,18 @@ const CASUAL_PATTERNS = [
   /^[\p{Emoji}\s]+$/u,
 ];
 
-const KNOWLEDGE_HINTS = [
-  /[？?]/,
-  /什么|怎么|如何|为什么|哪|谁|多少|是否|能否|介绍|解释|说明|总结|对比|区别|定义|含义/,
-  /文档|资料|规定|流程|步骤|数据|报告|方案|政策|条款|标准/,
-];
+/** 纯寒暄时不自动注入 RAG，避免每句「你好」都走向量检索 */
+export function isCasualChat(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return true;
+  return CASUAL_PATTERNS.some((p) => p.test(trimmed));
+}
 
+/** @deprecated 保留供测试对比；RAG 触发已改为「有文档且非寒暄」 */
 export function looksLikeKnowledgeQuery(query: string): boolean {
   const trimmed = query.trim();
-  if (trimmed.length < 4) return false;
-  if (CASUAL_PATTERNS.some((p) => p.test(trimmed))) return false;
-  if (trimmed.length >= 24) return true;
-  return KNOWLEDGE_HINTS.some((p) => p.test(trimmed));
+  if (isCasualChat(trimmed)) return false;
+  return trimmed.length >= 2;
 }
 
 export function shouldRunRag(
@@ -100,5 +100,5 @@ export function shouldRunRag(
 ): boolean {
   if (!settings.ragEnabled) return false;
   if (!hasDocuments) return false;
-  return looksLikeKnowledgeQuery(query);
+  return !isCasualChat(query);
 }

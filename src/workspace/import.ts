@@ -2,29 +2,12 @@ import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { WORKSPACE_DIR } from '../config/paths';
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-
-const ALLOWED_EXTENSIONS = new Set([
-  '.txt',
-  '.md',
-  '.json',
-  '.csv',
-  '.log',
-  '.yaml',
-  '.yml',
-  '.xml',
-  '.html',
-  '.htm',
-  '.css',
-  '.js',
-  '.ts',
-  '.tsx',
-  '.jsx',
-  '.py',
-  '.sql',
-  '.ini',
-]);
+import {
+  MAX_WORKSPACE_IMPORT_BYTES,
+  WORKSPACE_IMPORT_EXTENSIONS,
+  workspaceFileToolHint,
+  workspaceFileToolHintLabel,
+} from './allowed-extensions';
 
 export interface WorkspaceImportResult {
   relativePath: string;
@@ -59,13 +42,13 @@ export async function importFileToWorkspace(sourcePath: string): Promise<Workspa
   if (!stat.isFile()) {
     throw new Error('不是有效文件');
   }
-  if (stat.size > MAX_FILE_SIZE) {
-    throw new Error('文件超过 10MB 上限');
+  if (stat.size > MAX_WORKSPACE_IMPORT_BYTES) {
+    throw new Error(`文件超过 ${MAX_WORKSPACE_IMPORT_BYTES / (1024 * 1024)}MB 上限`);
   }
 
   const ext = path.extname(resolvedSource).toLowerCase();
-  if (ext && !ALLOWED_EXTENSIONS.has(ext)) {
-    throw new Error(`不支持的文件类型 ${ext}，请使用文本类文件`);
+  if (ext && !WORKSPACE_IMPORT_EXTENSIONS.has(ext)) {
+    throw new Error(`不支持的文件类型 ${ext}，请使用文本、Word 或 Excel 文件`);
   }
 
   const originalName = path.basename(resolvedSource);
@@ -93,10 +76,13 @@ export function formatAttachmentsForMessage(
 ): string {
   if (!attachments.length) return text;
 
-  const lines = attachments.map(
-    (a) => `- ${a.originalName} → 工作区路径: ${a.relativePath}（${a.size} 字节）`,
-  );
-  return `[用户已上传以下文件到工作区，可用 read_file / list_dir 读取]\n${lines.join('\n')}\n\n${text}`;
+  const lines = attachments.map((a) => {
+    const ext = path.extname(a.originalName).toLowerCase();
+    const tool = workspaceFileToolHintLabel(workspaceFileToolHint(ext));
+    return `- ${a.originalName} → 工作区: ${a.relativePath}（${a.size} 字节，建议 ${tool}）`;
+  });
+
+  return `[用户已上传以下文件到工作区]\n${lines.join('\n')}\n\n${text}`;
 }
 
 export { WORKSPACE_DIR };

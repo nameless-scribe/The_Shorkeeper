@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
+import { buildFileArtifact, withFileArtifact } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
 
 function buildItineraryMarkdown(input: {
@@ -101,10 +102,14 @@ export const travelPlanTool: ToolDefinition = {
       const absolute = resolveWorkspacePath(ctx.workspaceRoot, filePath);
       await fs.mkdir(path.dirname(absolute), { recursive: true });
       await fs.writeFile(absolute, content, 'utf-8');
-      return {
-        success: true,
-        output: `已生成旅行规划：${filePath}\n\n${content}`,
-      };
+      const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
+      return withFileArtifact(
+        {
+          success: true,
+          output: `已生成旅行规划：${filePath}\n\n${content}`,
+        },
+        artifact,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, output: '', error: message };

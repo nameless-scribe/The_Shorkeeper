@@ -6,11 +6,13 @@ import { webSearchTool } from './web/web-search';
 import { fetchUrlTool } from './web/fetch-url';
 import { weatherTool } from './web/weather';
 import { translateTool } from './web/translate';
+import { convertToMarkdownTool } from './doc/convert-markdown';
 import {
   genDocxTool,
   genMarkdownTool,
   genPdfTool,
   genXlsxTool,
+  readXlsxTool,
 } from './doc/gen-tools';
 import { bookkeepingTool } from './life/bookkeeping';
 import { travelPlanTool } from './life/travel-plan';
@@ -19,6 +21,7 @@ import {
   saveMemoryTool,
   searchWorldbookTool,
 } from './memory/memory-tools';
+import { searchKnowledgeTool } from './memory/knowledge-tools';
 import {
   createScheduledTaskTool,
   deleteScheduledTaskTool,
@@ -36,6 +39,8 @@ export function createBuiltinRegistry(): ToolRegistry {
   registry.register(fetchUrlTool);
   registry.register(weatherTool);
   registry.register(translateTool);
+  registry.register(readXlsxTool);
+  registry.register(convertToMarkdownTool);
   registry.register(genMarkdownTool);
   registry.register(genDocxTool);
   registry.register(genXlsxTool);
@@ -44,6 +49,7 @@ export function createBuiltinRegistry(): ToolRegistry {
   registry.register(travelPlanTool);
   registry.register(recallMemoryTool);
   registry.register(searchWorldbookTool);
+  registry.register(searchKnowledgeTool);
   registry.register(saveMemoryTool);
   registry.register(createScheduledTaskTool);
   registry.register(listScheduledTasksTool);

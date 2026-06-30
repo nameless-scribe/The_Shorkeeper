@@ -30,6 +30,7 @@ import type {
   McpServerInfo,
   PerformanceSettingsInfo,
   PluginSettingsInfo,
+  PermissionRequestPayload,
   FilesystemMode,
   SkillInfo,
 } from '../src/shared/types';
@@ -107,6 +108,8 @@ const shorekeeperApi = {
       ipcRenderer.invoke('embedding:getSettings'),
     setSettings: (patch: EmbeddingSettingsPatch): Promise<EmbeddingSettingsInfo> =>
       ipcRenderer.invoke('embedding:setSettings', patch),
+    test: (): Promise<{ ok: boolean; message: string; dimensions?: number }> =>
+      ipcRenderer.invoke('embedding:test'),
   },
   stats: {
     getTokenUsage: (): Promise<TokenUsageSummaryInfo> =>
@@ -154,6 +157,12 @@ const shorekeeperApi = {
     importPaths: (paths: string[]): Promise<WorkspaceAttachment[]> =>
       ipcRenderer.invoke('workspace:importPaths', paths),
     getPathForFile: (file: File) => webUtils.getPathForFile(file),
+    openRelative: (relativePath: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('workspace:openRelative', relativePath),
+    showRelative: (relativePath: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('workspace:showRelative', relativePath),
+    getFileInfo: (relativePath: string): Promise<WorkspaceAttachment | null> =>
+      ipcRenderer.invoke('workspace:getFileInfo', relativePath),
   },
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),
@@ -235,6 +244,18 @@ const shorekeeperApi = {
       ipcRenderer.invoke('plugins:set', patch),
     setFilesystemMode: (mode: FilesystemMode): Promise<PluginSettingsInfo> =>
       ipcRenderer.invoke('plugins:setFilesystemMode', mode),
+  },
+  permission: {
+    respond: (requestId: string, approved: boolean) =>
+      ipcRenderer.invoke('permission:respond', { requestId, approved }),
+    onRequest: (callback: (payload: PermissionRequestPayload) => void) => {
+      const listener = (_: Electron.IpcRendererEvent, data: PermissionRequestPayload) =>
+        callback(data);
+      ipcRenderer.on('permission:request', listener);
+      return () => {
+        ipcRenderer.removeListener('permission:request', listener);
+      };
+    },
   },
 };
 

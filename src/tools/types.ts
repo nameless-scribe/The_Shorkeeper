@@ -1,4 +1,5 @@
 import type { PermissionFlag } from '../agent/types';
+import type { WorkspaceAttachment } from '../shared/types';
 
 export interface JSONSchema {
   type: string;
@@ -12,6 +13,7 @@ export interface ToolResult {
   success: boolean;
   output: string;
   error?: string;
+  artifacts?: WorkspaceAttachment[];
 }
 
 export interface ToolContext {

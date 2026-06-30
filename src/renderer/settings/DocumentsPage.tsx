@@ -15,8 +15,12 @@ import {
   SETTINGS_INPUT_CLASS,
 } from './components/settings-ui';
 
-const BAILIAN_EMBEDDING_HINT =
-  'https://llm-xxxx.cn-beijing.maas.aliyuncs.com/compatible-mode/v1';
+const BAILIAN_URL_PLACEHOLDER =
+  '从百炼控制台复制，勿填 llm-xxxx 占位符';
+
+function hasPlaceholderUrl(url: string): boolean {
+  return /xxxx/i.test(url);
+}
 
 function formatProgress(progress: ImportProgress | null): string {
   if (!progress) return '';
@@ -53,6 +57,8 @@ export function DocumentsPage() {
     apiKey: '',
   });
   const [embeddingSaving, setEmbeddingSaving] = useState(false);
+  const [embeddingTesting, setEmbeddingTesting] = useState(false);
+  const [embeddingTestMessage, setEmbeddingTestMessage] = useState<string | null>(null);
   const [embeddingSaved, setEmbeddingSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -87,6 +93,32 @@ export function DocumentsPage() {
     });
     return unsub;
   }, []);
+
+  const handleTestEmbedding = async () => {
+    setEmbeddingTesting(true);
+    setEmbeddingTestMessage(null);
+    setError(null);
+    try {
+      if (!embeddingForm.useChatApi) {
+        await window.shorekeeper.embedding.setSettings({
+          useChatApi: false,
+          baseUrl: embeddingForm.baseUrl.trim() || undefined,
+          model: embeddingForm.model.trim() || undefined,
+          apiKey: embeddingForm.apiKey.trim() || undefined,
+        });
+      }
+      const result = await window.shorekeeper.embedding.test();
+      setEmbeddingTestMessage(result.message);
+      if (!result.ok) setError(result.message);
+      await loadEmbedding();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setEmbeddingTestMessage(message);
+      setError(message);
+    } finally {
+      setEmbeddingTesting(false);
+    }
+  };
 
   const handleSaveEmbedding = async () => {
     setEmbeddingSaving(true);
@@ -179,18 +211,26 @@ export function DocumentsPage() {
           <>
             <SettingsField
               label="Embedding Base URL"
-              hint="OpenAI 兼容接入点，百炼以 /compatible-mode/v1 结尾"
+              hint="推荐 https://dashscope.aliyuncs.com/compatible-mode/v1（注意含 /v1）"
             >
               <input
                 value={embeddingForm.baseUrl}
                 onChange={(e) => {
                   setEmbeddingForm((f) => ({ ...f, baseUrl: e.target.value }));
                   setEmbeddingSaved(false);
+                  setEmbeddingTestMessage(null);
                 }}
-                placeholder={BAILIAN_EMBEDDING_HINT}
+                placeholder="https://llm-你的ID.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
                 className={`${SETTINGS_INPUT_CLASS} font-mono text-[13px]`}
               />
             </SettingsField>
+            {(hasPlaceholderUrl(embeddingForm.baseUrl) ||
+              hasPlaceholderUrl(embedding.baseUrl)) && (
+              <p className="rounded-xl border border-amber-400/30 bg-amber-950/30 px-3 py-2 text-[11px] leading-relaxed text-amber-200/90">
+                当前 URL 含有占位符 <code>xxxx</code>，百炼会报 Workspace access denied。
+                请从控制台复制真实地址（可与「API 设置」里 qwen 配置的 Base URL 相同）。
+              </p>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <SettingsField label="Embedding 模型" hint="百炼常用 text-embedding-v3">
@@ -236,18 +276,36 @@ export function DocumentsPage() {
           </p>
         )}
 
-        <SettingsPrimaryButton
-          className="w-full"
-          disabled={
-            embeddingSaving ||
-            (!embeddingForm.useChatApi &&
-              !embeddingForm.baseUrl.trim() &&
-              !embedding.baseUrl)
-          }
-          onClick={() => void handleSaveEmbedding()}
-        >
-          {embeddingSaving ? '保存中…' : '保存向量配置'}
-        </SettingsPrimaryButton>
+        <div className="flex gap-2">
+          <SettingsPrimaryButton
+            className="flex-1"
+            disabled={
+              embeddingSaving ||
+              (!embeddingForm.useChatApi &&
+                !embeddingForm.baseUrl.trim() &&
+                !embedding.baseUrl)
+            }
+            onClick={() => void handleSaveEmbedding()}
+          >
+            {embeddingSaving ? '保存中…' : '保存向量配置'}
+          </SettingsPrimaryButton>
+          <SettingsPrimaryButton
+            className="shrink-0 px-4"
+            disabled={embeddingTesting}
+            onClick={() => void handleTestEmbedding()}
+          >
+            {embeddingTesting ? '测试中…' : '测试连接'}
+          </SettingsPrimaryButton>
+        </div>
+        {embeddingTestMessage && (
+          <p
+            className={`text-center text-xs ${
+              embeddingTestMessage.includes('成功') ? 'text-emerald-300/90' : 'text-keeper-cyan/80'
+            }`}
+          >
+            {embeddingTestMessage}
+          </p>
+        )}
       </SettingsPanel>
 
       <SettingsPanel title="导入文档" icon="📥">

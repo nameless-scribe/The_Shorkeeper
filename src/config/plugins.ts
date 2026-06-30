@@ -25,6 +25,8 @@ const DEFAULTS: PluginSettings = {
 const TOOL_PLUGIN: Record<string, keyof Pick<PluginSettings, 'webSearch' | 'fetchUrl' | 'docGen' | 'bookkeeping' | 'lifeTools'>> = {
   web_search: 'webSearch',
   fetch_url: 'fetchUrl',
+  read_xlsx: 'docGen',
+  convert_to_markdown: 'docGen',
   gen_markdown: 'docGen',
   gen_docx: 'docGen',
   gen_xlsx: 'docGen',
@@ -70,7 +72,7 @@ export function isPluginToolEnabled(toolName: string, settings: PluginSettings):
 
   if (!settings[pluginKey]) return false;
 
-  if (toolName.startsWith('gen_') && settings.filesystemMode === 'readonly') {
+  if ((toolName.startsWith('gen_') || toolName === 'read_xlsx' || toolName === 'convert_to_markdown') && settings.filesystemMode === 'readonly') {
     return false;
   }
 

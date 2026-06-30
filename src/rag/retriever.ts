@@ -1,5 +1,5 @@
 import { embedText } from './embedding';
-import { loadAllChunkEmbeddings } from './documents';
+import { listDocuments, loadAllChunkEmbeddings, type DocumentInfo } from './documents';
 import { topKBySimilarity } from './vector';
 
 export interface RetrievedChunk {
@@ -29,15 +29,42 @@ export async function retrieveRelevantChunks(
     limit,
   );
 
-  return hits
-    .filter((h) => h.score >= MIN_SCORE)
-    .map((h) => ({
+  let filtered = hits.filter((h) => h.score >= MIN_SCORE);
+  if (!filtered.length && hits.length) {
+    filtered = hits.slice(0, limit);
+  }
+
+  return filtered.map((h) => ({
       documentId: h.item.documentId,
       filename: h.item.filename,
       chunkIndex: h.item.chunkIndex,
       content: h.item.content,
       score: h.score,
     }));
+}
+
+export function formatDocumentCatalogForPrompt(documents: DocumentInfo[]): string | null {
+  if (!documents.length) return null;
+
+  const lines = documents.map(
+    (d, i) =>
+      `${i + 1}. ${d.filename}（${d.chunkCount} 个文本块，导入于 ${new Date(d.importedAt).toLocaleString('zh-CN')}）`,
+  );
+
+  return (
+    '【已导入知识库】\n' +
+    '以下文档可供 search_knowledge 检索；回答业务/需求问题时请依据检索结果，勿声称没有知识库：\n\n' +
+    lines.join('\n')
+  );
+}
+
+export function formatRagChunksForTool(chunks: RetrievedChunk[]): string {
+  return chunks
+    .map(
+      (c, i) =>
+        `[${i + 1}] ${c.filename}#${c.chunkIndex} (相关度 ${c.score.toFixed(2)})\n${c.content}`,
+    )
+    .join('\n\n');
 }
 
 export function formatRagForPrompt(chunks: RetrievedChunk[]): string | null {

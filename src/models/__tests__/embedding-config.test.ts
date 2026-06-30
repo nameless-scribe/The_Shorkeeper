@@ -84,4 +84,13 @@ describe('embedding config', () => {
     expect(info.source).toBe('dedicated');
     expect(info.apiKeyConfigured).toBe(true);
   });
+
+  it('rejects placeholder base url', () => {
+    expect(() =>
+      saveEmbeddingSettings({
+        useChatApi: false,
+        baseUrl: 'https://llm-xxxx.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+      }),
+    ).toThrow(/占位符/);
+  });
 });

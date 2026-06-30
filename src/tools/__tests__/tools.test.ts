@@ -6,7 +6,8 @@ import { listDirTool } from '../file/list-dir';
 import { webSearchTool } from '../web/web-search';
 import { fetchUrlTool } from '../web/fetch-url';
 import { translateTool } from '../web/translate';
-import { genMarkdownTool } from '../doc/gen-tools';
+import { genDocxTool, genMarkdownTool, genXlsxTool, readXlsxTool } from '../doc/gen-tools';
+import { convertToMarkdownTool } from '../doc/convert-markdown';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -181,4 +182,78 @@ describe('gen_markdown', () => {
     const content = await fs.readFile(path.join(root, 'doc.md'), 'utf-8');
     expect(content).toBe('# Title');
   });
+});
+
+describe('read_xlsx / gen_xlsx', () => {
+  it(
+    'round-trips xlsx via read and gen',
+    async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-xlsx-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+
+    const gen = await genXlsxTool.execute(
+      {
+        path: 'data/sales.xlsx',
+        sheet_name: 'Q1',
+        headers: ['产品', '数量'],
+        rows: [['键盘', '10'], ['鼠标', '20']],
+      },
+      ctx,
+    );
+    expect(gen.success).toBe(true);
+    expect(gen.artifacts?.[0]?.relativePath).toBe('data/sales.xlsx');
+
+    const read = await readXlsxTool.execute({ path: 'data/sales.xlsx' }, ctx);
+    expect(read.success).toBe(true);
+    const parsed = JSON.parse(read.output) as {
+      sheet: string;
+      headers: string[];
+      rows: string[][];
+    };
+    expect(parsed.sheet).toBe('Q1');
+    expect(parsed.headers).toEqual(['产品', '数量']);
+    expect(parsed.rows).toEqual([['键盘', '10'], ['鼠标', '20']]);
+  },
+    15_000,
+  );
+});
+
+describe('convert_to_markdown', () => {
+  it('converts txt to markdown file', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-conv-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+
+    await fs.writeFile(path.join(root, 'note.txt'), '第一段\n\n第二段', 'utf-8');
+
+    const result = await convertToMarkdownTool.execute({ source_path: 'note.txt' }, ctx);
+    expect(result.success).toBe(true);
+    expect(result.artifacts?.[0]?.relativePath).toBe('note.md');
+
+    const md = await fs.readFile(path.join(root, 'note.md'), 'utf-8');
+    expect(md).toContain('# note');
+    expect(md).toContain('第一段');
+    expect(md).toContain('第二段');
+  });
+
+  it(
+    'converts docx to markdown file',
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-conv-docx-'));
+      const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+
+      const gen = await genDocxTool.execute(
+        { path: 'draft.docx', title: '测试标题', body: '正文段落一\n\n正文段落二' },
+        ctx,
+      );
+      expect(gen.success).toBe(true);
+
+      const result = await convertToMarkdownTool.execute({ source_path: 'draft.docx' }, ctx);
+      expect(result.success).toBe(true);
+
+      const md = await fs.readFile(path.join(root, 'draft.md'), 'utf-8');
+      expect(md.length).toBeGreaterThan(10);
+      expect(md).toMatch(/正文段落/);
+    },
+    15_000,
+  );
 });

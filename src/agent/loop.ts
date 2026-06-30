@@ -58,10 +58,7 @@ async function executeToolCall(
   }
 
   if (decision === 'confirm') {
-    const approved = await confirmPermission(
-      tool.name,
-      JSON.stringify(args, null, 2),
-    );
+    const approved = await confirmPermission(tool.name, args);
     if (!approved) {
       return {
         success: false,

@@ -18,6 +18,21 @@ describe('workspace import helpers', () => {
     expect(msg).toContain('read_file');
     expect(msg).toContain('请总结');
   });
+
+  it('suggests convert_to_markdown for docx uploads', () => {
+    const msg = formatAttachmentsForMessage('转成 md', [
+      { relativePath: 'report.docx', originalName: 'report.docx', size: 4096 },
+    ]);
+    expect(msg).toContain('convert_to_markdown');
+    expect(msg).toContain('report.docx');
+  });
+
+  it('suggests read_xlsx for xlsx uploads', () => {
+    const msg = formatAttachmentsForMessage('分析一下', [
+      { relativePath: 'data.xlsx', originalName: 'data.xlsx', size: 8192 },
+    ]);
+    expect(msg).toContain('read_xlsx');
+  });
 });
 
 describe('schedule format', () => {

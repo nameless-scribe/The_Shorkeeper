@@ -32,6 +32,8 @@ import { registerSkillsIpc } from './ipc/skills';
 import { registerModelIpc } from './ipc/model';
 import { registerPerformanceIpc } from './ipc/performance';
 import { registerPluginsIpc } from './ipc/plugins';
+import { registerPermissionIpc, requestPermissionConfirm } from './ipc/permission';
+import { setPermissionConfirmer } from '../src/agent/permissions';
 import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron';
 import { broadcastTasksUpdated } from './tasks/events';
 
@@ -74,6 +76,8 @@ app.whenReady().then(async () => {
   registerModelIpc();
   registerPerformanceIpc();
   registerPluginsIpc();
+  registerPermissionIpc();
+  setPermissionConfirmer(requestPermissionConfirm);
 
   await initMcpOnStartup().catch((err) => {
     console.error('[mcp] 启动加载失败:', err);

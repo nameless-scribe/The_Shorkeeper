@@ -1,14 +1,16 @@
-import { dialog, ipcMain } from 'electron';
+import { dialog, ipcMain, shell } from 'electron';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { ensureWorkspaceDir } from '../../src/agent/permissions';
+import { resolveWorkspacePath } from '../../src/tools/file/workspace-path';
 import { importFileToWorkspace, type WorkspaceImportResult } from '../../src/workspace/import';
+import { WORKSPACE_PICK_DIALOG_FILTERS } from '../../src/workspace/allowed-extensions';
 
 export function registerWorkspaceIpc() {
   ipcMain.handle('workspace:pickAndImport', async (): Promise<WorkspaceImportResult | null> => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [
-        { name: '文本文件', extensions: ['txt', 'md', 'json', 'csv', 'log', 'yaml', 'yml', 'xml', 'html', 'css', 'js', 'ts', 'tsx', 'jsx', 'py', 'sql'] },
-        { name: '所有文件', extensions: ['*'] },
-      ],
+      filters: WORKSPACE_PICK_DIALOG_FILTERS,
     });
 
     if (result.canceled || !result.filePaths[0]) {
@@ -34,4 +36,52 @@ export function registerWorkspaceIpc() {
       return imported;
     },
   );
+
+  ipcMain.handle('workspace:openRelative', async (_event, relativePath: string) => {
+    if (typeof relativePath !== 'string' || !relativePath.trim()) {
+      return { ok: false, error: '无效路径' };
+    }
+    try {
+      const root = ensureWorkspaceDir();
+      const absolute = resolveWorkspacePath(root, relativePath);
+      const err = await shell.openPath(absolute);
+      return err ? { ok: false, error: err } : { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  });
+
+  ipcMain.handle('workspace:showRelative', async (_event, relativePath: string) => {
+    if (typeof relativePath !== 'string' || !relativePath.trim()) {
+      return { ok: false, error: '无效路径' };
+    }
+    try {
+      const root = ensureWorkspaceDir();
+      const absolute = resolveWorkspacePath(root, relativePath);
+      shell.showItemInFolder(absolute);
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  });
+
+  ipcMain.handle('workspace:getFileInfo', async (_event, relativePath: string) => {
+    if (typeof relativePath !== 'string' || !relativePath.trim()) {
+      return null;
+    }
+    try {
+      const root = ensureWorkspaceDir();
+      const absolute = resolveWorkspacePath(root, relativePath);
+      const stat = await fs.stat(absolute);
+      return {
+        relativePath: relativePath.replace(/\\/g, '/'),
+        originalName: path.basename(relativePath),
+        size: stat.size,
+      };
+    } catch {
+      return null;
+    }
+  });
 }

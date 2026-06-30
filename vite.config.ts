@@ -9,6 +9,8 @@ const isExternal = (id: string) =>
   id === 'node-cron' ||
   id === 'docx' ||
   id === 'exceljs' ||
+  id === 'mammoth' ||
+  id === 'word-extractor' ||
   id === 'pdf-lib' ||
   id.startsWith('@modelcontextprotocol/') ||
   id.startsWith('node:') ||

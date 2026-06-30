@@ -106,7 +106,7 @@ export function InputBar({ disabled, onSend }: InputBarProps) {
           disabled={disabled}
           onClick={handlePickFile}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-keeper-ice/50 hover:bg-keeper-cyan/10 hover:text-keeper-cyan disabled:opacity-40"
-          title="上传文件到工作区"
+          title="上传文件到工作区（文本、Word、Excel 等）"
         >
           📎
         </button>
@@ -117,7 +117,7 @@ export function InputBar({ disabled, onSend }: InputBarProps) {
           onKeyDown={onKeyDown}
           disabled={disabled}
           rows={1}
-          placeholder="输入消息，Enter 发送；可拖入文本文件…"
+          placeholder="输入消息，Enter 发送；可拖入文本、Word、Excel 等文件…"
           className="max-h-28 min-h-[36px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-keeper-ice placeholder:text-keeper-ice/35 focus:outline-none disabled:opacity-50"
         />
         <button

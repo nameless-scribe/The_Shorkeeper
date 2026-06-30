@@ -260,3 +260,9 @@ export type ImportProgress =
   | { phase: 'chunking'; chunkCount: number }
   | { phase: 'embedding'; done: number; total: number }
   | { phase: 'done'; document: DocumentInfo };
+
+export interface PermissionRequestPayload {
+  requestId: string;
+  toolName: string;
+  args: unknown;
+}

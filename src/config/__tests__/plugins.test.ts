@@ -22,6 +22,8 @@ describe('plugin settings', () => {
 
   it('blocks gen tools when docGen off', () => {
     expect(isPluginToolEnabled('gen_xlsx', { ...base, docGen: false })).toBe(false);
+    expect(isPluginToolEnabled('read_xlsx', { ...base, docGen: false })).toBe(false);
+    expect(isPluginToolEnabled('convert_to_markdown', { ...base, docGen: false })).toBe(false);
   });
 
   it('keeps core memory tools enabled', () => {

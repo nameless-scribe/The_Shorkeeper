@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { AgentAvatar } from './AgentAvatar';
 import { UserAvatar } from './UserAvatar';
 import { ToolCallCard } from './ToolCallCard';
+import { FileAttachmentCard } from './FileAttachmentCard';
+import { collectArtifactsFromToolCalls } from './file-attachment-utils';
 import type { UiMessage } from '../hooks/useAgentEvents';
 
 interface MessageListProps {
@@ -68,12 +70,29 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
         const hasRunningTools = msg.toolCalls?.some((tc) => tc.status === 'running');
         const showTextBubble =
           Boolean(msg.content) || (msg.thinking && !hasRunningTools);
+        const outputFiles =
+          msg.role === 'assistant' ? collectArtifactsFromToolCalls(msg.toolCalls) : [];
 
         return msg.role === 'user' ? (
           <div key={msg.id} className="flex flex-col items-end gap-1">
             <div className="flex items-start justify-end gap-2.5">
-              <div className="max-w-[78%] rounded-2xl rounded-tr-md bg-keeper-user px-4 py-2.5 text-sm leading-relaxed text-white shadow-cyanSm">
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+              <div className="flex max-w-[78%] flex-col items-end gap-2">
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    {msg.attachments.map((file) => (
+                      <FileAttachmentCard
+                        key={file.relativePath}
+                        file={file}
+                        align="right"
+                      />
+                    ))}
+                  </div>
+                )}
+                {msg.content && (
+                  <div className="rounded-2xl rounded-tr-md bg-keeper-user px-4 py-2.5 text-sm leading-relaxed text-white shadow-cyanSm">
+                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  </div>
+                )}
               </div>
               <UserAvatar size="md" className="mt-0.5" />
             </div>
@@ -115,6 +134,13 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
                       )}
                     </p>
                   )}
+                </div>
+              )}
+              {outputFiles.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {outputFiles.map((file) => (
+                    <FileAttachmentCard key={file.relativePath} file={file} />
+                  ))}
                 </div>
               )}
               {msg.createdAt && !msg.streaming && (

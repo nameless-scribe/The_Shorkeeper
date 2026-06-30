@@ -9,6 +9,7 @@ export interface UiMessage {
   streaming?: boolean;
   thinking?: boolean;
   toolCalls?: UiToolCall[];
+  attachments?: WorkspaceAttachment[];
   createdAt?: number;
 }
 
@@ -245,14 +246,17 @@ export function useAgentEvents(
     if (!activeSessionId) return;
 
     const displayContent =
-      attachments.length > 0
-        ? `[附件: ${attachments.map((a) => a.originalName).join(', ')}]${trimmed ? `\n${trimmed}` : ''}`
-        : trimmed;
+      attachments.length > 0 && trimmed
+        ? trimmed
+        : attachments.length > 0
+          ? ''
+          : trimmed;
 
     const userMsg: UiMessage = {
       id: `local-${Date.now()}`,
       role: 'user',
       content: displayContent,
+      attachments: attachments.length ? attachments : undefined,
       createdAt: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);

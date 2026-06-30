@@ -1,18 +1,32 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
+import { buildFileArtifact, withFileArtifact } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
+
+function cellToString(value: unknown): string {
+  if (value == null) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object' && 'text' in value && typeof (value as { text: unknown }).text === 'string') {
+    return (value as { text: string }).text;
+  }
+  if (typeof value === 'object' && 'result' in value) {
+    return cellToString((value as { result: unknown }).result);
+  }
+  return String(value);
+}
 
 async function writeWorkspaceFile(
   ctx: { workspaceRoot: string },
   filePath: string,
   write: (absolute: string) => Promise<void>,
-): Promise<{ success: boolean; output: string; error?: string }> {
+) {
   try {
     const absolute = resolveWorkspacePath(ctx.workspaceRoot, filePath);
     await fs.mkdir(path.dirname(absolute), { recursive: true });
     await write(absolute);
-    return { success: true, output: `已生成 ${filePath}` };
+    const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
+    return withFileArtifact({ success: true, output: `已生成 ${filePath}` }, artifact);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, output: '', error: message };
@@ -93,6 +107,101 @@ export const genDocxTool: ToolDefinition = {
       const buffer = await Packer.toBuffer(doc);
       await fs.writeFile(absolute, buffer);
     });
+  },
+};
+
+export const readXlsxTool: ToolDefinition = {
+  name: 'read_xlsx',
+  description: '读取工作区内的 Excel (.xlsx) 表格，返回 JSON（表头 + 数据行）',
+  category: 'doc',
+  requiresPermission: ['filesystem:read'],
+  parameters: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '相对于工作区的 .xlsx 路径' },
+      sheet_name: { type: 'string', description: '工作表名称，省略则读第一个工作表' },
+      max_rows: {
+        type: 'number',
+        description: '最多返回的数据行数（不含表头），默认 500',
+      },
+    },
+    required: ['path'],
+  },
+  async execute(args, ctx) {
+    const { path: filePath, sheet_name, max_rows = 500 } = args as {
+      path?: string;
+      sheet_name?: string;
+      max_rows?: number;
+    };
+
+    if (!filePath?.trim()) {
+      return { success: false, output: '', error: '缺少 path 参数' };
+    }
+    if (!filePath.toLowerCase().endsWith('.xlsx')) {
+      return { success: false, output: '', error: '仅支持 .xlsx 文件，请用 read_file 读取 CSV/文本' };
+    }
+
+    const rowLimit = Math.max(1, Math.min(max_rows, 5000));
+
+    try {
+      const absolute = resolveWorkspacePath(ctx.workspaceRoot, filePath);
+      const ExcelJS = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(absolute);
+
+      const sheet = sheet_name?.trim()
+        ? workbook.getWorksheet(sheet_name)
+        : workbook.worksheets[0];
+
+      if (!sheet) {
+        const names = workbook.worksheets.map((ws) => ws.name).join(', ');
+        return {
+          success: false,
+          output: '',
+          error: sheet_name ? `未找到工作表「${sheet_name}」，可用：${names}` : '工作簿为空',
+        };
+      }
+
+      const rawRows: string[][] = [];
+      sheet.eachRow({ includeEmpty: false }, (row) => {
+        const values = row.values;
+        if (!Array.isArray(values)) return;
+        rawRows.push(values.slice(1).map(cellToString));
+      });
+
+      if (!rawRows.length) {
+        return {
+          success: true,
+          output: JSON.stringify({ path: filePath, sheet: sheet.name, headers: [], rows: [], total_rows: 0 }, null, 2),
+        };
+      }
+
+      const headers = rawRows[0];
+      const dataRows = rawRows.slice(1);
+      const totalRows = dataRows.length;
+      const truncated = totalRows > rowLimit;
+      const rows = truncated ? dataRows.slice(0, rowLimit) : dataRows;
+
+      return {
+        success: true,
+        output: JSON.stringify(
+          {
+            path: filePath,
+            sheet: sheet.name,
+            available_sheets: workbook.worksheets.map((ws) => ws.name),
+            headers,
+            rows,
+            total_rows: totalRows,
+            truncated,
+          },
+          null,
+          2,
+        ),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, output: '', error: message };
+    }
   },
 };
 

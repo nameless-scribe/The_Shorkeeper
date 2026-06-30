@@ -1,7 +1,11 @@
 import { getProfileSummary } from '../memory/user-profile';
 import { formatMemoriesForPrompt, searchMemories } from '../memory/long-term';
 import { formatWorldbookForPrompt, matchWorldbook } from '../memory/worldbook';
-import { formatRagForPrompt, retrieveRelevantChunks } from '../rag/retriever';
+import {
+  formatDocumentCatalogForPrompt,
+  formatRagForPrompt,
+  retrieveRelevantChunks,
+} from '../rag/retriever';
 import { listDocuments } from '../rag/documents';
 import { shouldRunRag } from '../config/performance';
 import {
@@ -59,7 +63,12 @@ export async function buildSystemPromptParts(
   if (worldbookBlock) dynamicSections.push(worldbookBlock);
 
   try {
-    const hasDocuments = listDocuments().length > 0;
+    const documents = listDocuments();
+    const hasDocuments = documents.length > 0;
+    if (hasDocuments) {
+      const catalog = formatDocumentCatalogForPrompt(documents);
+      if (catalog) dynamicSections.push(catalog);
+    }
     if (shouldRunRag(input.userMessage, hasDocuments)) {
       const ragChunks = await retrieveRelevantChunks(input.userMessage, 5);
       const ragBlock = formatRagForPrompt(ragChunks);

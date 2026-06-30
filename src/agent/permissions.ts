@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { dialog } from 'electron';
 import { WORKSPACE_DIR } from '../config/paths';
 import { buildPermissionPolicy } from './policy-loader';
 import type { PermissionDecision, PermissionPolicy } from './types';
@@ -71,18 +70,17 @@ export function checkPermission(
   return 'allow';
 }
 
+type PermissionConfirmer = (toolName: string, args: unknown) => Promise<boolean>;
+
+let permissionConfirmer: PermissionConfirmer = async () => false;
+
+export function setPermissionConfirmer(confirmer: PermissionConfirmer): void {
+  permissionConfirmer = confirmer;
+}
+
 export async function confirmPermission(
   toolName: string,
-  detail: string,
+  args: unknown,
 ): Promise<boolean> {
-  const result = await dialog.showMessageBox({
-    type: 'question',
-    buttons: ['允许', '拒绝'],
-    defaultId: 1,
-    cancelId: 1,
-    title: '工具权限确认',
-    message: `允许执行工具「${toolName}」？`,
-    detail,
-  });
-  return result.response === 0;
+  return permissionConfirmer(toolName, args);
 }

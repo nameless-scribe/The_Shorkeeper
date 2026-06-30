@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import type { AgentSendPayload } from '../../src/shared/types';
+import { cancelAllPendingPermissions } from './permission';
 import { formatAttachmentsForMessage } from '../../src/workspace/import';
 import { runOrchestrator } from '../../src/agent/orchestrator';
 import { getModelConfigSafe } from '../../src/models/config';
@@ -71,6 +72,7 @@ export function registerAgentIpc() {
   });
 
   ipcMain.handle('agent:abort', () => {
+    cancelAllPendingPermissions();
     for (const controller of activeRuns.values()) {
       controller.abort();
     }

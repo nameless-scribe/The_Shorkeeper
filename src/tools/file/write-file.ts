@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
+import { buildFileArtifact, withFileArtifact } from './artifact';
 import { resolveWorkspacePath } from './workspace-path';
 
 export const writeFileTool: ToolDefinition = {
@@ -35,10 +36,14 @@ export const writeFileTool: ToolDefinition = {
       const absolute = resolveWorkspacePath(ctx.workspaceRoot, filePath);
       await fs.mkdir(path.dirname(absolute), { recursive: true });
       await fs.writeFile(absolute, content, 'utf-8');
-      return {
-        success: true,
-        output: `已写入 ${filePath}（${Buffer.byteLength(content, 'utf-8')} 字节）`,
-      };
+      const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
+      return withFileArtifact(
+        {
+          success: true,
+          output: `已写入 ${filePath}（${Buffer.byteLength(content, 'utf-8')} 字节）`,
+        },
+        artifact,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, output: '', error: message };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isCasualChat,
   looksLikeKnowledgeQuery,
   shouldRunRag,
   type PerformanceSettings,
@@ -14,10 +15,17 @@ const defaultSettings: PerformanceSettings = {
 };
 
 describe('performance config', () => {
-  it('detects knowledge-like queries', () => {
-    expect(looksLikeKnowledgeQuery('你好')).toBe(false);
-    expect(looksLikeKnowledgeQuery('伸宏贸易关账日是什么？')).toBe(true);
-    expect(looksLikeKnowledgeQuery('请总结文档里的数据治理流程')).toBe(true);
+  it('detects casual chat', () => {
+    expect(isCasualChat('你好')).toBe(true);
+    expect(isCasualChat('谢谢')).toBe(true);
+    expect(isCasualChat('OA')).toBe(false);
+    expect(isCasualChat('知识库里有什么')).toBe(false);
+  });
+
+  it('runs rag for any non-casual query when documents exist', () => {
+    expect(shouldRunRag('OA', true, defaultSettings)).toBe(true);
+    expect(shouldRunRag('知识库里现在有哪些内容', true, defaultSettings)).toBe(true);
+    expect(shouldRunRag('伸宏贸易关账日是什么？', true, defaultSettings)).toBe(true);
   });
 
   it('skips rag without documents', () => {
@@ -32,5 +40,10 @@ describe('performance config', () => {
     expect(
       shouldRunRag('文档里关账日是什么？', true, { ...defaultSettings, ragEnabled: false }),
     ).toBe(false);
+  });
+
+  it('looksLikeKnowledgeQuery aligns with non-casual', () => {
+    expect(looksLikeKnowledgeQuery('你好')).toBe(false);
+    expect(looksLikeKnowledgeQuery('OA')).toBe(true);
   });
 });

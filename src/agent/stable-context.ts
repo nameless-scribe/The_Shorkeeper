@@ -12,6 +12,8 @@ const TOOL_SUMMARY: Record<string, string> = {
   fetch_url: '抓取网页正文',
   get_weather: '查询天气',
   translate: '翻译文本',
+  read_xlsx: '读取工作区 Excel (.xlsx)',
+  convert_to_markdown: '将 Word/文本文件转为 Markdown',
   gen_markdown: '生成 Markdown 到工作区',
   gen_docx: '生成 Word 到工作区',
   gen_xlsx: '生成 Excel 到工作区',
@@ -20,6 +22,7 @@ const TOOL_SUMMARY: Record<string, string> = {
   travel_plan: '生成旅行规划 Markdown',
   recall_memory: '检索长期记忆',
   search_worldbook: '检索 Worldbook 设定',
+  search_knowledge: '检索/列出用户导入的知识库文档',
   save_memory: '保存长期记忆',
   create_scheduled_task: '创建定时提醒',
   list_scheduled_tasks: '列出定时任务',
@@ -43,7 +46,10 @@ export function formatToolGuideForPrompt(tools: ToolDefinition[]): string | null
     sections.push(`【定时提醒】${SCHEDULE_TOOL_HINT}`);
   }
   sections.push(
-    '当用户询问工作区文件时，请主动调用 list_dir 或 read_file。涉及用户偏好或过往事实时，可先 recall_memory。',
+    '当用户询问工作区文件时，请主动调用 list_dir 或 read_file。涉及用户偏好或过往事实时，可先 recall_memory。' +
+      (tools.some((t) => t.name === 'search_knowledge')
+        ? ' 用户可能在讨论已导入的业务文档（知识库）；需要具体内容时请调用 search_knowledge，不要声称没有知识库。'
+        : ''),
   );
 
   return sections.join('\n\n');

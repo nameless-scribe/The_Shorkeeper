@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AppStatus } from '@/shared/types';
 import { useAgentEvents } from './hooks/useAgentEvents';
+import { deriveAgentWorkflow } from './hooks/agent-workflow';
 import { AppBackground } from './components/AppBackground';
 import { TitleBar } from './components/TitleBar';
 import { MessageList } from './components/MessageList';
 import { InputBar } from './components/InputBar';
 import { SettingsDrawer } from './settings/SettingsDrawer';
 import { SessionHistoryPanel } from './components/SessionHistoryPanel';
+import { PermissionDialog } from './components/PermissionDialog';
+import { usePermissionRequests } from './hooks/usePermissionRequests';
 
 export function ChatPage() {
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -45,6 +48,13 @@ export function ChatPage() {
     onRunFinished: bumpHistory,
   });
 
+  const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
+
+  const workflow = useMemo(
+    () => deriveAgentWorkflow(messages, isRunning, permissionRequest),
+    [messages, isRunning, permissionRequest],
+  );
+
   const handleNewChat = useCallback(async () => {
     if (isRunning) {
       await window.shorekeeper.agent.abort();
@@ -81,6 +91,7 @@ export function ChatPage() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TitleBar
             status={status}
+            workflow={workflow}
             onOpenSettings={() => setSettingsOpen(true)}
             onNewChat={handleNewChat}
             onToggleHistory={() => setHistoryOpen((v) => !v)}
@@ -101,6 +112,7 @@ export function ChatPage() {
             onClose={() => setSettingsOpen(false)}
             onConfigChange={refreshStatus}
           />
+          <PermissionDialog request={permissionRequest} onRespond={respondPermission} />
         </div>
       </div>
     </div>
