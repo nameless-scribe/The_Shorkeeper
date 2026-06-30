@@ -2,6 +2,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
 import { app, BrowserWindow } from 'electron';
+import { configureSkillsPaths } from '../src/skills/paths';
+import { configureDbRuntime } from '../src/db/runtime-paths';
+import { bootstrapDataLayout } from '../src/config/bootstrap-data-layout';
 import { registerAgentIpc } from './ipc/agent';
 import { registerSessionIpc } from './ipc/session';
 import { registerProfileIpc } from './ipc/profile';
@@ -41,6 +44,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 config({ path: path.join(process.cwd(), '.env') });
 
+configureSkillsPaths({
+  isPackaged: app.isPackaged,
+  appPath: app.getAppPath(),
+  resourcesPath: process.resourcesPath,
+});
+
+configureDbRuntime({
+  isPackaged: app.isPackaged,
+  appPath: app.getAppPath(),
+  resourcesPath: process.resourcesPath,
+});
+
 function attachTrayCloseBehavior(win: BrowserWindow): void {
   win.on('close', (event) => {
     if (isAppQuitting()) return;
@@ -52,6 +67,15 @@ function attachTrayCloseBehavior(win: BrowserWindow): void {
 }
 
 app.whenReady().then(async () => {
+  const layout = bootstrapDataLayout(app.getPath('userData'));
+  if (layout.usedFallback) {
+    console.warn(
+      `[data] 无法在 D:\\SQLlite 创建数据目录（${layout.fallbackReason ?? '未知原因'}），已改用 ${layout.databaseDir}`,
+    );
+  } else {
+    console.info(`[data] 数据目录: ${layout.databaseDir}`);
+  }
+
   try {
     await initDatabase();
     restoreActiveSession();

@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { DATABASE_DIR, DATABASE_PATH, WORKSPACE_DIR } from '../config/paths';
+import { getDatabaseDir, getDatabasePath, getWorkspaceDir } from '../config/paths';
+import { resolveSqlWasmPath } from './runtime-paths';
 import { runMigrations } from './migrate';
 
 const require = createRequire(import.meta.url);
@@ -10,7 +11,7 @@ const initSqlJs = require('sql.js/dist/sql-wasm.js') as (
   config?: { locateFile?: (file: string) => string },
 ) => Promise<import('sql.js').SqlJsStatic>;
 
-export { DATABASE_DIR, DATABASE_PATH, WORKSPACE_DIR };
+export { getDatabaseDir, getDatabasePath, getWorkspaceDir };
 
 const INIT_SQL = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 `;
 
 function getWasmPath(file = 'sql-wasm.wasm'): string {
-  return path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', file);
+  return resolveSqlWasmPath(file);
 }
 
 export class SqliteDb {
@@ -109,7 +110,7 @@ let dbInstance: SqliteDb | null = null;
 let initPromise: Promise<SqliteDb> | null = null;
 
 export function ensureDataDirs(): void {
-  for (const dir of [DATABASE_DIR, WORKSPACE_DIR]) {
+  for (const dir of [getDatabaseDir(), getWorkspaceDir()]) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
@@ -141,7 +142,7 @@ function loadDatabaseBuffer(
   }
 }
 
-export async function openDatabase(dbPath: string = DATABASE_PATH): Promise<SqliteDb> {
+export async function openDatabase(dbPath: string = getDatabasePath()): Promise<SqliteDb> {
   ensureDataDirs();
   const SQL = await initSqlJs({ locateFile: getWasmPath });
   const fileBuffer = loadDatabaseBuffer(SQL, dbPath);
@@ -153,7 +154,7 @@ export async function openDatabase(dbPath: string = DATABASE_PATH): Promise<Sqli
   return wrapped;
 }
 
-export async function initDatabase(dbPath: string = DATABASE_PATH): Promise<SqliteDb> {
+export async function initDatabase(dbPath: string = getDatabasePath()): Promise<SqliteDb> {
   if (dbInstance) return dbInstance;
   if (!initPromise) {
     initPromise = openDatabase(dbPath);

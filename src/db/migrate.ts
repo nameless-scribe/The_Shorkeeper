@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SqliteDb } from './index';
-
-const MIGRATIONS_DIR = path.join(process.cwd(), 'src', 'db', 'migrations');
+import { resolveMigrationsDir } from './runtime-paths';
 
 /** 按文件名顺序执行尚未应用的 SQL migration */
 export function runMigrations(db: SqliteDb): string[] {
@@ -13,12 +12,13 @@ export function runMigrations(db: SqliteDb): string[] {
     );
   `);
 
-  if (!fs.existsSync(MIGRATIONS_DIR)) {
+  const migrationsDir = resolveMigrationsDir();
+  if (!fs.existsSync(migrationsDir)) {
     return [];
   }
 
   const files = fs
-    .readdirSync(MIGRATIONS_DIR)
+    .readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql') && f !== '0000_init.sql')
     .sort();
 
@@ -28,7 +28,7 @@ export function runMigrations(db: SqliteDb): string[] {
     const row = db.prepare('SELECT name FROM schema_migrations WHERE name = ?').get(file);
     if (row) continue;
 
-    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
     try {
       db.exec(sql);
     } catch (err) {

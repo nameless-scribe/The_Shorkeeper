@@ -54,6 +54,23 @@ pnpm dist
 
 安装包输出到 `release/` 目录。首次打包会下载 NSIS 相关工具，耗时较长。
 
+**在其他 Windows 电脑使用：** 拷贝 `release/` 下的安装包（`.exe`），双击安装即可，**无需** Node / pnpm。首次打开后会自动创建数据目录：
+
+| 路径 | 说明 |
+|------|------|
+| `D:\SQLlite\` | 数据库根目录（默认，首次启动自动创建） |
+| `D:\SQLlite\shorekeeper.db` | 聊天、设置、记忆等 |
+| `D:\SQLlite\workspace\` | Agent 读写文件的工作区 |
+
+安装包内已包含 **sql.js 运行时**（WASM）与 **数据库迁移脚本**，无需单独安装 SQLite。若目标机没有 `D:` 盘，会自动回退到用户目录下的应用数据文件夹。
+
+首次打开后还需：
+
+1. **设置 → API 设置** — 填写模型 API Key 与接入地址
+2. **设置 → 技能** — 打开需要的技能（`skills/` 已内置）
+
+自定义数据目录（可选）：环境变量 `SHOREKEEPER_DB_DIR` / `SHOREKEEPER_WORKSPACE_DIR`，或在安装目录旁放置 `.env`。
+
 ## 路径说明
 
 | 项 | 默认路径 |

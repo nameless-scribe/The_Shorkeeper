@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { WORKSPACE_DIR } from '../config/paths';
+import { getWorkspaceDir } from '../config/paths';
 import { buildPermissionPolicy } from './policy-loader';
 import type { PermissionDecision, PermissionPolicy } from './types';
 import type { ToolDefinition } from '../tools/types';
 
 export function ensureWorkspaceDir(): string {
-  const root = path.resolve(WORKSPACE_DIR);
+  const root = path.resolve(getWorkspaceDir());
   fs.mkdirSync(root, { recursive: true });
   return root;
 }

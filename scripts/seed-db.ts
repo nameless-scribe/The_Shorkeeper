@@ -1,4 +1,4 @@
-import { openDatabase, DATABASE_PATH } from '../src/db/index.js';
+import { openDatabase, getDatabasePath } from '../src/db/index.js';
 import { runMigrations } from '../src/db/migrate.js';
 import { seedShorekeeper } from '../src/db/seed.js';
 import { SHOREKEEPER_WORLDBOOK } from '../src/db/seeds/index.js';
@@ -8,7 +8,7 @@ const applied = runMigrations(db);
 const result = seedShorekeeper(db);
 db.close();
 
-console.log('数据库:', DATABASE_PATH);
+console.log('数据库:', getDatabasePath());
 if (applied.length) {
   console.log('已应用 migration:', applied.join(', '));
 } else {

@@ -66,9 +66,22 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "skills/**/*",
       "package.json"
     ],
     "asar": true,
+    "extraResources": [
+      {
+        "from": "node_modules/sql.js/dist",
+        "to": "sql.js",
+        "filter": ["sql-wasm.wasm", "sql-wasm.js"]
+      },
+      {
+        "from": "src/db/migrations",
+        "to": "db-migrations",
+        "filter": ["*.sql"]
+      }
+    ],
     "win": {
       "target": [
         "nsis"

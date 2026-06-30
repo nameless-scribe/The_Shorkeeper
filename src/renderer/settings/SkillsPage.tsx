@@ -35,7 +35,7 @@ export function SkillsPage() {
   return (
     <SettingsPageShell>
       <SettingsIntro>
-        技能来自项目 <code className="rounded bg-keeper-navyDeep/60 px-1 py-0.5 text-keeper-cyan/90">skills/*/SKILL.md</code>。
+        技能来自内置 <code className="rounded bg-keeper-navyDeep/60 px-1 py-0.5 text-keeper-cyan/90">skills/*/SKILL.md</code>（开发时在项目根目录，安装包内已一并打包）。
         启用后注入 system prompt。若技能配置了工具白名单，**多个技能同时启用时，可用工具为各白名单的并集**（取所有已启用技能允许的工具）；未配置白名单的技能不限制工具。
       </SettingsIntro>
 

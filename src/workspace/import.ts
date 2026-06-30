@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
-import { WORKSPACE_DIR } from '../config/paths';
+import { getWorkspaceDir } from '../config/paths';
 import {
   MAX_WORKSPACE_IMPORT_BYTES,
   WORKSPACE_IMPORT_EXTENSIONS,
@@ -16,7 +16,7 @@ export interface WorkspaceImportResult {
 }
 
 function ensureWorkspace(): string {
-  const root = path.resolve(WORKSPACE_DIR);
+  const root = path.resolve(getWorkspaceDir());
   fs.mkdirSync(root, { recursive: true });
   return root;
 }
@@ -85,4 +85,4 @@ export function formatAttachmentsForMessage(
   return `[用户已上传以下文件到工作区]\n${lines.join('\n')}\n\n${text}`;
 }
 
-export { WORKSPACE_DIR };
+export { getWorkspaceDir };

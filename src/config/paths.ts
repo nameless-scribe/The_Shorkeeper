@@ -1,19 +1,20 @@
 import path from 'node:path';
 
-/** 数据库文件根目录（可通过环境变量覆盖） */
-export const DATABASE_DIR =
-  process.env.SHOREKEEPER_DB_DIR ?? 'D:\\SQLlite';
+const DEFAULT_DATABASE_DIR = 'D:\\SQLlite';
+
+/** 数据库文件根目录（启动时 bootstrap 可能写入 env） */
+export function getDatabaseDir(): string {
+  return process.env.SHOREKEEPER_DB_DIR ?? DEFAULT_DATABASE_DIR;
+}
 
 /** 主数据库文件路径 */
-export const DATABASE_PATH =
-  process.env.SHOREKEEPER_DB_PATH ?? path.join(DATABASE_DIR, 'shorekeeper.db');
+export function getDatabasePath(): string {
+  return process.env.SHOREKEEPER_DB_PATH ?? path.join(getDatabaseDir(), 'shorekeeper.db');
+}
 
-/** Agent 工作区（工具读写文件的沙箱根目录，与数据库分离） */
-export const WORKSPACE_DIR =
-  process.env.SHOREKEEPER_WORKSPACE_DIR ??
-  path.join(DATABASE_DIR, 'workspace');
-
-/** 运行时解析工作区路径（测试可改 env 后生效） */
+/** Agent 工作区（工具读写文件的沙箱根目录） */
 export function getWorkspaceDir(): string {
-  return process.env.SHOREKEEPER_WORKSPACE_DIR ?? path.join(DATABASE_DIR, 'workspace');
+  return (
+    process.env.SHOREKEEPER_WORKSPACE_DIR ?? path.join(getDatabaseDir(), 'workspace')
+  );
 }

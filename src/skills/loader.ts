@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveSkillsDirectory } from './paths';
 
 export interface Skill {
   id: string;
@@ -11,7 +12,7 @@ export interface Skill {
   trigger: 'manual' | 'auto';
 }
 
-const SKILLS_DIR = path.join(process.cwd(), 'skills');
+const SKILLS_DIR = () => resolveSkillsDirectory();
 
 function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
@@ -69,12 +70,13 @@ function loadSkillFile(filePath: string): Skill | null {
 }
 
 export function discoverSkills(): Skill[] {
-  if (!fs.existsSync(SKILLS_DIR)) return [];
+  const skillsDir = SKILLS_DIR();
+  if (!fs.existsSync(skillsDir)) return [];
 
   const skills: Skill[] = [];
-  for (const entry of fs.readdirSync(SKILLS_DIR, { withFileTypes: true })) {
+  for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    const skillPath = path.join(SKILLS_DIR, entry.name, 'SKILL.md');
+    const skillPath = path.join(skillsDir, entry.name, 'SKILL.md');
     if (!fs.existsSync(skillPath)) continue;
     try {
       const skill = loadSkillFile(skillPath);
@@ -92,5 +94,5 @@ export function getSkillById(id: string): Skill | null {
 }
 
 export function getSkillsDirectory(): string {
-  return SKILLS_DIR;
+  return SKILLS_DIR();
 }
