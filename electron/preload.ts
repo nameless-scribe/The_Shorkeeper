@@ -102,6 +102,12 @@ const shorekeeperApi = {
       };
     },
   },
+  embedding: {
+    getSettings: (): Promise<EmbeddingSettingsInfo> =>
+      ipcRenderer.invoke('embedding:getSettings'),
+    setSettings: (patch: EmbeddingSettingsPatch): Promise<EmbeddingSettingsInfo> =>
+      ipcRenderer.invoke('embedding:setSettings', patch),
+  },
   stats: {
     getTokenUsage: (): Promise<TokenUsageSummaryInfo> =>
       ipcRenderer.invoke('stats:getTokenUsage'),
