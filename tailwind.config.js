@@ -34,6 +34,8 @@ export default {
       animation: {
         twinkle: 'twinkle 4s ease-in-out infinite',
         drift: 'drift 20s ease-in-out infinite',
+        'pulse-glow': 'pulseGlow 3s ease-in-out infinite',
+        'spin-slow': 'spin 10s linear infinite',
       },
       keyframes: {
         twinkle: {
@@ -43,6 +45,10 @@ export default {
         drift: {
           '0%, 100%': { transform: 'translateY(0)' },
           '50%': { transform: 'translateY(-6px)' },
+        },
+        pulseGlow: {
+          '0%, 100%': { opacity: '0.55', transform: 'scale(1)' },
+          '50%': { opacity: '1', transform: 'scale(1.04)' },
         },
       },
     },

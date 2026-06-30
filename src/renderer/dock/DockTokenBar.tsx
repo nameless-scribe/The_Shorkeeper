@@ -63,9 +63,11 @@ export function DockTokenBar() {
         />
       </div>
 
-      {(stats?.todayCached ?? 0) > 0 && (
+      {(stats?.today ?? 0) > 0 && (
         <p className="text-[9px] leading-tight text-keeper-ice/45">
-          缓存命中 {stats!.cacheHitRateToday}%
+          {(stats?.todayCached ?? 0) > 0
+            ? `缓存命中 ${stats!.cacheHitRateToday}%`
+            : '缓存未命中'}
         </p>
       )}
     </div>

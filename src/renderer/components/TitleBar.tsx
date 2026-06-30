@@ -8,6 +8,14 @@ interface TitleBarProps {
   historyOpen?: boolean;
 }
 
+function formatConnectionLabel(status: AppStatus): string {
+  const { model, profileName } = status;
+  if (profileName && profileName !== model) {
+    return `${profileName} · ${model}`;
+  }
+  return model;
+}
+
 export function TitleBar({
   status,
   onOpenSettings,
@@ -25,7 +33,7 @@ export function TitleBar({
           {status?.apiConfigured ? (
             <>
               <span className="text-keeper-cyan drop-shadow-[0_0_6px_rgba(0,212,255,0.8)]">◆</span>{' '}
-              {status.model} 已连接
+              {formatConnectionLabel(status)} 已连接
             </>
           ) : (
             <span className="text-amber-300/90">未配置 API Key</span>

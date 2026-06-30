@@ -10,9 +10,9 @@ interface PluginCardProps {
 
 export function PluginCard({ icon, title, description, control, footer }: PluginCardProps) {
   return (
-    <div className="keeper-glass-soft rounded-2xl px-4 py-3.5">
+    <div className="keeper-glass-soft rounded-2xl border border-keeper-silver/12 px-4 py-3.5 transition hover:border-keeper-silver/20">
       <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-keeper-cyan/10 text-lg">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-keeper-cyan/15 to-keeper-cyan/5 text-lg shadow-[inset_0_0_12px_rgba(0,212,255,0.06)]">
           {icon}
         </span>
         <div className="min-w-0 flex-1">
@@ -23,7 +23,7 @@ export function PluginCard({ icon, title, description, control, footer }: Plugin
             </div>
             <div className="shrink-0">{control}</div>
           </div>
-          {footer && <div className="mt-3 border-t border-keeper-ice/10 pt-3">{footer}</div>}
+          {footer && <div className="mt-3 border-t border-keeper-ice/8 pt-3">{footer}</div>}
         </div>
       </div>
     </div>

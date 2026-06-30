@@ -45,6 +45,74 @@ export interface ModelConfig {
 
 export type ModelProtocol = 'openai' | 'anthropic';
 
+export interface ModelProfileInfo {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  protocol: ModelProtocol;
+  apiKeyMasked: string;
+  apiKeyConfigured: boolean;
+}
+
+export interface ModelProfilesInfo {
+  activeId: string | null;
+  profiles: ModelProfileInfo[];
+}
+
+export interface ModelProfileInput {
+  name: string;
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  protocol?: ModelProtocol;
+}
+
+export interface ModelProfilePatch {
+  name?: string;
+  baseUrl?: string;
+  model?: string;
+  apiKey?: string;
+  protocol?: ModelProtocol;
+}
+
+export interface ModelSettingsInfo {
+  profileId: string | null;
+  name: string;
+  apiKeyMasked: string;
+  apiKeyConfigured: boolean;
+  baseUrl: string;
+  model: string;
+  protocol: ModelProtocol;
+  configuredInApp: boolean;
+}
+
+export interface ModelSettingsPatch {
+  name?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+  protocol?: ModelProtocol;
+}
+
+export type EmbeddingConfigSource = 'chat' | 'dedicated' | 'env';
+
+export interface EmbeddingSettingsInfo {
+  useChatApi: boolean;
+  baseUrl: string;
+  model: string;
+  apiKeyMasked: string;
+  apiKeyConfigured: boolean;
+  source: EmbeddingConfigSource;
+}
+
+export interface EmbeddingSettingsPatch {
+  useChatApi?: boolean;
+  baseUrl?: string;
+  model?: string;
+  apiKey?: string;
+}
+
 export interface McpServerInfo {
   id: string;
   name: string;
@@ -113,6 +181,12 @@ export interface SessionDeleteResult {
   replacementSession?: SessionInfo;
 }
 
+export interface DeleteEmptySessionsResult {
+  deletedCount: number;
+  deletedIds: string[];
+  keptSessionId: string | null;
+}
+
 export interface MessageInfo {
   id: string;
   sessionId: string;
@@ -138,6 +212,7 @@ export interface ProfileEntryInfo {
 
 export interface AppStatus {
   model: string;
+  profileName: string | null;
   baseUrl: string;
   apiConfigured: boolean;
   databasePath: string;
@@ -154,7 +229,7 @@ export interface TokenUsageSummaryInfo {
   total: number;
   todayCached: number;
   cacheHitRateToday: number;
-  dailyLast7: { date: string; tokens: number }[];
+  dailyLast7: { date: string; tokens: number; cached: number }[];
 }
 
 export type ScheduleKind = 'recurring' | 'once';

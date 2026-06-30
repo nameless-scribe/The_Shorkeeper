@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ProfileEntryInfo } from '@/shared/types';
+import {
+  SettingsActionLink,
+  SettingsChip,
+  SettingsEmpty,
+  SettingsField,
+  SettingsInlineActions,
+  SettingsIntro,
+  SettingsListCard,
+  SettingsLoading,
+  SettingsPageShell,
+  SettingsPanel,
+  SettingsPrimaryButton,
+  SETTINGS_INPUT_CLASS,
+} from './components/settings-ui';
 
 const SUGGESTED_KEYS = [
   { key: 'nickname', label: '称呼' },
@@ -46,106 +60,95 @@ export function ProfilePage() {
     await refresh();
   };
 
-  if (loading) {
-    return <p className="text-sm text-keeper-ice/60">加载中…</p>;
-  }
+  if (loading) return <SettingsLoading />;
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs leading-relaxed text-keeper-ice/65">
+    <SettingsPageShell>
+      <SettingsIntro>
         用户画像会注入到每次对话的 system prompt，帮助守岸人记住你的称呼与偏好。
-      </p>
+      </SettingsIntro>
 
-      <div className="space-y-2">
-        {entries.length === 0 && (
-          <p className="text-sm text-keeper-ice/50">暂无画像条目，可添加下方字段。</p>
-        )}
-        {entries.map((entry) => (
-          <div
-            key={entry.key}
-            className="keeper-glass-soft rounded-xl px-3 py-2"
-          >
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-keeper-cyan">{entry.key}</span>
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingKey(entry.key);
-                    setEditValue(entry.value);
-                  }}
-                  className="text-xs text-keeper-ice/60 hover:text-keeper-cyan"
-                >
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(entry.key)}
-                  className="text-xs text-red-300/70 hover:text-red-300"
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-            {editingKey === entry.key ? (
-              <div className="flex gap-2">
-                <input
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  className="min-w-0 flex-1 rounded-lg border border-keeper-cyan/20 bg-keeper-navyDeep/60 px-2 py-1 text-sm text-keeper-ice"
+      <SettingsPanel title="画像条目" subtitle={`${entries.length} 个字段`} icon="👤">
+        {entries.length === 0 ? (
+          <SettingsEmpty title="暂无画像条目" hint="在下方添加字段，或点击快捷标签" />
+        ) : (
+          <div className="space-y-2">
+            {entries.map((entry) => (
+              <div key={entry.key} className="space-y-2">
+                <SettingsListCard
+                  title={entry.key}
+                  subtitle={editingKey === entry.key ? undefined : entry.value}
+                  actions={
+                    editingKey !== entry.key ? (
+                      <SettingsInlineActions>
+                        <SettingsActionLink
+                          onClick={() => {
+                            setEditingKey(entry.key);
+                            setEditValue(entry.value);
+                          }}
+                        >
+                          编辑
+                        </SettingsActionLink>
+                        <SettingsActionLink onClick={() => void handleDelete(entry.key)} danger>
+                          删除
+                        </SettingsActionLink>
+                      </SettingsInlineActions>
+                    ) : undefined
+                  }
                 />
-                <button
-                  type="button"
-                  onClick={() => handleSaveEdit(entry.key)}
-                  className="rounded-lg bg-keeper-cyan/20 px-2 py-1 text-xs text-keeper-cyan"
-                >
-                  保存
-                </button>
+                {editingKey === entry.key && (
+                  <div className="flex gap-2">
+                    <input
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      className={SETTINGS_INPUT_CLASS}
+                    />
+                    <SettingsPrimaryButton
+                      className="shrink-0 px-4"
+                      onClick={() => void handleSaveEdit(entry.key)}
+                    >
+                      保存
+                    </SettingsPrimaryButton>
+                  </div>
+                )}
               </div>
-            ) : (
-              <p className="text-sm text-keeper-ice/90">{entry.value}</p>
-            )}
+            ))}
           </div>
-        ))}
-      </div>
+        )}
+      </SettingsPanel>
 
-      <div className="keeper-glass-soft space-y-2 rounded-xl p-3">
-        <p className="text-xs text-keeper-ice/60">快捷添加</p>
-        <div className="flex flex-wrap gap-1">
-          {SUGGESTED_KEYS.filter(
-            (s) => !entries.some((e) => e.key === s.key),
-          ).map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              onClick={() => setNewKey(s.key)}
-              className="rounded-full border border-keeper-cyan/25 px-2 py-0.5 text-xs text-keeper-ice/70 hover:border-keeper-cyan/50"
-            >
+      <SettingsPanel title="添加字段" subtitle="自定义或使用快捷标签" icon="➕">
+        <div className="flex flex-wrap gap-1.5">
+          {SUGGESTED_KEYS.filter((s) => !entries.some((e) => e.key === s.key)).map((s) => (
+            <SettingsChip key={s.key} onClick={() => setNewKey(s.key)}>
               {s.label}
-            </button>
+            </SettingsChip>
           ))}
         </div>
-        <input
-          value={newKey}
-          onChange={(e) => setNewKey(e.target.value)}
-          placeholder="字段名，如 nickname"
-          className="w-full rounded-lg border border-keeper-cyan/20 bg-keeper-navyDeep/60 px-2 py-1.5 text-sm text-keeper-ice"
-        />
-        <input
-          value={newValue}
-          onChange={(e) => setNewValue(e.target.value)}
-          placeholder="内容"
-          className="w-full rounded-lg border border-keeper-cyan/20 bg-keeper-navyDeep/60 px-2 py-1.5 text-sm text-keeper-ice"
-        />
-        <button
-          type="button"
-          onClick={handleAdd}
+        <SettingsField label="字段名" hint="如 nickname、preference.tone">
+          <input
+            value={newKey}
+            onChange={(e) => setNewKey(e.target.value)}
+            placeholder="nickname"
+            className={SETTINGS_INPUT_CLASS}
+          />
+        </SettingsField>
+        <SettingsField label="内容">
+          <input
+            value={newValue}
+            onChange={(e) => setNewValue(e.target.value)}
+            placeholder="希望守岸人如何称呼你…"
+            className={SETTINGS_INPUT_CLASS}
+          />
+        </SettingsField>
+        <SettingsPrimaryButton
+          className="w-full"
           disabled={!newKey.trim() || !newValue.trim()}
-          className="w-full rounded-lg bg-keeper-cyan/25 py-2 text-sm text-keeper-cyan disabled:opacity-40"
+          onClick={() => void handleAdd()}
         >
           添加画像字段
-        </button>
-      </div>
-    </div>
+        </SettingsPrimaryButton>
+      </SettingsPanel>
+    </SettingsPageShell>
   );
 }

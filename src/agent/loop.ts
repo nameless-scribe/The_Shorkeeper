@@ -20,6 +20,7 @@ export interface AgentLoopOptions {
   maxRounds?: number;
   policy?: PermissionPolicy;
   signal?: AbortSignal;
+  cacheStablePrefix?: string;
 }
 
 function parseToolArgs(raw: string): unknown {
@@ -104,6 +105,7 @@ export async function* runAgentLoop(
     for await (const event of streamChat(messages, config, {
       tools,
       signal,
+      cacheStablePrefix: options.cacheStablePrefix,
     })) {
       if (event.type === 'text_delta') {
         yield ev.textDelta(runId, event.delta);

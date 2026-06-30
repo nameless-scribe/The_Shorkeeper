@@ -1,5 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { WorldbookEntryInfo } from '@/shared/types';
+import {
+  SettingsActionLink,
+  SettingsBadge,
+  SettingsEmpty,
+  SettingsField,
+  SettingsInlineActions,
+  SettingsIntro,
+  SettingsListCard,
+  SettingsLoading,
+  SettingsPageShell,
+  SettingsPanel,
+  SettingsPrimaryButton,
+  SettingsSecondaryButton,
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_TEXTAREA_CLASS,
+} from './components/settings-ui';
 
 const EMPTY_FORM = {
   keys: '',
@@ -73,114 +89,105 @@ export function WorldbookPage() {
     await refresh();
   };
 
-  if (loading) {
-    return <p className="text-sm text-keeper-ice/60">加载中…</p>;
-  }
+  if (loading) return <SettingsLoading />;
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs leading-relaxed text-keeper-ice/65">
+    <SettingsPageShell>
+      <SettingsIntro>
         Worldbook 条目在用户消息命中关键词时自动注入对话上下文。触发词用逗号分隔。
-      </p>
+      </SettingsIntro>
 
-      <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
-        {entries.map((entry) => (
-          <div
-            key={entry.id}
-            className={`keeper-glass-soft rounded-xl px-3 py-2 ${!entry.enabled ? 'opacity-50' : ''}`}
-          >
-            <div className="mb-1 flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="truncate text-xs text-keeper-cyan">{entry.keys}</p>
-                <p className="mt-1 line-clamp-2 text-xs text-keeper-ice/75">{entry.content}</p>
-              </div>
-              <span className="shrink-0 text-[10px] text-keeper-ice/40">P{entry.priority}</span>
-            </div>
-            <div className="flex gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => toggleEnabled(entry)}
-                className="text-keeper-ice/60 hover:text-keeper-cyan"
-              >
-                {entry.enabled ? '禁用' : '启用'}
-              </button>
-              <button
-                type="button"
-                onClick={() => startEdit(entry)}
-                className="text-keeper-ice/60 hover:text-keeper-cyan"
-              >
-                编辑
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDelete(entry.id)}
-                className="text-red-300/70 hover:text-red-300"
-              >
-                删除
-              </button>
-            </div>
+      <SettingsPanel title="条目列表" subtitle={`${entries.length} 条`} icon="📖">
+        {entries.length === 0 ? (
+          <SettingsEmpty title="暂无 Worldbook 条目" hint="在下方表单添加第一条" />
+        ) : (
+          <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+            {entries.map((entry) => (
+              <SettingsListCard
+                key={entry.id}
+                title={entry.keys}
+                subtitle={entry.content}
+                meta={`优先级 P${entry.priority}`}
+                dimmed={!entry.enabled}
+                badge={
+                  entry.enabled ? (
+                    <SettingsBadge tone="green">启用</SettingsBadge>
+                  ) : (
+                    <SettingsBadge tone="muted">禁用</SettingsBadge>
+                  )
+                }
+                actions={
+                  <SettingsInlineActions>
+                    <SettingsActionLink onClick={() => void toggleEnabled(entry)}>
+                      {entry.enabled ? '禁用' : '启用'}
+                    </SettingsActionLink>
+                    <SettingsActionLink onClick={() => startEdit(entry)}>编辑</SettingsActionLink>
+                    <SettingsActionLink onClick={() => void handleDelete(entry.id)} danger>
+                      删除
+                    </SettingsActionLink>
+                  </SettingsInlineActions>
+                }
+              />
+            ))}
           </div>
-        ))}
-      </div>
+        )}
+      </SettingsPanel>
 
-      <div className="keeper-glass-soft space-y-2 rounded-xl p-3">
-        <p className="text-xs font-medium text-keeper-ice/80">
-          {editingId ? '编辑条目' : '新增条目'}
-        </p>
-        <input
-          value={form.keys}
-          onChange={(e) => setForm((f) => ({ ...f, keys: e.target.value }))}
-          placeholder="触发词，逗号分隔，如：魔法,法术"
-          className="w-full rounded-lg border border-keeper-cyan/20 bg-keeper-navyDeep/60 px-2 py-1.5 text-sm text-keeper-ice"
-        />
-        <textarea
-          value={form.content}
-          onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-          placeholder="命中后注入的背景内容"
-          rows={3}
-          className="w-full resize-none rounded-lg border border-keeper-cyan/20 bg-keeper-navyDeep/60 px-2 py-1.5 text-sm text-keeper-ice"
-        />
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1 text-xs text-keeper-ice/70">
-            优先级
+      <SettingsPanel
+        title={editingId ? '编辑条目' : '新增条目'}
+        icon={editingId ? '✏️' : '➕'}
+      >
+        <SettingsField label="触发词" hint="逗号分隔，如：魔法,法术,咒语">
+          <input
+            value={form.keys}
+            onChange={(e) => setForm((f) => ({ ...f, keys: e.target.value }))}
+            placeholder="魔法,法术"
+            className={SETTINGS_INPUT_CLASS}
+          />
+        </SettingsField>
+        <SettingsField label="注入内容">
+          <textarea
+            value={form.content}
+            onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
+            placeholder="命中后注入的背景设定…"
+            rows={4}
+            className={SETTINGS_TEXTAREA_CLASS}
+          />
+        </SettingsField>
+        <div className="flex flex-wrap items-center gap-4">
+          <SettingsField label="优先级">
             <input
               type="number"
               value={form.priority}
               onChange={(e) =>
                 setForm((f) => ({ ...f, priority: Number(e.target.value) || 0 }))
               }
-              className="w-16 rounded border border-keeper-cyan/20 bg-keeper-navyDeep/60 px-1 py-0.5 text-keeper-ice"
+              className={`${SETTINGS_INPUT_CLASS} max-w-[100px]`}
             />
-          </label>
-          <label className="flex items-center gap-1 text-xs text-keeper-ice/70">
+          </SettingsField>
+          <label className="flex items-center gap-2 pt-5 text-xs text-keeper-ice/70">
             <input
               type="checkbox"
               checked={form.enabled}
               onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+              className="rounded"
             />
             启用
           </label>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={handleSubmit}
+        <div className="flex gap-2 pt-1">
+          <SettingsPrimaryButton
+            className="flex-1"
             disabled={!form.keys.trim() || !form.content.trim()}
-            className="flex-1 rounded-lg bg-keeper-cyan/25 py-2 text-sm text-keeper-cyan disabled:opacity-40"
+            onClick={() => void handleSubmit()}
           >
             {editingId ? '保存修改' : '添加条目'}
-          </button>
+          </SettingsPrimaryButton>
           {editingId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-lg border border-keeper-ice/20 px-3 py-2 text-sm text-keeper-ice/70"
-            >
-              取消
-            </button>
+            <SettingsSecondaryButton onClick={resetForm}>取消</SettingsSecondaryButton>
           )}
         </div>
-      </div>
-    </div>
+      </SettingsPanel>
+    </SettingsPageShell>
   );
 }

@@ -8,6 +8,7 @@ import type {
   ScheduleKind,
   ScheduledTaskInfo,
   SessionDeleteResult,
+  DeleteEmptySessionsResult,
   SessionInfo,
   SessionListOptions,
   SessionListResult,
@@ -18,6 +19,14 @@ import type {
   DocumentInfo,
   ImportProgress,
   ModelProtocol,
+  ModelProfileInfo,
+  ModelProfileInput,
+  ModelProfilePatch,
+  ModelProfilesInfo,
+  ModelSettingsInfo,
+  ModelSettingsPatch,
+  EmbeddingSettingsInfo,
+  EmbeddingSettingsPatch,
   McpServerInfo,
   PerformanceSettingsInfo,
   PluginSettingsInfo,
@@ -50,6 +59,8 @@ const shorekeeperApi = {
       ipcRenderer.invoke('sessions:delete', id),
     archive: (id: string, archived: boolean): Promise<SessionInfo> =>
       ipcRenderer.invoke('sessions:archive', id, archived),
+    deleteEmpty: (): Promise<DeleteEmptySessionsResult> =>
+      ipcRenderer.invoke('sessions:deleteEmpty'),
   },
   messages: {
     list: (sessionId: string): Promise<MessageInfo[]> =>
@@ -194,6 +205,18 @@ const shorekeeperApi = {
     getProtocol: (): Promise<ModelProtocol> => ipcRenderer.invoke('model:getProtocol'),
     setProtocol: (protocol: ModelProtocol): Promise<ModelProtocol> =>
       ipcRenderer.invoke('model:setProtocol', protocol),
+    getSettings: (): Promise<ModelSettingsInfo> => ipcRenderer.invoke('model:getSettings'),
+    setSettings: (patch: ModelSettingsPatch): Promise<ModelSettingsInfo> =>
+      ipcRenderer.invoke('model:setSettings', patch),
+    getProfiles: (): Promise<ModelProfilesInfo> => ipcRenderer.invoke('model:getProfiles'),
+    createProfile: (input: ModelProfileInput): Promise<ModelProfilesInfo> =>
+      ipcRenderer.invoke('model:createProfile', input),
+    updateProfile: (id: string, patch: ModelProfilePatch): Promise<ModelProfilesInfo> =>
+      ipcRenderer.invoke('model:updateProfile', id, patch),
+    deleteProfile: (id: string): Promise<ModelProfilesInfo> =>
+      ipcRenderer.invoke('model:deleteProfile', id),
+    setActiveProfile: (id: string): Promise<ModelProfilesInfo> =>
+      ipcRenderer.invoke('model:setActiveProfile', id),
   },
   performance: {
     get: (): Promise<PerformanceSettingsInfo> => ipcRenderer.invoke('performance:get'),

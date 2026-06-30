@@ -11,7 +11,7 @@ import { registerPresenceIpc } from './ipc/presence';
 import { registerWindowIpc } from './ipc/window';
 import { registerTasksIpc } from './ipc/tasks';
 import { initDatabase, closeDatabase } from '../src/db';
-import { resetActiveSession } from '../src/session/active';
+import { restoreActiveSession } from '../src/session/active';
 import {
   createTray,
   hideAllWindowsToTray,
@@ -26,6 +26,7 @@ import { setTaskChangeHandler } from '../src/scheduler/task-events';
 import { registerWorkspaceIpc } from './ipc/workspace';
 import { registerDockIpc } from './ipc/dock';
 import { registerDocumentsIpc } from './ipc/documents';
+import { registerEmbeddingIpc } from './ipc/embedding';
 import { registerMcpIpc, initMcpOnStartup } from './ipc/mcp';
 import { registerSkillsIpc } from './ipc/skills';
 import { registerModelIpc } from './ipc/model';
@@ -51,7 +52,7 @@ function attachTrayCloseBehavior(win: BrowserWindow): void {
 app.whenReady().then(async () => {
   try {
     await initDatabase();
-    resetActiveSession();
+    restoreActiveSession();
   } catch (err) {
     console.error('数据库初始化失败:', err);
   }
@@ -67,6 +68,7 @@ app.whenReady().then(async () => {
   registerWorkspaceIpc();
   registerDockIpc();
   registerDocumentsIpc();
+  registerEmbeddingIpc();
   registerMcpIpc();
   registerSkillsIpc();
   registerModelIpc();

@@ -1,7 +1,7 @@
 import { createRunId, ev } from './events';
 import { runAgentLoop } from './loop';
 import type { AgUiEvent } from './types';
-import { buildSystemPrompt } from './context-builder';
+import { buildSystemPromptParts } from './context-builder';
 import { getAgentRegistry } from '../tools/agent-registry';
 import { buildPermissionPolicy } from './policy-loader';
 import { loadModelConfig } from '../models/config';
@@ -66,16 +66,16 @@ export async function* runOrchestrator(
 
     const { maxHistoryMessages } = getPerformanceSettings();
     const history = getRecentChatMessages(session.id, maxHistoryMessages);
-    const systemPrompt = await buildSystemPrompt({
+    const registry = await getAgentRegistry();
+    const systemParts = await buildSystemPromptParts({
       userMessage,
       sessionId: session.id,
+      availableTools: registry.list(),
     });
     const messages = [
-      { role: 'system' as const, content: systemPrompt },
+      { role: 'system' as const, content: systemParts.combined },
       ...history.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     ];
-
-    const registry = await getAgentRegistry();
     const policy = buildPermissionPolicy();
 
     let assistantText = '';
@@ -87,6 +87,7 @@ export async function* runOrchestrator(
       registry,
       policy,
       signal,
+      cacheStablePrefix: systemParts.stable,
     })) {
       if (event.type === 'text_delta') {
         assistantText += event.delta;

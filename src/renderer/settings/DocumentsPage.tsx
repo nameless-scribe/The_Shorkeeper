@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DocumentInfo, ImportProgress } from '@/shared/types';
+import {
+  SettingsActionLink,
+  SettingsEmpty,
+  SettingsIntro,
+  SettingsListCard,
+  SettingsLoading,
+  SettingsPageShell,
+  SettingsPanel,
+  SettingsPrimaryButton,
+  SettingsSection,
+} from './components/settings-ui';
 
 function formatProgress(progress: ImportProgress | null): string {
   if (!progress) return '';
@@ -56,9 +67,7 @@ export function DocumentsPage() {
     setProgress(null);
     try {
       const doc = await window.shorekeeper.documents.import();
-      if (doc) {
-        await refresh();
-      }
+      if (doc) await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -71,58 +80,49 @@ export function DocumentsPage() {
     await refresh();
   };
 
-  if (loading) {
-    return <p className="text-sm text-keeper-ice/60">加载中…</p>;
-  }
+  if (loading) return <SettingsLoading />;
 
   return (
-    <div className="space-y-4">
-      <div>
-        <p className="text-xs leading-relaxed text-keeper-ice/60">
-          导入 MD 或 TXT 文档后，对话将自动检索相关内容并注入上下文。文件保存在工作区 knowledge/
-          目录。也可以在聊天中说「<span className="text-keeper-cyan/90">将本次对话计入知识库</span>
-          」，系统会提炼当前会话并写入。
-        </p>
-        <button
-          type="button"
-          onClick={handleImport}
-          disabled={importing}
-          className="mt-3 w-full rounded-xl border border-keeper-cyan/30 bg-keeper-cyan/15 py-2.5 text-sm font-medium text-keeper-cyan transition hover:bg-keeper-cyan/25 disabled:opacity-50"
-        >
-          {importing ? '导入中…' : '导入文档'}
-        </button>
-        {progress && (
-          <p className="mt-2 text-xs text-keeper-cyan/80">{formatProgress(progress)}</p>
-        )}
-        {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
-      </div>
+    <SettingsPageShell>
+      <SettingsIntro>
+        导入 MD 或 TXT 后，对话将自动检索相关内容。文件保存在工作区 knowledge/ 目录。
+        也可在聊天中说「<span className="text-keeper-cyan/90">将本次对话计入知识库</span>」提炼会话。
+      </SettingsIntro>
 
-      {documents.length === 0 ? (
-        <p className="text-sm text-keeper-ice/50">暂无导入文档</p>
-      ) : (
-        <ul className="space-y-2">
-          {documents.map((doc) => (
-            <li
-              key={doc.id}
-              className="flex items-start justify-between gap-3 rounded-xl border border-keeper-silver/15 bg-white/5 px-3 py-2.5"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-keeper-ice">{doc.filename}</p>
-                <p className="mt-0.5 text-[10px] text-keeper-ice/50">
-                  {doc.chunkCount} 块 · {formatDate(doc.importedAt)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleDelete(doc.id)}
-                className="shrink-0 text-xs text-red-400/80 hover:text-red-400"
-              >
-                删除
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+      <SettingsPanel title="导入文档" icon="📥">
+        <SettingsPrimaryButton
+          className="w-full"
+          disabled={importing}
+          onClick={() => void handleImport()}
+        >
+          {importing ? '导入中…' : '选择文件导入'}
+        </SettingsPrimaryButton>
+        {progress && (
+          <p className="text-center text-xs text-keeper-cyan/80">{formatProgress(progress)}</p>
+        )}
+        {error && <p className="text-xs text-red-300/80">{error}</p>}
+      </SettingsPanel>
+
+      <SettingsSection title="知识库" hint={`${documents.length} 个文档`}>
+        {documents.length === 0 ? (
+          <SettingsEmpty title="暂无导入文档" hint="点击上方按钮导入 MD / TXT" />
+        ) : (
+          <div className="space-y-2">
+            {documents.map((doc) => (
+              <SettingsListCard
+                key={doc.id}
+                title={doc.filename}
+                meta={`${doc.chunkCount} 块 · ${formatDate(doc.importedAt)}`}
+                actions={
+                  <SettingsActionLink onClick={() => void handleDelete(doc.id)} danger>
+                    删除
+                  </SettingsActionLink>
+                }
+              />
+            ))}
+          </div>
+        )}
+      </SettingsSection>
+    </SettingsPageShell>
   );
 }

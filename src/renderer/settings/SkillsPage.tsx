@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SkillInfo } from '@/shared/types';
+import { SettingsToggle } from './components/SettingsToggle';
+import {
+  SettingsBadge,
+  SettingsEmpty,
+  SettingsIntro,
+  SettingsListCard,
+  SettingsLoading,
+  SettingsPageShell,
+  SettingsSection,
+} from './components/settings-ui';
 
 export function SkillsPage() {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -20,48 +30,48 @@ export function SkillsPage() {
     setSkills(updated);
   };
 
-  if (loading) {
-    return <p className="text-sm text-keeper-ice/60">加载中…</p>;
-  }
+  if (loading) return <SettingsLoading />;
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs leading-relaxed text-keeper-ice/65">
-        技能来自项目 <code className="text-keeper-cyan">skills/*/SKILL.md</code>。启用后会把说明片段注入 system prompt，并可限制可用工具。
-      </p>
+    <SettingsPageShell>
+      <SettingsIntro>
+        技能来自项目 <code className="rounded bg-keeper-navyDeep/60 px-1 py-0.5 text-keeper-cyan/90">skills/*/SKILL.md</code>。
+        启用后注入 system prompt，并可限制可用工具；白名单外的工具（如定时提醒）将不可用。
+      </SettingsIntro>
 
-      {skills.length === 0 && (
-        <p className="text-xs text-keeper-ice/50">未发现技能包。可参考 skills/example/SKILL.md 添加。</p>
-      )}
-
-      <div className="space-y-2">
-        {skills.map((skill) => (
-          <div key={skill.id} className="keeper-glass-soft rounded-xl p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-keeper-ice">{skill.name}</p>
-                <p className="mt-1 text-xs text-keeper-ice/55">{skill.description || skill.id}</p>
-                {skill.allowedTools?.length ? (
-                  <p className="mt-1 text-[10px] text-keeper-ice/40">
-                    工具白名单：{skill.allowedTools.join(', ')}
-                  </p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                onClick={() => void toggle(skill)}
-                className={`shrink-0 rounded-lg px-3 py-1.5 text-xs ${
-                  skill.enabled
-                    ? 'bg-keeper-cyan/25 text-keeper-cyan'
-                    : 'bg-keeper-silver/10 text-keeper-ice/60 hover:text-keeper-ice'
-                }`}
-              >
-                {skill.enabled ? '已启用' : '启用'}
-              </button>
-            </div>
+      <SettingsSection title="已安装技能" hint={`${skills.length} 个`}>
+        {skills.length === 0 ? (
+          <SettingsEmpty title="未发现技能包" hint="可参考 skills/example/SKILL.md 添加" />
+        ) : (
+          <div className="space-y-2">
+            {skills.map((skill) => (
+              <SettingsListCard
+                key={skill.id}
+                title={skill.name}
+                subtitle={skill.description || skill.id}
+                badge={
+                  skill.enabled ? (
+                    <SettingsBadge tone="cyan">已启用</SettingsBadge>
+                  ) : (
+                    <SettingsBadge tone="muted">未启用</SettingsBadge>
+                  )
+                }
+                meta={
+                  skill.allowedTools?.length
+                    ? `工具白名单：${skill.allowedTools.join(', ')}${skill.enabled ? '（启用后仅以上工具可用）' : ''}`
+                    : undefined
+                }
+                actions={
+                  <SettingsToggle
+                    checked={skill.enabled}
+                    onChange={() => void toggle(skill)}
+                  />
+                }
+              />
+            ))}
           </div>
-        ))}
-      </div>
-    </div>
+        )}
+      </SettingsSection>
+    </SettingsPageShell>
   );
 }

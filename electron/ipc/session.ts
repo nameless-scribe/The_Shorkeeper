@@ -1,7 +1,8 @@
 import { ipcMain } from 'electron';
 import { DATABASE_PATH } from '../../src/config/paths';
-import { getModelConfigSafe } from '../../src/models/config';
+import { getModelConfigSafe, getModelSettingsInfo } from '../../src/models/config';
 import {
+  deleteEmptySessions,
   deleteSession,
   getSession,
   listSessions,
@@ -9,7 +10,7 @@ import {
 } from '../../src/db/repositories/sessions';
 import { getActiveSession, getActiveSessionId, resetActiveSession, switchActiveSession } from '../../src/session/active';
 import { listMessages } from '../../src/db/repositories/messages';
-import type { AppStatus, MessageInfo, SessionDeleteResult, SessionInfo, SessionListOptions, SessionListResult } from '../../src/shared/types';
+import type { AppStatus, DeleteEmptySessionsResult, MessageInfo, SessionDeleteResult, SessionInfo, SessionListOptions, SessionListResult } from '../../src/shared/types';
 
 function toSessionInfo(session: NonNullable<ReturnType<typeof getSession>>): SessionInfo {
   return {
@@ -25,9 +26,11 @@ function toSessionInfo(session: NonNullable<ReturnType<typeof getSession>>): Ses
 export function registerSessionIpc() {
   ipcMain.handle('app:status', (): AppStatus => {
     const config = getModelConfigSafe();
+    const settings = getModelSettingsInfo();
     return {
-      model: config?.model ?? '未配置',
-      baseUrl: config?.baseUrl ?? '',
+      model: config?.model ?? settings.model ?? '未配置',
+      profileName: settings.configuredInApp ? settings.name : null,
+      baseUrl: config?.baseUrl ?? settings.baseUrl ?? '',
       apiConfigured: Boolean(config),
       databasePath: DATABASE_PATH,
     };
@@ -68,6 +71,10 @@ export function registerSessionIpc() {
       return { ok: true, replacementSession: toSessionInfo(session) };
     }
     return { ok: true };
+  });
+
+  ipcMain.handle('sessions:deleteEmpty', (): DeleteEmptySessionsResult => {
+    return deleteEmptySessions({ keepSessionId: getActiveSessionId() });
   });
 
   ipcMain.handle('sessions:archive', (_event, id: string, archived: boolean): SessionInfo => {

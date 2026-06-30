@@ -19,16 +19,20 @@ export function ChatPage() {
     setHistoryRefreshKey((k) => k + 1);
   }, []);
 
+  const refreshStatus = useCallback(() => {
+    window.shorekeeper?.app.status().then(setStatus).catch(console.error);
+  }, []);
+
   useEffect(() => {
     if (!window.shorekeeper) return;
-    window.shorekeeper.app.status().then(setStatus).catch(console.error);
+    refreshStatus();
     window.shorekeeper.sessions.current().then((s) => setSessionId(s.id)).catch(console.error);
 
     const off = window.shorekeeper.window.onOpenSettings(() => setSettingsOpen(true));
     return () => {
       off();
     };
-  }, []);
+  }, [refreshStatus]);
 
   const ensureSession = useCallback(async () => {
     if (sessionId) return sessionId;
@@ -92,7 +96,11 @@ export function ChatPage() {
             disabled={isRunning || !status?.apiConfigured}
             onSend={(text, attachments) => send(text, attachments)}
           />
-          <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+          <SettingsDrawer
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            onConfigChange={refreshStatus}
+          />
         </div>
       </div>
     </div>

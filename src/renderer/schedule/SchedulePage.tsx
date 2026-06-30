@@ -1,16 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 import type { ScheduledTaskInfo, TokenUsageSummaryInfo } from '@/shared/types';
 import { formatScheduleLabel } from '@/scheduler/format';
 import { AppBackground } from '../components/AppBackground';
 import { PanelTitleBar } from '../components/PanelTitleBar';
+import { TokenUsageLineChart } from './TokenUsageLineChart';
 
 const DAILY_TOKEN_BUDGET = 100_000;
 
@@ -97,11 +90,18 @@ export function SchedulePage() {
             </div>
             <p className="mt-1 text-[10px] text-keeper-ice/40">
               日预算参考 {DAILY_TOKEN_BUDGET.toLocaleString()} · {progress}%
-              {(stats?.todayCached ?? 0) > 0 && (
+              {(stats?.today ?? 0) > 0 && (
                 <>
                   {' '}
-                  · 缓存命中 {stats!.cacheHitRateToday}%（
-                  {stats!.todayCached.toLocaleString()} tokens）
+                  ·{' '}
+                  {(stats?.todayCached ?? 0) > 0 ? (
+                    <>
+                      缓存命中 {stats!.cacheHitRateToday}%（
+                      {stats!.todayCached.toLocaleString()} tokens）
+                    </>
+                  ) : (
+                    <>缓存未命中（API 未返回 cached_tokens 或前缀已变化）</>
+                  )}
                 </>
               )}
             </p>
@@ -109,35 +109,7 @@ export function SchedulePage() {
 
           <section className="keeper-glass-soft rounded-2xl p-3">
             <p className="mb-2 text-xs font-medium text-keeper-ice/70">近 7 日 Token</p>
-            <div className="h-40 w-full min-w-0">
-              <ResponsiveContainer key={chartKey} width="100%" height="100%" minWidth={0}>
-                <BarChart data={chartData}>
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: 'rgba(225,233,240,0.5)', fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fill: 'rgba(225,233,240,0.4)', fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={36}
-                    allowDecimals={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: 'rgba(10,17,40,0.92)',
-                      border: '1px solid rgba(48,188,237,0.25)',
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                    labelStyle={{ color: '#E1E9F0' }}
-                  />
-                  <Bar dataKey="tokens" fill="#30BCED" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <TokenUsageLineChart data={chartData} chartKey={chartKey} />
           </section>
 
           <section className="keeper-glass-soft rounded-2xl p-4">

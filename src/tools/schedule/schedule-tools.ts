@@ -57,37 +57,53 @@ export const createScheduledTaskTool: ToolDefinition = {
     required: ['name', 'schedule_kind', 'message'],
   },
   async execute(args) {
-    const { name, schedule_kind, cron: cronExpr, run_at, message } = args as {
-      name?: string;
-      schedule_kind?: ScheduleKind;
-      cron?: string;
-      run_at?: string;
-      message?: string;
-    };
+    const raw = args as Record<string, unknown>;
+    const name = typeof raw.name === 'string' ? raw.name : undefined;
+    const message = typeof raw.message === 'string' ? raw.message : undefined;
+    const scheduleKindRaw =
+      typeof raw.schedule_kind === 'string'
+        ? raw.schedule_kind
+        : typeof raw.scheduleKind === 'string'
+          ? raw.scheduleKind
+          : undefined;
+    const cronExpr =
+      typeof raw.cron === 'string' ? raw.cron : undefined;
+    const runAtRaw =
+      typeof raw.run_at === 'string'
+        ? raw.run_at
+        : typeof raw.runAt === 'string'
+          ? raw.runAt
+          : undefined;
 
     if (!name?.trim() || !message?.trim()) {
       return { success: false, output: '', error: '缺少 name 或 message 参数' };
     }
 
-    const scheduleKind: ScheduleKind =
-      schedule_kind === 'once' ? 'once' : schedule_kind === 'recurring' ? 'recurring' : 'recurring';
-
-    if (schedule_kind !== 'once' && schedule_kind !== 'recurring') {
+    let scheduleKind: ScheduleKind;
+    if (scheduleKindRaw === 'once') {
+      scheduleKind = 'once';
+    } else if (scheduleKindRaw === 'recurring') {
+      scheduleKind = 'recurring';
+    } else if (runAtRaw?.trim()) {
+      scheduleKind = 'once';
+    } else if (cronExpr?.trim()) {
+      scheduleKind = 'recurring';
+    } else {
       return {
         success: false,
         output: '',
-        error: 'schedule_kind 必须是 recurring 或 once',
+        error: '需要 schedule_kind（recurring 或 once），或提供 cron / run_at',
       };
     }
 
     let runAt: number | null = null;
     if (scheduleKind === 'once') {
-      if (!run_at?.trim()) {
-        return { success: false, output: '', error: '一次性任务需要 run_at（ISO 时间）' };
+      if (!runAtRaw?.trim()) {
+        return { success: false, output: '', error: '一次性任务需要 run_at（ISO 时间，如 2026-06-30T10:00:00）' };
       }
-      runAt = parseRunAtIso(run_at);
+      runAt = parseRunAtIso(runAtRaw);
       if (runAt === null) {
-        return { success: false, output: '', error: `无法解析 run_at: ${run_at}` };
+        return { success: false, output: '', error: `无法解析 run_at: ${runAtRaw}（请用 ISO 格式并包含日期）` };
       }
     } else {
       if (!cronExpr?.trim()) {

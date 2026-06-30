@@ -16,7 +16,7 @@ export interface TokenUsageSummary {
   total: number;
   todayCached: number;
   cacheHitRateToday: number;
-  dailyLast7: { date: string; tokens: number }[];
+  dailyLast7: { date: string; tokens: number; cached: number }[];
 }
 
 function startOfDay(ts = Date.now()): number {
@@ -101,17 +101,22 @@ export function getTokenUsageSummary(): TokenUsageSummary {
     )
     .get() as { total: number } | undefined;
 
-  const dailyLast7: { date: string; tokens: number }[] = [];
+  const dailyLast7: { date: string; tokens: number; cached: number }[] = [];
   for (let i = 6; i >= 0; i -= 1) {
     const dayStart = startOfDay(now - i * 86_400_000);
     const dayEnd = dayStart + 86_400_000;
     const row = getDatabase()
       .prepare(
-        `SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS total
+        `SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS total,
+                COALESCE(SUM(cached_tokens), 0) AS cached
          FROM token_usage WHERE created_at >= ? AND created_at < ?`,
       )
-      .get(dayStart, dayEnd) as { total: number } | undefined;
-    dailyLast7.push({ date: formatDate(dayStart), tokens: readTotal(row) });
+      .get(dayStart, dayEnd) as { total: number; cached: number } | undefined;
+    dailyLast7.push({
+      date: formatDate(dayStart),
+      tokens: readTotal(row),
+      cached: Number(row?.cached ?? 0),
+    });
   }
 
   const todayCached = sumCachedSince(todayStart);

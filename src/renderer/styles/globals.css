@@ -46,6 +46,31 @@ body {
   );
 }
 
+/* 状态面板：居中展示角色，四周渐深保证卡片可读 */
+.keeper-scene-status {
+  background-position: 58% 22%;
+  transform: scale(1.12);
+}
+
+.keeper-veil-status {
+  background: radial-gradient(
+    ellipse 95% 75% at 50% 28%,
+    rgba(10, 17, 40, 0.22) 0%,
+    rgba(10, 17, 40, 0.52) 50%,
+    rgba(10, 17, 40, 0.88) 100%
+  );
+}
+
+.status-avatar-ring {
+  background: conic-gradient(
+    from 180deg,
+    rgba(48, 188, 237, 0.85),
+    rgba(137, 187, 254, 0.35),
+    rgba(48, 188, 237, 0.15),
+    rgba(48, 188, 237, 0.85)
+  );
+}
+
 @layer components {
   .keeper-glass-panel {
     @apply border border-keeper-silver/20 bg-keeper-glass shadow-glass backdrop-blur-xl;

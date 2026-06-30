@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { McpServerInfo } from '@/shared/types';
+import {
+  SettingsActionLink,
+  SettingsBadge,
+  SettingsEmpty,
+  SettingsField,
+  SettingsInlineActions,
+  SettingsIntro,
+  SettingsListCard,
+  SettingsPageShell,
+  SettingsPanel,
+  SettingsPrimaryButton,
+  SETTINGS_INPUT_CLASS,
+} from './components/settings-ui';
 
 const EMPTY_FORM = {
   name: '',
@@ -65,7 +78,9 @@ export function McpPage() {
     try {
       const result = await window.shorekeeper.mcp.test(id);
       if (result.ok) {
-        setTestResult(`连接成功，发现 ${result.tools.length} 个工具：${result.tools.join(', ') || '无'}`);
+        setTestResult(
+          `连接成功，发现 ${result.tools.length} 个工具：${result.tools.join(', ') || '无'}`,
+        );
       } else {
         setTestResult(result.error ?? '连接失败');
       }
@@ -75,98 +90,99 @@ export function McpPage() {
   };
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs leading-relaxed text-keeper-ice/65">
-        MCP Server 通过 stdio 启动，工具名会以 <code className="text-keeper-cyan">mcp__服务器__工具</code> 注册到 Agent。
-      </p>
+    <SettingsPageShell>
+      <SettingsIntro>
+        MCP Server 通过 stdio 启动，工具名以{' '}
+        <code className="rounded bg-keeper-navyDeep/60 px-1 py-0.5 text-keeper-cyan/90">
+          mcp__服务器__工具
+        </code>{' '}
+        注册到 Agent。
+      </SettingsIntro>
 
-      <div className="keeper-glass-soft space-y-3 rounded-2xl p-4">
-        <p className="text-xs font-medium text-keeper-ice/80">添加 MCP Server</p>
-        <input
-          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
-          placeholder="名称，如 filesystem"
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-        />
-        <input
-          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
-          placeholder="命令，如 npx"
-          value={form.command}
-          onChange={(e) => setForm({ ...form, command: e.target.value })}
-        />
-        <input
-          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
-          placeholder='参数 JSON 数组，如 ["-y","@modelcontextprotocol/server-filesystem","D:\\workspace"]'
-          value={form.args}
-          onChange={(e) => setForm({ ...form, args: e.target.value })}
-        />
-        <input
-          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
-          placeholder='环境变量 JSON，如 {"KEY":"value"}（可选）'
-          value={form.env}
-          onChange={(e) => setForm({ ...form, env: e.target.value })}
-        />
-        <button
-          type="button"
+      <SettingsPanel title="添加 MCP Server" icon="🔌">
+        <SettingsField label="名称">
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="filesystem"
+            className={SETTINGS_INPUT_CLASS}
+          />
+        </SettingsField>
+        <SettingsField label="启动命令">
+          <input
+            value={form.command}
+            onChange={(e) => setForm({ ...form, command: e.target.value })}
+            placeholder="npx"
+            className={SETTINGS_INPUT_CLASS}
+          />
+        </SettingsField>
+        <SettingsField label="参数 JSON" hint='如 ["-y","@modelcontextprotocol/server-filesystem","D:\\workspace"]'>
+          <input
+            value={form.args}
+            onChange={(e) => setForm({ ...form, args: e.target.value })}
+            className={`${SETTINGS_INPUT_CLASS} font-mono text-[12px]`}
+          />
+        </SettingsField>
+        <SettingsField label="环境变量 JSON（可选）">
+          <input
+            value={form.env}
+            onChange={(e) => setForm({ ...form, env: e.target.value })}
+            placeholder='{"KEY":"value"}'
+            className={`${SETTINGS_INPUT_CLASS} font-mono text-[12px]`}
+          />
+        </SettingsField>
+        <SettingsPrimaryButton
+          className="w-full"
           disabled={saving}
           onClick={() => void handleCreate()}
-          className="rounded-lg bg-keeper-cyan/20 px-4 py-2 text-xs text-keeper-cyan hover:bg-keeper-cyan/30 disabled:opacity-50"
         >
-          {saving ? '保存中…' : '添加'}
-        </button>
-      </div>
+          {saving ? '添加中…' : '添加 Server'}
+        </SettingsPrimaryButton>
+      </SettingsPanel>
 
       {testResult && (
-        <p className="rounded-lg border border-keeper-cyan/20 bg-keeper-cyan/5 px-3 py-2 text-xs text-keeper-ice/75">
+        <p className="rounded-xl border border-keeper-cyan/20 bg-keeper-cyan/5 px-3 py-2 text-xs text-keeper-ice/75">
           {testResult}
         </p>
       )}
 
-      <div className="space-y-2">
-        {servers.length === 0 && (
-          <p className="text-xs text-keeper-ice/50">暂无 MCP Server</p>
-        )}
-        {servers.map((server) => (
-          <div
-            key={server.id}
-            className="keeper-glass-soft flex flex-col gap-2 rounded-xl p-3 text-xs text-keeper-ice/80"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium text-keeper-ice">{server.name}</span>
-              <span className={server.enabled ? 'text-emerald-400' : 'text-keeper-ice/40'}>
-                {server.enabled ? '已启用' : '已禁用'}
-              </span>
-            </div>
-            <p className="break-all text-keeper-ice/55">
-              {server.command} {server.args.join(' ')}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void toggleEnabled(server)}
-                className="rounded-md bg-keeper-cyan/10 px-2 py-1 text-keeper-cyan hover:bg-keeper-cyan/20"
-              >
-                {server.enabled ? '禁用' : '启用'}
-              </button>
-              <button
-                type="button"
-                disabled={testingId === server.id}
-                onClick={() => void test(server.id)}
-                className="rounded-md bg-keeper-cyan/10 px-2 py-1 text-keeper-cyan hover:bg-keeper-cyan/20 disabled:opacity-50"
-              >
-                {testingId === server.id ? '测试中…' : '测试连接'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void remove(server.id)}
-                className="rounded-md bg-red-500/10 px-2 py-1 text-red-300 hover:bg-red-500/20"
-              >
-                删除
-              </button>
-            </div>
+      <SettingsPanel title="已注册 Server" subtitle={`${servers.length} 个`} icon="📡">
+        {servers.length === 0 ? (
+          <SettingsEmpty title="暂无 MCP Server" />
+        ) : (
+          <div className="space-y-2">
+            {servers.map((server) => (
+              <SettingsListCard
+                key={server.id}
+                title={server.name}
+                subtitle={`${server.command} ${server.args.join(' ')}`}
+                badge={
+                  server.enabled ? (
+                    <SettingsBadge tone="green">已启用</SettingsBadge>
+                  ) : (
+                    <SettingsBadge tone="muted">已禁用</SettingsBadge>
+                  )
+                }
+                actions={
+                  <SettingsInlineActions>
+                    <SettingsActionLink onClick={() => void toggleEnabled(server)}>
+                      {server.enabled ? '禁用' : '启用'}
+                    </SettingsActionLink>
+                    <SettingsActionLink
+                      onClick={() => void test(server.id)}
+                    >
+                      {testingId === server.id ? '测试中…' : '测试'}
+                    </SettingsActionLink>
+                    <SettingsActionLink onClick={() => void remove(server.id)} danger>
+                      删除
+                    </SettingsActionLink>
+                  </SettingsInlineActions>
+                }
+              />
+            ))}
           </div>
-        ))}
-      </div>
-    </div>
+        )}
+      </SettingsPanel>
+    </SettingsPageShell>
   );
 }

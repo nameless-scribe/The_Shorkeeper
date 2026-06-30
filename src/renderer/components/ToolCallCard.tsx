@@ -13,6 +13,9 @@ const TOOL_LABELS: Record<string, string> = {
   read_file: '读取文件',
   list_dir: '列出目录',
   web_search: '网络搜索',
+  create_scheduled_task: '创建定时任务',
+  list_scheduled_tasks: '列出定时任务',
+  delete_scheduled_task: '删除定时任务',
 };
 
 function formatArgs(args: unknown): string {

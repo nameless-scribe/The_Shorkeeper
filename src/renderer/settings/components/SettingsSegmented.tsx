@@ -15,7 +15,7 @@ export function SettingsSegmented<T extends string>({
   onChange,
 }: SettingsSegmentedProps<T>) {
   return (
-    <div className="flex shrink-0 overflow-hidden rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/60 p-0.5">
+    <div className="flex shrink-0 overflow-hidden rounded-xl border border-keeper-silver/15 bg-keeper-navyDeep/50 p-1">
       {options.map((opt) => {
         const active = opt.value === value;
         return (
@@ -23,9 +23,9 @@ export function SettingsSegmented<T extends string>({
             key={opt.value}
             type="button"
             onClick={() => onChange(opt.value)}
-            className={`rounded-md px-2.5 py-1 text-[11px] transition ${
+            className={`flex-1 rounded-lg px-3 py-2 text-xs transition ${
               active
-                ? 'bg-keeper-cyan/25 font-medium text-keeper-cyan'
+                ? 'bg-keeper-cyan/20 font-medium text-keeper-cyan shadow-[inset_0_0_0_1px_rgba(0,212,255,0.2)]'
                 : 'text-keeper-ice/55 hover:text-keeper-ice/80'
             }`}
           >

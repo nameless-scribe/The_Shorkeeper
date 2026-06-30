@@ -36,6 +36,7 @@ export function SessionHistoryPanel({
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300);
@@ -74,6 +75,27 @@ export function SessionHistoryPanel({
       console.error(err);
     } finally {
       setLoadingMore(false);
+    }
+  };
+
+  const handleCleanupEmpty = async () => {
+    if (cleaning) return;
+    if (!window.confirm('删除所有没有消息的空会话？当前会话会保留。')) return;
+    setCleaning(true);
+    try {
+      const result = await window.shorekeeper.sessions.deleteEmpty();
+      setLoading(true);
+      await fetchPage(0, false);
+      setLoading(false);
+      if (result.deletedCount > 0) {
+        window.alert(`已清理 ${result.deletedCount} 条空会话`);
+      } else {
+        window.alert('没有可清理的空会话');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCleaning(false);
     }
   };
 
@@ -118,6 +140,14 @@ export function SessionHistoryPanel({
           />
           显示已归档
         </label>
+        <button
+          type="button"
+          onClick={() => void handleCleanupEmpty()}
+          disabled={cleaning}
+          className="w-full rounded-lg border border-keeper-silver/15 py-1 text-[10px] text-keeper-ice/60 hover:border-keeper-cyan/30 hover:text-keeper-cyan disabled:opacity-50"
+        >
+          {cleaning ? '清理中…' : '清理空会话'}
+        </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {loading ? (

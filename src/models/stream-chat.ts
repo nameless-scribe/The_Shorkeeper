@@ -11,6 +11,7 @@ export async function* streamChat(
   options?: {
     tools?: OpenAIToolSchema[];
     signal?: AbortSignal;
+    cacheStablePrefix?: string;
   },
 ): AsyncGenerator<ModelEvent> {
   const protocol = getModelProtocol();

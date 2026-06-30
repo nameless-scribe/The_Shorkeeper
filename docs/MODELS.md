@@ -14,7 +14,17 @@ The Shorekeeper 通过 **OpenAI 兼容接口** 调用百炼模型，无需改代
 
 > 接入点域名中的 `llm-xxxx` 每人不同，必须从你自己的控制台复制，不要用别人的。
 
-## 2. 配置 `.env`
+## 2. 配置方式
+
+### 方式 A：应用内设置（推荐）
+
+1. 启动应用 → **设置 → API 设置**
+2. 可保存**多套**接入配置（名称、Base URL、模型 ID、API Key、协议），点击切换「当前使用」
+3. 保存后立即生效，无需重启
+
+应用内配置优先于 `.env`。
+
+### 方式 B：`.env` 文件
 
 在项目根目录：
 
@@ -48,14 +58,16 @@ pnpm dev
 | `401 Unauthorized` | 检查 API Key 是否完整、是否过期 |
 | `404 / model not found` | 模型 ID 必须用小写 API 名，如 `qwen3.6-plus`，不要用 `Qwen3.6-Plus` |
 | `400 stream_options` | 保持 `INCLUDE_STREAM_USAGE=false` |
+| 缓存始终未命中 | 免费额度通常不返回 `cached_tokens`；按量付费后若 API 支持隐式缓存才可能显示 |
+| 显式缓存 | 默认关闭；仅在 `.env` 设 `ENABLE_EXPLICIT_CACHE=true` 时发送 `cache_control` |
 | 请求超时 | 检查网络；北京区域接入点需能访问阿里云 |
 
 ## 5. 切换其他百炼模型
 
-只改 `.env` 中的 `DEFAULT_MODEL`，例如：
+在 **设置 → API 设置** 修改模型 ID，或改 `.env` 中的 `DEFAULT_MODEL`，例如：
 
 ```env
 DEFAULT_MODEL=qwen-max
 ```
 
-保存后重启 `pnpm dev`。
+应用内已保存的配置优先；仅改 `.env` 时需重启 `pnpm dev`。

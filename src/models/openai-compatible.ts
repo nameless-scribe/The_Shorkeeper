@@ -2,6 +2,8 @@ import type { LlmMessage, OpenAIToolCall } from '../agent/types';
 import type { ModelConfig, ModelEvent } from '../shared/types';
 import type { OpenAIToolSchema } from '../tools/types';
 import { shouldIncludeStreamUsage } from './config';
+import { parseCompatibleUsage } from './usage-parse';
+import { encodeMessagesForApi } from './message-encode';
 
 interface OpenAIStreamChunk {
   choices?: Array<{
@@ -25,14 +27,7 @@ interface OpenAIStreamChunk {
     };
     finish_reason?: string | null;
   }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    cached_tokens?: number;
-    prompt_tokens_details?: {
-      cached_tokens?: number;
-    };
-  };
+  usage?: Record<string, unknown>;
 }
 
 type ToolCallAccumulator = Record<
@@ -134,11 +129,14 @@ export async function* streamChat(
   options?: {
     tools?: OpenAIToolSchema[];
     signal?: AbortSignal;
+    cacheStablePrefix?: string;
   },
 ): AsyncGenerator<ModelEvent> {
+  const apiMessages = encodeMessagesForApi(messages, options?.cacheStablePrefix);
+
   const body: Record<string, unknown> = {
     model: config.model,
-    messages,
+    messages: apiMessages,
     stream: true,
   };
 
@@ -234,16 +232,8 @@ export async function* streamChat(
         }
 
         if (parsed.usage) {
-          const cachedTokens =
-            parsed.usage.prompt_tokens_details?.cached_tokens ??
-            parsed.usage.cached_tokens ??
-            0;
-          yield {
-            type: 'usage',
-            promptTokens: parsed.usage.prompt_tokens ?? 0,
-            completionTokens: parsed.usage.completion_tokens ?? 0,
-            cachedTokens,
-          };
+          const usage = parseCompatibleUsage(parsed.usage);
+          yield { type: 'usage', ...usage };
         }
       }
     }

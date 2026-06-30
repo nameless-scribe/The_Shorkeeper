@@ -1,22 +1,53 @@
 import { PERSONA_SETTING_KEYS } from '../db/seeds/persona-shorekeeper';
 import { getDatabase } from '../db';
 import { formatSkillsForPrompt, getEnabledSkills } from '../skills/state';
+import type { ToolDefinition } from '../tools/types';
 
-/** 工具说明：内容固定，放在 system prompt 稳定前缀末尾以利于 provider prompt cache */
-export const TOOL_GUIDE = `【可用工具】
-- list_dir / read_file / write_file：工作区文件读写
-- web_search / fetch_url / get_weather / translate：网络搜索、抓取、天气、翻译
-- gen_markdown / gen_docx / gen_xlsx / gen_pdf：生成文档到工作区
-- bookkeeping：记账（add/list/summary）
-- travel_plan：生成旅行规划 Markdown
-- recall_memory / search_worldbook / save_memory：记忆与设定
-- create_scheduled_task / list_scheduled_tasks / delete_scheduled_task：定时提醒
+/** 各工具在 system prompt 中的简短说明（仅列出当前实际可用的工具） */
+const TOOL_SUMMARY: Record<string, string> = {
+  list_dir: '列出工作区目录',
+  read_file: '读取工作区文件',
+  write_file: '写入工作区文件（需用户确认）',
+  web_search: '网络搜索',
+  fetch_url: '抓取网页正文',
+  get_weather: '查询天气',
+  translate: '翻译文本',
+  gen_markdown: '生成 Markdown 到工作区',
+  gen_docx: '生成 Word 到工作区',
+  gen_xlsx: '生成 Excel 到工作区',
+  gen_pdf: '生成 PDF 到工作区',
+  bookkeeping: '记账（add/list/summary）',
+  travel_plan: '生成旅行规划 Markdown',
+  recall_memory: '检索长期记忆',
+  search_worldbook: '检索 Worldbook 设定',
+  save_memory: '保存长期记忆',
+  create_scheduled_task: '创建定时提醒',
+  list_scheduled_tasks: '列出定时任务',
+  delete_scheduled_task: '删除定时任务',
+};
 
-当用户说「每天几点提醒我…」→ schedule_kind=recurring + cron。
-当用户说「明天/指定日期时间提醒一次」→ schedule_kind=once + run_at（ISO 本地时间）。
-write_file 与文档生成会写入工作区，需用户确认。
-当用户询问工作区文件时，请主动调用 list_dir 或 read_file。
-当对话涉及用户偏好或过往事实时，可先 recall_memory 再回答。`;
+const SCHEDULE_TOOL_HINT =
+  '「每天几点提醒我…」→ schedule_kind=recurring + cron；「指定日期时间提醒一次」→ schedule_kind=once + run_at（ISO 本地时间，如 2026-06-30T10:00:00）。';
+
+/** 根据当前可用工具生成说明，避免技能白名单禁用后仍提示不可用工具 */
+export function formatToolGuideForPrompt(tools: ToolDefinition[]): string | null {
+  if (!tools.length) return null;
+
+  const lines = tools.map((tool) => {
+    const summary = TOOL_SUMMARY[tool.name] ?? tool.description.split('。')[0];
+    return `- ${tool.name}：${summary}`;
+  });
+
+  const sections = [`【当前可用工具】\n${lines.join('\n')}`];
+  if (tools.some((t) => t.name === 'create_scheduled_task')) {
+    sections.push(`【定时提醒】${SCHEDULE_TOOL_HINT}`);
+  }
+  sections.push(
+    '当用户询问工作区文件时，请主动调用 list_dir 或 read_file。涉及用户偏好或过往事实时，可先 recall_memory。',
+  );
+
+  return sections.join('\n\n');
+}
 
 function loadPersonaPrompt(): string {
   const row = getDatabase()
@@ -55,7 +86,7 @@ export function getStableSystemPrefix(): string {
     return cachedStablePrefix.text;
   }
 
-  const sections = [loadPersonaPrompt(), TOOL_GUIDE];
+  const sections = [loadPersonaPrompt()];
   const skillsBlock = formatSkillsForPrompt(getEnabledSkills());
   if (skillsBlock) sections.push(skillsBlock);
 

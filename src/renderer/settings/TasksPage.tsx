@@ -1,6 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ScheduleKind, ScheduledTaskInfo } from '@/shared/types';
 import { formatScheduleLabel } from '@/scheduler/format';
+import { SettingsSegmented } from './components/SettingsSegmented';
+import {
+  SettingsActionLink,
+  SettingsBadge,
+  SettingsEmpty,
+  SettingsField,
+  SettingsInlineActions,
+  SettingsIntro,
+  SettingsListCard,
+  SettingsPageShell,
+  SettingsPanel,
+  SettingsPrimaryButton,
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_SELECT_CLASS,
+  SETTINGS_TEXTAREA_CLASS,
+} from './components/settings-ui';
 
 function defaultRunAtLocal(): string {
   const d = new Date(Date.now() + 3600_000);
@@ -73,103 +89,120 @@ export function TasksPage() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="keeper-glass-soft space-y-3 rounded-2xl p-4">
-        <p className="text-xs font-medium text-keeper-ice/80">新建任务</p>
-        <input
-          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
-          placeholder="任务名称"
-          value={form.name}
-          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-        />
-        <select
-          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none"
-          value={form.scheduleKind}
-          onChange={(e) =>
-            setForm((f) => ({
-              ...f,
-              scheduleKind: e.target.value as ScheduleKind,
-            }))
-          }
-        >
-          <option value="recurring">周期性（每天/按 cron）</option>
-          <option value="once">仅一次</option>
-        </select>
-        {form.scheduleKind === 'recurring' ? (
-          <input
-            className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
-            placeholder="Cron 表达式，如 0 9 * * *"
-            value={form.cron}
-            onChange={(e) => setForm((f) => ({ ...f, cron: e.target.value }))}
-          />
-        ) : (
-          <input
-            type="datetime-local"
-            className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
-            value={form.runAtLocal}
-            onChange={(e) => setForm((f) => ({ ...f, runAtLocal: e.target.value }))}
-          />
-        )}
-        <select
-          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none"
-          value={form.actionType}
-          onChange={(e) =>
-            setForm((f) => ({
-              ...f,
-              actionType: e.target.value as 'reminder' | 'agent_prompt',
-            }))
-          }
-        >
-          <option value="reminder">提醒通知</option>
-          <option value="agent_prompt">Agent 静默执行</option>
-        </select>
-        <textarea
-          className="no-drag w-full rounded-lg border border-keeper-silver/20 bg-keeper-navyDeep/50 px-3 py-2 text-xs text-keeper-ice outline-none focus:border-keeper-cyan/40"
-          placeholder="提醒内容 / Agent 提示词"
-          rows={2}
-          value={form.message}
-          onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
-        />
-        <button
-          type="button"
-          disabled={saving || !form.name.trim()}
-          onClick={handleCreate}
-          className="no-drag w-full rounded-xl bg-keeper-cyan/20 py-2 text-xs font-medium text-keeper-cyan hover:bg-keeper-cyan/30 disabled:opacity-40"
-        >
-          添加任务
-        </button>
-      </div>
+    <SettingsPageShell>
+      <SettingsIntro>
+        创建定时提醒或静默 Agent 任务。Agent 也可通过对话调用 create_scheduled_task 工具创建。
+      </SettingsIntro>
 
-      <ul className="space-y-2">
-        {tasks.map((task) => (
-          <li
-            key={task.id}
-            className="keeper-glass-soft flex items-start justify-between gap-2 rounded-xl p-3"
+      <SettingsPanel title="新建任务" icon="⏰">
+        <SettingsField label="任务名称">
+          <input
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="如：晨间提醒"
+            className={SETTINGS_INPUT_CLASS}
+          />
+        </SettingsField>
+
+        <SettingsField label="调度类型">
+          <SettingsSegmented
+            value={form.scheduleKind}
+            options={[
+              { value: 'recurring', label: '周期性' },
+              { value: 'once', label: '仅一次' },
+            ]}
+            onChange={(scheduleKind) => setForm((f) => ({ ...f, scheduleKind }))}
+          />
+        </SettingsField>
+
+        {form.scheduleKind === 'recurring' ? (
+          <SettingsField label="Cron 表达式" hint="如 0 9 * * * 表示每天 9:00">
+            <input
+              value={form.cron}
+              onChange={(e) => setForm((f) => ({ ...f, cron: e.target.value }))}
+              placeholder="0 9 * * *"
+              className={`${SETTINGS_INPUT_CLASS} font-mono text-[13px]`}
+            />
+          </SettingsField>
+        ) : (
+          <SettingsField label="执行时间">
+            <input
+              type="datetime-local"
+              value={form.runAtLocal}
+              onChange={(e) => setForm((f) => ({ ...f, runAtLocal: e.target.value }))}
+              className={SETTINGS_INPUT_CLASS}
+            />
+          </SettingsField>
+        )}
+
+        <SettingsField label="任务类型">
+          <select
+            value={form.actionType}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                actionType: e.target.value as 'reminder' | 'agent_prompt',
+              }))
+            }
+            className={SETTINGS_SELECT_CLASS}
           >
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-keeper-ice">{task.name}</p>
-              <p className="text-[10px] text-keeper-ice/40">{formatScheduleLabel(task)}</p>
-              <p className="text-[10px] text-keeper-ice/30">{task.actionType}</p>
-            </div>
-            <div className="no-drag flex shrink-0 flex-col gap-1">
-              <button
-                type="button"
-                onClick={() => toggleEnabled(task)}
-                className="rounded-lg px-2 py-1 text-[10px] text-keeper-cyan hover:bg-keeper-cyan/10"
-              >
-                {task.enabled ? '停用' : '启用'}
-              </button>
-              <button
-                type="button"
-                onClick={() => remove(task.id)}
-                className="rounded-lg px-2 py-1 text-[10px] text-red-300 hover:bg-red-500/10"
-              >
-                删除
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
+            <option value="reminder">提醒通知</option>
+            <option value="agent_prompt">Agent 静默执行</option>
+          </select>
+        </SettingsField>
+
+        <SettingsField label="内容 / 提示词">
+          <textarea
+            value={form.message}
+            onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
+            placeholder="提醒正文或 Agent 提示词"
+            rows={2}
+            className={SETTINGS_TEXTAREA_CLASS}
+          />
+        </SettingsField>
+
+        <SettingsPrimaryButton
+          className="w-full"
+          disabled={saving || !form.name.trim()}
+          onClick={() => void handleCreate()}
+        >
+          {saving ? '添加中…' : '添加任务'}
+        </SettingsPrimaryButton>
+      </SettingsPanel>
+
+      <SettingsPanel title="已有任务" subtitle={`${tasks.length} 个`} icon="📋">
+        {tasks.length === 0 ? (
+          <SettingsEmpty title="暂无定时任务" />
+        ) : (
+          <div className="space-y-2">
+            {tasks.map((task) => (
+              <SettingsListCard
+                key={task.id}
+                title={task.name}
+                subtitle={formatScheduleLabel(task)}
+                meta={task.actionType}
+                badge={
+                  task.enabled ? (
+                    <SettingsBadge tone="green">启用</SettingsBadge>
+                  ) : (
+                    <SettingsBadge tone="muted">停用</SettingsBadge>
+                  )
+                }
+                actions={
+                  <SettingsInlineActions>
+                    <SettingsActionLink onClick={() => void toggleEnabled(task)}>
+                      {task.enabled ? '停用' : '启用'}
+                    </SettingsActionLink>
+                    <SettingsActionLink onClick={() => void remove(task.id)} danger>
+                      删除
+                    </SettingsActionLink>
+                  </SettingsInlineActions>
+                }
+              />
+            ))}
+          </div>
+        )}
+      </SettingsPanel>
+    </SettingsPageShell>
   );
 }

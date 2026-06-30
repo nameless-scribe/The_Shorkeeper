@@ -1,10 +1,10 @@
-import { loadModelConfig } from '../models/config';
-
-const DEFAULT_EMBEDDING_MODEL =
-  process.env.EMBEDDING_MODEL?.trim() || 'text-embedding-v3';
+import {
+  getEmbeddingModelName,
+  loadEmbeddingConfig,
+} from '../models/embedding-config';
 
 export function getEmbeddingModel(): string {
-  return DEFAULT_EMBEDDING_MODEL;
+  return getEmbeddingModelName();
 }
 
 interface EmbeddingsResponse {
@@ -18,7 +18,7 @@ export async function embedTexts(
   const trimmed = texts.map((t) => t.trim()).filter(Boolean);
   if (!trimmed.length) return [];
 
-  const config = loadModelConfig();
+  const config = loadEmbeddingConfig();
   const response = await fetch(`${config.baseUrl}/embeddings`, {
     method: 'POST',
     headers: {
@@ -26,7 +26,7 @@ export async function embedTexts(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: DEFAULT_EMBEDDING_MODEL,
+      model: config.model,
       input: trimmed,
     }),
     signal: options?.signal,

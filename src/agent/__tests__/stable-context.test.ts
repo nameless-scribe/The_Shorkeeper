@@ -16,11 +16,13 @@ vi.mock('../../skills/state', () => ({
 }));
 
 import {
+  formatToolGuideForPrompt,
   getStableSystemPrefix,
   invalidateStableContext,
-  TOOL_GUIDE,
 } from '../stable-context';
 import { getEnabledSkills } from '../../skills/state';
+import { readFileTool } from '../../tools/file/read-file';
+import { createScheduledTaskTool } from '../../tools/schedule/schedule-tools';
 
 describe('stable context', () => {
   beforeEach(() => {
@@ -30,16 +32,14 @@ describe('stable context', () => {
     ]);
   });
 
-  it('places persona and tool guide before skills', () => {
+  it('places persona before skills in stable prefix', () => {
     const text = getStableSystemPrefix();
     const personaIdx = text.indexOf('测试人设');
-    const toolIdx = text.indexOf('【可用工具】');
     const skillIdx = text.indexOf('【技能A】');
 
     expect(personaIdx).toBeGreaterThanOrEqual(0);
-    expect(toolIdx).toBeGreaterThan(personaIdx);
-    expect(skillIdx).toBeGreaterThan(toolIdx);
-    expect(text).toContain(TOOL_GUIDE.slice(0, 20));
+    expect(skillIdx).toBeGreaterThan(personaIdx);
+    expect(text).not.toContain('create_scheduled_task');
   });
 
   it('caches prefix until invalidated', () => {
@@ -54,5 +54,16 @@ describe('stable context', () => {
     const third = getStableSystemPrefix();
     expect(third).not.toBe(first);
     expect(third).toContain('【技能B】');
+  });
+
+  it('lists only provided tools in tool guide', () => {
+    const guide = formatToolGuideForPrompt([readFileTool]);
+    expect(guide).toContain('read_file');
+    expect(guide).not.toContain('create_scheduled_task');
+  });
+
+  it('includes schedule hint when schedule tool is available', () => {
+    const guide = formatToolGuideForPrompt([createScheduledTaskTool]);
+    expect(guide).toContain('schedule_kind=once');
   });
 });

@@ -152,6 +152,46 @@ export function deleteSession(id: string, db: AppDatabase = getDatabase()): void
   db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
 }
 
+export interface DeleteEmptySessionsOptions {
+  /** 不删除此会话（通常为当前活跃会话） */
+  keepSessionId?: string | null;
+}
+
+export interface DeleteEmptySessionsResult {
+  deletedCount: number;
+  deletedIds: string[];
+  keptSessionId: string | null;
+}
+
+/** 删除没有任何消息的会话（用于清理重启产生的空「新对话」） */
+export function deleteEmptySessions(
+  options: DeleteEmptySessionsOptions = {},
+  db: AppDatabase = getDatabase(),
+): DeleteEmptySessionsResult {
+  const keepId = options.keepSessionId ?? null;
+
+  const rows = db
+    .prepare(
+      `SELECT s.id
+       FROM sessions s
+       WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id)
+       ${keepId ? 'AND s.id != ?' : ''}`,
+    )
+    .all(...(keepId ? [keepId] : [])) as { id: string }[];
+
+  const deletedIds: string[] = [];
+  for (const row of rows) {
+    deleteSession(row.id, db);
+    deletedIds.push(row.id);
+  }
+
+  return {
+    deletedCount: deletedIds.length,
+    deletedIds,
+    keptSessionId: keepId,
+  };
+}
+
 export function setSessionArchived(id: string, archived: boolean, db: AppDatabase = getDatabase()): void {
   db.prepare(`UPDATE sessions SET archived = ?, updated_at = ? WHERE id = ?`).run(
     archived ? 1 : 0,
