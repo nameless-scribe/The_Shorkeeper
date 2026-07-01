@@ -757,7 +757,9 @@ TheShorekeeper/
 │   ├── DESIGN.md                 # 架构设计（本文档）
 │   ├── DATABASE.md               # 数据库与 migration
 │   ├── MODELS.md                 # 模型与 API 配置
-│   └── superpowers/plans/        # 实施计划（RAG 优化等）
+│   ├── UI-THEME.md               # 主题预设与外观
+│   ├── PLAN.md                   # 里程碑实施计划
+│   └── superpowers/              # 进行中的专项计划（见 README.md）
 ├── electron/
 │   ├── main.ts                   # 应用入口
 │   ├── preload.ts                # IPC 桥
@@ -784,7 +786,7 @@ TheShorekeeper/
 │   └── db/                       # sql.js、schema、migrations、repositories
 ├── src/renderer/                 # React UI（chat / dock / settings / status / schedule）
 ├── skills/                       # 用户技能包（SKILL.md）
-├── scripts/                      # db:init / seed / cleanup / reset
+├── scripts/                      # db:init / seed / cleanup-empty-sessions / reset
 ├── .env.example
 └── package.json
 ```

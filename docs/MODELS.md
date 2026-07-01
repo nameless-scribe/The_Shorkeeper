@@ -95,7 +95,7 @@ EMBEDDING_MODEL=text-embedding-v3
 
 1. API 设置：启用 Nuoda Claude  
 2. 文档 → 向量 API：选「单独配置」，保存百炼 Embedding  
-3. 文档 → 导入 `docs/oa-management-system-requirements-v2.md`  
-4. 对话中提问（带文档相关词），如：「根据 OA 功能清单，设计报销模块的接口方案」
+3. 文档 → 导入工作区内的 Markdown（如 `workspace/knowledge/某需求文档.md`）  
+4. 对话中提问（带文档相关词），如：「根据需求文档，设计报销模块的接口方案」
 
 导入与每次检索都走 Embedding API；生成回答仍走 Claude。

@@ -14,13 +14,11 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "dist": "pnpm build && electron-builder --win",
-    "preview": "vite preview",
     "db:init": "tsx scripts/init-db.ts",
     "db:migrate": "tsx scripts/init-db.ts",
     "db:seed": "tsx scripts/seed-db.ts",
     "db:cleanup-sessions": "tsx scripts/cleanup-empty-sessions.ts",
     "db:reset-keep-models": "tsx scripts/db-reset-keep-models.ts",
-    "db:init:py": "python scripts/init-db.py",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

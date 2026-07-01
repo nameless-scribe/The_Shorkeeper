@@ -4,7 +4,7 @@
 
 **Goal：** 修复审计发现的 **高/中优先级缺陷**，提升对话稳定性、记忆/RAG 召回准确度、错误可见性与调度可靠性；安全加固与 DB 性能优化作为可选 Phase 按需实施。
 
-**背景：** [2026-07-01-rag-optimization.md](./2026-06-29-m5-rag.md) 已解决 RAG P1–P6、P10–P11；本计划覆盖 **Agent 并发、记忆 embedding、错误路径、FTS 质量、调度、Presence** 等审计项，与 RAG 计划剩余项（P3/P7/P9/P12）合并编排。
+**背景：** [RAG 优化计划](./2026-07-01-rag-optimization.md) 覆盖检索与分块等项；本计划覆盖 **Agent 并发、记忆 embedding、错误路径、FTS 质量、调度、Presence** 等审计项，与 RAG 计划剩余项合并编排。
 
 **Architecture 原则：**
 - 不改变「主进程持有智能、渲染进程只展示」分层

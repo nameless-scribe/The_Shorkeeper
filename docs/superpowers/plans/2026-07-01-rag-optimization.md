@@ -4,7 +4,7 @@
 
 **Goal：** 在 **不更换 sql.js 栈** 的前提下，修复 M5 RAG 在检索质量、Token 成本、性能与文档生命周期上的已知缺陷，使知识库问答更准、更省、更可维护。
 
-**背景：** M5 已完成朴素 RAG（见 [2026-06-29-m5-rag.md](./2026-06-29-m5-rag.md)）。M7-4 已做寒暄过滤与 `RAG_ENABLED` 开关，但仍有全量 DB 扫描、粗粒度分块、纯向量检索、自动注入过宽等问题。本文档为 **M5 后续专项**，可与 M7 其余 Task 并行或穿插实施。
+**背景：** M5 朴素 RAG 已完成（见 [PLAN.md](../../PLAN.md) M5 小节）。M7-4 已做寒暄过滤与 `RAG_ENABLED` 开关，但仍有全量 DB 扫描、粗粒度分块、纯向量检索、自动注入过宽等问题。本文档为 **M5 后续专项**，可与 M7 其余 Task 并行或穿插实施。
 
 **Architecture：** 继续采用 `embedding BLOB` + TypeScript 余弦相似度；在 `retriever.ts` 与 `documents.ts` 之间引入可失效的内存缓存；分块与检索策略分层扩展，不破坏现有 IPC / 设置页 / `search_knowledge` 工具接口。FTS5 混合检索复用 Worldbook 已有模式（`src/memory/worldbook.ts`）。
 
@@ -203,7 +203,7 @@ git commit -m "perf(rag): chunk cache, inject modes, and diverse top-k"
   - 含 `## 标题` + 列表 + 代码块的真实 MD 片段
   - 断言 chunk 不截断代码块、标题与正文尽量同块
 
-**验收：** 导入 `docs/oa-management-system-requirements-v2.md`（或同类）后，chunk 边界落在 section 附近。
+**验收：** 导入较长 Markdown 文档（含多级标题）后，chunk 边界落在 section 附近。
 
 ---
 

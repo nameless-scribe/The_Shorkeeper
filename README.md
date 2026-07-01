@@ -149,8 +149,9 @@ pnpm dist                 # Windows 打包
 - [DESIGN.md](docs/DESIGN.md) — 架构设计
 - [DATABASE.md](docs/DATABASE.md) — 数据库与 migration
 - [MODELS.md](docs/MODELS.md) — 模型与 API 配置
+- [UI-THEME.md](docs/UI-THEME.md) — 主题预设与外观
 - [PLAN.md](docs/PLAN.md) — 里程碑实施计划
-- [FIXES.md](docs/FIXES.md) — 已知问题与修复清单
+- [superpowers/README.md](docs/superpowers/README.md) — 进行中的专项计划
 
 ## 桌宠资源（M8）
 

@@ -802,7 +802,7 @@ git commit -m "feat(m4): dock companion bar with status schedule token"
 
 **实现说明（与原文差异）：**
 
-- 向量存储：**sql.js 兼容** — `embedding BLOB` + TypeScript 余弦相似度（非 sqlite-vec，见 [M5 实施计划](./superpowers/plans/2026-06-29-m5-rag.md)）
+- 向量存储：**sql.js 兼容** — `embedding BLOB` + TypeScript 余弦相似度（非 sqlite-vec）
 - Embedding：百炼 OpenAI 兼容 `/embeddings`，`.env` → `EMBEDDING_MODEL=text-embedding-v3`
 - 增量（超出原计划 M5）：**对话归档知识库**（「将本次对话计入知识库」）、**轻量历史会话**（☰ 侧边栏）
 - Token 消耗偏快 → 已排期 **M7-4**，本阶段不阻塞
