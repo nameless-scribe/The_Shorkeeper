@@ -84,7 +84,7 @@ export function createDockWindow(): BrowserWindow {
     skipTaskbar: true,
     hasShadow: false,
     focusable: true,
-    backgroundColor: '#0A1128',
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,

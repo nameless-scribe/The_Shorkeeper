@@ -23,8 +23,13 @@ function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' | 'dock' {
   return 'chat';
 }
 
+const initialPanel = resolvePanel();
+if (initialPanel === 'dock') {
+  document.documentElement.classList.add('panel-transparent');
+}
+
 function App() {
-  const panel = resolvePanel();
+  const panel = initialPanel;
   if (panel === 'status') return <StatusPage />;
   if (panel === 'schedule') return <SchedulePage />;
   if (panel === 'reminder') return <ReminderPage />;

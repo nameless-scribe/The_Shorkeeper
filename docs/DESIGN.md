@@ -1,8 +1,8 @@
 # The Shorekeeper 设计文档
 
-> 版本：0.2.0  
+> 版本：0.2.1  
 > 更新日期：2026-07-01  
-> 状态：**M1–M6 已完成，M7 基本完成**（RAG 优化、插件、好感度已落地）；**M8 桌宠**待做
+> 状态：**M1–M7 已完成**（含 RAG 优化、人设/外观/主题、插件与好感度）；**M8 桌宠**待做
 
 ---
 
@@ -755,41 +755,103 @@ sessions 1───N token_usage (optional)
 TheShorekeeper/
 ├── docs/
 │   ├── DESIGN.md                 # 架构设计（本文档）
-│   ├── DATABASE.md               # 数据库与 migration
-│   ├── MODELS.md                 # 模型与 API 配置
-│   ├── UI-THEME.md               # 主题预设与外观
-│   ├── PLAN.md                   # 里程碑实施计划
-│   └── superpowers/              # 进行中的专项计划（见 README.md）
+│   ├── DATABASE.md               # 数据库、migration、数据目录
+│   ├── MODELS.md                 # 模型与 API / Embedding 配置
+│   ├── UI-THEME.md               # 主题预设、壁纸、CSS 变量
+│   ├── PLAN.md                   # 里程碑实施计划（M1–M8）
+│   └── superpowers/              # 进行中的专项计划（RAG / 稳定性）
+│       ├── README.md
+│       └── plans/
 ├── electron/
-│   ├── main.ts                   # 应用入口
-│   ├── preload.ts                # IPC 桥
-│   ├── tray.ts                   # 系统托盘
-│   ├── dock/                     # Dock 显隐与偏好
+│   ├── main.ts                   # 应用入口：env、DB、IPC、托盘、调度
+│   ├── preload.ts                # contextBridge API（window.shorekeeper）
+│   ├── tray.ts
+│   ├── paths.ts                  # 打包态资源路径
+│   ├── protocol/
+│   │   └── appearance-assets.ts  # sk-asset:// 本地外观文件
+│   ├── ipc/                      # 见下表「IPC 模块」
 │   ├── windows/                  # chat / status / schedule / dock / reminder / broadcast
-│   ├── ipc/                      # agent, session, documents, performance, web-search, …
-│   ├── scheduler/cron.ts         # 定时任务调度
-│   └── state/presence.ts         # Agent 在线状态
+│   ├── dock/                     # Dock 显隐、偏好
+│   ├── scheduler/cron.ts         # 定时任务执行
+│   ├── state/presence.ts         # Agent 在线 / 心情 / 活动
+│   ├── tasks/events.ts           # 任务变更广播
+│   └── reminder/popup.ts
 ├── src/
 │   ├── agent/                    # orchestrator, loop, context-builder, session-run-lock
-│   ├── affection/                # 好感度阶段与加分
-│   ├── config/                   # paths, performance, plugins, web-search-config
-│   ├── models/                   # OpenAI-compatible / Anthropic-like 适配
-│   ├── tools/                    # 内置工具 + agent-registry
-│   │   └── web/search-providers/ # 博查等搜索后端
-│   ├── mcp/client.ts             # MCP Client
+│   ├── affection/
+│   ├── config/
+│   │   ├── paths.ts, bootstrap-data-layout.ts
+│   │   ├── persona.ts, appearance.ts, appearance-assets.ts
+│   │   ├── performance.ts, plugins.ts, web-search-config.ts
+│   │   └── themes/               # ThemePreset 定义（9 套）
+│   ├── models/                   # openai-compatible, anthropic-like, embedding-config
+│   ├── tools/                    # agent-registry + 分类子目录
+│   │   ├── file/                 # read / write / list_dir
+│   │   ├── web/                  # web_search, fetch, weather + search-providers/
+│   │   ├── doc/                  # 文档生成、Markdown 转换
+│   │   ├── memory/               # recall / knowledge 工具
+│   │   ├── life/                 # 记账、旅行规划等
+│   │   └── schedule/             # 定时任务工具
 │   ├── memory/                   # 长期记忆、Worldbook、摘要、提取
-│   ├── rag/                      # 导入、分块、混合检索、缓存、重嵌入
-│   ├── skills/                   # 技能加载与状态
+│   ├── rag/                      # 导入、分块、FTS+向量混合检索、缓存
+│   ├── mcp/client.ts
+│   ├── skills/                   # 技能加载（运行时读 skills/）
 │   ├── scheduler/                # reminder 意图解析
-│   ├── session/                  # 活跃会话
-│   ├── workspace/                # 工作区导入
-│   └── db/                       # sql.js、schema、migrations、repositories
-├── src/renderer/                 # React UI（chat / dock / settings / status / schedule）
-├── skills/                       # 用户技能包（SKILL.md）
-├── scripts/                      # db:init / seed / cleanup-empty-sessions / reset
+│   ├── session/                  # 活跃会话 id
+│   ├── workspace/                # 工作区导入、扩展名白名单
+│   ├── shared/                   # types, theme-styles, appearance-asset-url
+│   └── db/                       # sql.js、INIT_SQL、migrations、repositories、seeds
+├── src/renderer/                 # React（main.tsx + ?panel= 路由）
+│   ├── ChatPage.tsx
+│   ├── components/               # MessageList, AppBackground, PermissionDialog, …
+│   ├── settings/                 # SettingsDrawer + 各设置子页
+│   ├── theme/                    # ThemeProvider, apply-theme, useTheme
+│   ├── dock/ | status/ | schedule/ | reminder/
+│   └── styles/globals.css        # --sk-* CSS 变量与 keeper-* 工具类
+├── skills/                       # 仓库内技能包（SKILL.md，打入安装包）
+├── scripts/                      # db:init / seed / cleanup / reset-keep-models
+├── public/                       # keeper-bg.png、默认头像等静态资源
 ├── .env.example
-└── package.json
+├── vite.config.ts
+└── package.json                  # electron-builder files 白名单
 ```
+
+### IPC 模块（`electron/ipc/`）
+
+| 文件 | 职责 |
+|------|------|
+| `agent.ts` | 流式对话、AG-UI 事件 |
+| `session.ts` | 会话 CRUD、归档、压缩 |
+| `model.ts` / `profile.ts` | 模型配置与用户画像 |
+| `persona.ts` / `appearance.ts` | 人设与主题/壁纸/头像 |
+| `documents.ts` / `embedding.ts` | 知识库导入与向量 API |
+| `worldbook.ts` | Worldbook 条目 |
+| `performance.ts` | RAG / 记忆 / 历史条数等性能项 |
+| `plugins.ts` / `web-search.ts` | 插件开关与博查搜索 |
+| `mcp.ts` / `skills.ts` | MCP 与技能 |
+| `tasks.ts` | 定时任务 |
+| `presence.ts` / `stats.ts` | 状态与 Token 统计 |
+| `workspace.ts` | 工作区文件、拖拽导入 |
+| `permission.ts` | 工具执行确认弹窗 |
+| `window.ts` / `dock.ts` | 多窗管理与 Dock |
+
+### 打包产物（`pnpm dist`）
+
+| 包含 | 不包含 |
+|------|--------|
+| `dist/` 前端、`dist-electron/` 主进程 | `.env`、源码 `src/`、`docs/` |
+| `skills/`、`package.json` | 本地 `shorekeeper.db`、`workspace/` |
+| `extraResources`: sql.js WASM、migration `.sql` | `node_modules/` 全量 |
+
+用户敏感配置存于 **本机** `app_settings`（SQLite）或 `userData/.env`，不随安装包分发。
+
+### 数据目录（默认 `D:\SQLlite\`）
+
+| 路径 | 内容 |
+|------|------|
+| `shorekeeper.db` | 会话、消息、记忆、设置、RAG 元数据 |
+| `workspace/` | Agent 可读写文件、知识库副本 |
+| `appearance/` | 用户上传的背景与头像文件 |
 
 ---
 
@@ -805,6 +867,7 @@ TheShorekeeper/
 | **M5-RAG** | RAG 优化 | ✅ 混合检索、缓存、Markdown 分块、注入模式（见 plans/2026-07-01-rag-optimization.md） |
 | **M6** | 扩展 | ✅ MCP、技能、Anthropic 协议（TTS 延后） |
 | **M7** | 工具补齐 | ✅ 文档生成、记账、旅行规划；Token 优化与长会话压缩 |
+| **M7+** | 人设 / 外观 / 主题 | ✅ 可编辑人设、9 套主题、自定义壁纸与头像（见 UI-THEME.md） |
 | **M8** | 桌宠 | ⏳ Live2D 或精灵图窗，动作与对话联动 |
 
 每个里程碑结束时应可独立运行、可测试。
@@ -851,6 +914,7 @@ TheShorekeeper/
 | 0.1.0-draft | 2026-06-29 | 初稿，基于需求讨论整理 |
 | 0.1.1 | 2026-06-29 | M4 多窗/Dock/托盘模型；M5 更正为 RAG（非 Live2D）；向量实现为 BLOB+余弦 |
 | 0.2.0 | 2026-07-01 | 反映 M1–M7 实现：混合 RAG、好感度、博查搜索、插件系统、目录与表结构更新 |
+| 0.2.1 | 2026-07-01 | 目录结构扩充：IPC/主题/打包白名单；人设外观主题落地；文档与 superpowers 索引整理 |
 
 ---
 

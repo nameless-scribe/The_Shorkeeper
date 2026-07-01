@@ -20,19 +20,12 @@ export function DockPage() {
   const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
-    const { body } = document;
-    const root = document.getElementById('root');
-    const prevBodyBg = body.style.background;
-    const prevRootBg = root?.style.background ?? '';
-
-    body.style.background = 'transparent';
-    if (root) root.style.background = 'transparent';
+    document.documentElement.classList.add('panel-transparent');
 
     window.shorekeeper.dock.getPreferences().then(setPrefs).catch(console.error);
 
     return () => {
-      body.style.background = prevBodyBg;
-      if (root) root.style.background = prevRootBg;
+      document.documentElement.classList.remove('panel-transparent');
     };
   }, []);
 

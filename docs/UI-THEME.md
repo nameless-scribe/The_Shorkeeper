@@ -1,6 +1,6 @@
 # UI 主题与外观
 
-运行时换肤：设置 → **个性化 → 外观**。内置 9 套预设，支持本地上传背景与头像。
+运行时换肤：设置 → **个性化 → 外观**。内置 **9 套**主题预设（下拉选择），支持本地上传背景与头像。
 
 ## 主题预设
 
@@ -46,11 +46,13 @@ DB 仅存文件名；路径相对于 `appearance/` 目录。备份时拷贝整�
 
 ## 开发者
 
-- `src/config/appearance.ts` — 读取/合并 preset + 用户资源
+- `src/config/themes/` — 主题预设定义（`listThemePresets()`）
+- `src/config/appearance.ts` — 读取/合并 preset + 用户资源；`setAppearancePreset` 不删除自定义壁纸
 - `src/renderer/theme/ThemeProvider.tsx` — React Context；订阅 `appearance:changed`，调用 `applyTheme`
 - `src/renderer/theme/apply-theme.ts` — 唯一 `:root` CSS 变量写入逻辑
 - `src/shared/theme-styles.ts` — 由 preset colors 生成 gradient / shadow / tint 字符串
 - `electron/ipc/appearance.ts` — IPC + 多窗 `appearance:changed` 广播
+- `electron/protocol/appearance-assets.ts` — `sk-asset://local/<file>` 协议
 - 内置默认图：`public/keeper-bg.png`、`keeper-avatar.png`、`user-avatar.png`
 
 ## 切换主题预设

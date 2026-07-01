@@ -56,6 +56,14 @@ body {
   background: rgb(var(--sk-navy-deep-rgb));
 }
 
+/* Dock / 透明浮窗：仅显示组件本身，窗口其余区域透桌面 */
+html.panel-transparent,
+html.panel-transparent body,
+html.panel-transparent #root {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
 .drag-region {
   -webkit-app-region: drag;
 }

@@ -67,6 +67,8 @@ pnpm dist
 
 安装包内已包含 **sql.js 运行时**（WASM）与 **数据库迁移脚本**，无需单独安装 SQLite。若目标机没有 `D:` 盘，会自动回退到用户目录下的应用数据文件夹。
 
+**打包内容（白名单）：** 仅 `dist/`、`dist-electron/`、`skills/`、`package.json` 及 sql.js / migration 资源。**不会**打入开发机 `.env`、源码、`docs/`、本地 `shorekeeper.db` 或 `workspace/`。API Key 需在目标机 **设置 → API 设置** 填写，或在该机 `userData` / 安装目录旁自行放置 `.env`。
+
 首次打开后还需：
 
 1. **设置 → API 设置** — 填写模型 API Key 与接入地址
@@ -82,11 +84,12 @@ pnpm dist
 
 | 项 | 默认路径 |
 |----|----------|
-| 数据库 | `D:\SQLlite\shorekeeper.db`（`SHOREKEEPER_DB_PATH`） |
-| 工作区 | `D:\SQLlite\workspace`（Agent 读写文件、生成文档；导入重名文件时自动追加 `_N` 后缀） |
 | 数据库目录 | `D:\SQLlite`（`SHOREKEEPER_DB_DIR`） |
+| 数据库文件 | `D:\SQLlite\shorekeeper.db`（`SHOREKEEPER_DB_PATH`） |
+| 工作区 | `D:\SQLlite\workspace`（`SHOREKEEPER_WORKSPACE_DIR`；Agent 读写与生成文档） |
+| 外观资源 | `D:\SQLlite\appearance\`（自定义背景 `bg-*`、头像；DB 仅存文件名） |
 
-可在 `.env` 中覆盖，详见 `src/config/paths.ts`。
+可在 `.env` 中覆盖，详见 `src/config/paths.ts`。主题与壁纸说明见 [UI-THEME.md](docs/UI-THEME.md)。
 
 ## 性能 / Token 优化
 
@@ -118,30 +121,77 @@ WEB_SEARCH_API_KEY=sk-你的博查Key
 ## 项目结构
 
 ```
-electron/              # 主进程、preload、IPC、窗口、定时调度
-src/agent/             # 对话编排、上下文组装、会话锁
-src/affection/         # 好感度阶段
-src/config/            # 路径、性能、插件、联网搜索配置
-src/tools/             # 内置工具（文件、网络、文档、记忆、生活、日程）
-src/models/            # OpenAI / Anthropic 模型适配
-src/memory/            # 长期记忆、Worldbook、会话摘要
-src/rag/               # 知识库导入、混合检索、缓存
-src/mcp/               # MCP Client
-src/skills/            # 技能加载
-src/db/                # sql.js 数据库与 migration
-src/renderer/          # React 聊天 / Dock / 设置 / 状态 / 日程 UI
-skills/                # 用户技能包
+TheShorekeeper/
+├── electron/                 # Electron 主进程
+│   ├── main.ts               # 入口：DB 初始化、IPC 注册、托盘、调度器
+│   ├── preload.ts            # 渲染进程 IPC 桥（contextBridge）
+│   ├── tray.ts               # 系统托盘
+│   ├── protocol/             # 自定义协议（如 sk-asset:// 本地外观资源）
+│   ├── ipc/                  # IPC 处理器（agent / session / appearance / …）
+│   ├── windows/              # 多窗：chat / status / schedule / dock / reminder
+│   ├── dock/                 # Dock 显隐与偏好
+│   ├── scheduler/            # node-cron 定时任务
+│   └── state/                # Agent Presence 状态
+├── src/
+│   ├── agent/                # 编排器、工具循环、上下文组装、会话锁
+│   ├── affection/            # 好感度阶段
+│   ├── config/               # 路径、性能、插件、人设、外观、主题预设
+│   │   └── themes/           # 9 套主题色板（shorekeeper / midnight / …）
+│   ├── models/               # OpenAI / Anthropic 适配、Embedding 配置
+│   ├── tools/                # 内置工具（file / web / doc / memory / life / schedule）
+│   ├── memory/               # 长期记忆、Worldbook、摘要、自动提取
+│   ├── rag/                  # 文档导入、分块、混合检索、缓存
+│   ├── mcp/                  # MCP Client
+│   ├── skills/               # 技能包加载（对应仓库根 skills/）
+│   ├── db/                   # sql.js、schema、migrations、repositories
+│   ├── session/              # 活跃会话
+│   ├── scheduler/            # 提醒意图解析
+│   ├── workspace/            # 工作区文件导入
+│   ├── shared/               # 主进程/渲染进程共用类型与主题工具
+│   └── renderer/             # React UI（Vite 单入口，?panel= 区分窗口）
+│       ├── ChatPage.tsx      # 主聊天
+│       ├── components/       # 消息列表、TitleBar、权限弹窗等
+│       ├── settings/         # 设置抽屉（API / 人设 / 外观 / 文档 / …）
+│       ├── theme/            # ThemeProvider、CSS 变量注入
+│       ├── dock/             # Dock 快捷栏
+│       ├── status/           # 状态面板
+│       └── schedule/         # 日程与 Token 图表
+├── skills/                   # 用户技能包（SKILL.md，会打入安装包）
+├── scripts/                  # 维护脚本（见下方常用命令）
+├── public/                   # 内置立绘、默认头像（构建进 dist/）
+├── docs/                     # 设计 / 数据库 / 模型 / 主题 / 计划
+├── .env.example              # 环境变量模板（勿提交 .env）
+├── vite.config.ts
+└── package.json              # 脚本与 electron-builder 打包配置
 ```
+
+### 设置页一览
+
+| 分组 | 页面 | 说明 |
+|------|------|------|
+| 能力 | 插件 / 技能 / MCP | 联网搜索、文档工具、外部 MCP |
+| 人格与记忆 | 人设 / 用户信息 / 记忆 | System Prompt、画像、性能与 RAG 调优 |
+| 个性化 | 外观 | 9 套主题预设、壁纸、头像、遮罩 |
+| 数据与任务 | 泰提斯终端 / 定时任务 | 知识库导入、周期与一次性任务 |
+| 系统 | API 设置 / 免责声明 | 模型配置与协议 |
+
+### 多窗口
+
+同一 Vite 构建，通过 URL 参数 `?panel=` 加载不同 React 根组件：`chat`（默认）、`status`、`schedule`、`reminder`、`dock`。
 
 ## 常用命令
 
 ```powershell
-pnpm dev                  # 开发模式
-pnpm test                 # 单元测试（Vitest）
-pnpm db:init              # 初始化数据库与 migration
-pnpm db:seed              # 写入守岸人人设与 Worldbook 种子
-pnpm db:reset-keep-models # 重置数据库但保留模型配置
-pnpm dist                 # Windows 打包
+pnpm dev                      # 开发模式（Vite + Electron）
+pnpm test                     # 单元测试（Vitest）
+pnpm typecheck                # TypeScript 检查
+pnpm build                    # 生产构建（不打包安装程序）
+pnpm dist                     # Windows 安装包 → release/
+pnpm db:init                  # 初始化数据库并应用 migration
+pnpm db:migrate               # 同 db:init
+pnpm db:seed                  # 写入守岸人人设与 Worldbook 种子
+pnpm db:cleanup-sessions      # 删除无消息的空会话
+pnpm db:reset-keep-models     # 重置数据库但保留 API 模型配置
 ```
 
 ## 文档
