@@ -17,6 +17,7 @@ vi.mock('../appearance-assets', () => ({
 }));
 
 import { getAppearanceSettings, setAppearancePreset, setBackgroundFit } from '../appearance';
+import { listThemePresets } from '../themes';
 
 describe('appearance config', () => {
   beforeEach(() => {
@@ -29,7 +30,7 @@ describe('appearance config', () => {
     const info = getAppearanceSettings();
     expect(info.presetId).toBe('shorekeeper');
     expect(info.presetName).toBe('守岸人 · 星空');
-    expect(info.presets.length).toBe(3);
+    expect(info.presets.length).toBe(listThemePresets().length);
     expect(info.backgroundFit).toBe('cover');
   });
 
