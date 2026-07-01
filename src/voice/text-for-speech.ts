@@ -12,7 +12,8 @@ export function stripMarkdownForSpeech(text: string): string {
   s = s.replace(/^\s*\d+\.\s+/gm, '');
   s = s.replace(/<[^>]+>/g, ' ');
   s = s.replace(/\*\*([^*]+)\*\*/g, '$1');
-  s = s.replace(/\*([^*]+)\*/g, '$1');
+  // RP action lines (*…*) are visual-only; drop them for TTS.
+  s = s.replace(/\*[^*]+\*/g, ' ');
   s = s.replace(/_{1,2}([^_]+)_{1,2}/g, '$1');
   s = s.replace(/\|/g, ' ');
   s = s.replace(/\s+/g, ' ').trim();
