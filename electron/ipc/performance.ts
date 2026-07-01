@@ -9,10 +9,14 @@ import type { PerformanceSettingsInfo } from '../../src/shared/types';
 function toInfo(settings: PerformanceSettings): PerformanceSettingsInfo {
   return {
     ragEnabled: settings.ragEnabled,
+    ragInjectMode: settings.ragInjectMode,
+    ragMinScore: settings.ragMinScore,
+    ragMaxChunksPerDoc: settings.ragMaxChunksPerDoc,
     memoryExtractMode: settings.memoryExtractMode,
     memoryExtractInterval: settings.memoryExtractInterval,
     maxHistoryMessages: settings.maxHistoryMessages,
     compressThreshold: settings.compressThreshold,
+    memorySemanticInContext: settings.memorySemanticInContext,
   };
 }
 

@@ -8,6 +8,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 export interface TokenDailyPoint {
   date: string;
@@ -47,7 +48,9 @@ export function TokenUsageLineChart({ data, chartKey = 0 }: TokenUsageLineChartP
               fontSize: 12,
             }}
             labelStyle={{ color: '#E1E9F0' }}
-            formatter={(value: number) => value.toLocaleString()}
+            formatter={(value: ValueType | undefined) =>
+              typeof value === 'number' ? value.toLocaleString() : String(value ?? '')
+            }
           />
           <Legend
             verticalAlign="top"

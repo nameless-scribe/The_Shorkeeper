@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { closeDatabase, initDatabase, type AppDatabase } from '../../db';
+import { closeDatabase, initDatabase, getDatabase, type AppDatabase } from '../../db';
 import { seedShorekeeper } from '../../db/seed';
 import { isDuplicateMemory, isSemanticallyDuplicateMemory } from '../dedupe';
 import { saveMemory, searchMemories, upsertMemory } from '../long-term';
@@ -48,13 +48,46 @@ describe('long term memory', () => {
   });
 
   it('upserts by memory_key instead of duplicating', async () => {
-    await upsertMemory('user.nickname', '用户名叫汐', 0.8, 'session-1', { skipEmbedding: true });
+    await upsertMemory('user.nickname', '用户名叫汐', 0.8, 'session-1');
     await upsertMemory('user.nickname', '用户名叫汐汐', 0.9, 'session-1', { skipEmbedding: true });
 
     const hits = searchMemories('汐');
     expect(hits).toHaveLength(1);
     expect(hits[0].memoryKey).toBe('user.nickname');
     expect(hits[0].content).toBe('用户名叫汐汐');
+  });
+
+  it('clears embedding when content changes with skipEmbedding', async () => {
+    const blob = serializeEmbedding([1, 0, 0, 0]);
+    const db = getDatabase();
+    db.prepare(
+      `INSERT INTO long_term_memory (id, memory_key, content, importance, source_session_id, created_at, embedding)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run('id-1', 'user.pref', '喜欢咖啡', 0.8, 'session-1', Date.now(), blob);
+
+    await upsertMemory('user.pref', '喜欢拿铁', 0.9, 'session-1', { skipEmbedding: true });
+
+    const row = db
+      .prepare('SELECT embedding FROM long_term_memory WHERE memory_key = ?')
+      .get('user.pref') as { embedding: Uint8Array | null };
+    expect(row.embedding).toBeNull();
+  });
+
+  it('preserves embedding when content unchanged with skipEmbedding', async () => {
+    const blob = serializeEmbedding([1, 0, 0, 0]);
+    const db = getDatabase();
+    db.prepare(
+      `INSERT INTO long_term_memory (id, memory_key, content, importance, source_session_id, created_at, embedding)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run('id-1', 'user.pref', '喜欢咖啡', 0.8, 'session-1', Date.now(), blob);
+
+    await upsertMemory('user.pref', '喜欢咖啡', 0.9, 'session-1', { skipEmbedding: true });
+
+    const row = db
+      .prepare('SELECT embedding FROM long_term_memory WHERE memory_key = ?')
+      .get('user.pref') as { embedding: Uint8Array | null };
+    expect(row.embedding).not.toBeNull();
+    expect(row.embedding!.byteLength).toBe(16);
   });
 });
 

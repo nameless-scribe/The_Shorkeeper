@@ -80,10 +80,17 @@ export async function maybeCompressSession(sessionId: string): Promise<boolean> 
   if (all.length <= compressThreshold) return false;
 
   const keepCount = maxHistoryMessages;
-  const toCompress = all.slice(0, all.length - keepCount);
+  const existing = getSessionSummary(sessionId);
+  const compressedUpToId = existing?.compressedUpToMessageId;
+  let toCompress = all.slice(0, all.length - keepCount);
+  if (compressedUpToId) {
+    const idx = toCompress.findIndex((m) => m.id === compressedUpToId);
+    if (idx >= 0) {
+      toCompress = toCompress.slice(idx + 1);
+    }
+  }
   if (!toCompress.length) return false;
 
-  const existing = getSessionSummary(sessionId);
   const dialogue = toCompress
     .map((m) => `${m.role === 'user' ? '用户' : '助手'}：${m.content}`)
     .join('\n');
@@ -113,5 +120,14 @@ export function getRecentChatMessages(sessionId: string, limit: number) {
   const all = listMessages(sessionId).filter(
     (m) => m.role === 'user' || m.role === 'assistant',
   );
-  return all.slice(-limit).map((m) => ({ role: m.role, content: m.content }));
+  const summary = getSessionSummary(sessionId);
+  const checkpointId = summary?.compressedUpToMessageId;
+  let recent = all;
+  if (checkpointId) {
+    const idx = all.findIndex((m) => m.id === checkpointId);
+    if (idx >= 0) {
+      recent = all.slice(idx + 1);
+    }
+  }
+  return recent.slice(-limit).map((m) => ({ role: m.role, content: m.content }));
 }

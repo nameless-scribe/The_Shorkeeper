@@ -1,4 +1,6 @@
-const AVATAR_SRC = '/keeper-avatar.png';
+import { KEEPER_AVATAR_URL } from '../public-assets';
+import { getLatestAppearance, getResolvedKeeperAvatarSrc } from '../theme/apply-theme';
+import { useAppearance } from '../theme/use-appearance';
 
 interface AgentAvatarProps {
   size?: 'sm' | 'md' | 'lg';
@@ -12,13 +14,20 @@ const sizeMap = {
 };
 
 export function AgentAvatar({ size = 'md', className = '' }: AgentAvatarProps) {
+  const appearance = useAppearance();
+  const src = appearance
+    ? getResolvedKeeperAvatarSrc(appearance)
+    : getLatestAppearance()
+      ? getResolvedKeeperAvatarSrc(getLatestAppearance()!)
+      : KEEPER_AVATAR_URL;
+
   return (
     <div
       className={`${sizeMap[size]} shrink-0 overflow-hidden rounded-full border-2 border-keeper-cyan/40 shadow-cyanSm ${className}`}
     >
       <img
-        src={AVATAR_SRC}
-        alt="Shorekeeper"
+        src={src}
+        alt="Agent"
         className="h-full w-full object-cover object-top"
         draggable={false}
       />

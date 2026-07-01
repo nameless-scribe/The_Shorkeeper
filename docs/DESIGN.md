@@ -1,8 +1,8 @@
 # The Shorekeeper 设计文档
 
-> 版本：0.1.0-draft  
-> 更新日期：2026-06-29  
-> 状态：设计阶段（仓库尚未实现代码）
+> 版本：0.2.0  
+> 更新日期：2026-07-01  
+> 状态：**M1–M6 已完成，M7 基本完成**（RAG 优化、插件、好感度已落地）；**M8 桌宠**待做
 
 ---
 
@@ -59,8 +59,9 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 | 工具协助 | 读文件、搜索、天气、翻译、文档生成 |
 | 记忆召回 | 长期记忆、用户画像、历史会话检索 |
 | 知识检索 | 导入文档 RAG、Worldbook 世界观触发 |
-| 状态陪伴 | 在线状态、心情、喂食等轻量互动 |
+| 状态陪伴 | 在线状态、心情、喂食、好感度阶段 |
 | 资源监控 | Token 用量统计、周趋势、定时任务 |
+| 联网能力 | 博查 Web Search、URL 抓取、天气、翻译 |
 
 ---
 
@@ -109,7 +110,7 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 | `schedule` | 浮动面板 | 日程、Token 统计、定时任务入口 |
 | `dock` | 透明、无边框、可置顶 | 主面板全隐藏时的伴侣快捷栏：头像 + 状态/日程/Token 预览 |
 | `reminder` | 透明、置顶 | 定时任务 reminder 弹窗 |
-| `settings` | 聊天窗内 Drawer | 模型、API、MCP、技能、权限、人设、文档、任务 |
+| `settings` | 聊天窗内 Drawer | 模型、API、MCP、技能、人设、外观、文档、任务 |
 
 **窗口生命周期（M4）：**
 
@@ -144,7 +145,7 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 | 数据库 | SQLite（运行时 **sql.js**；设计原案 better-sqlite3） | 嵌入式主库 |
 | Schema | `src/db/schema.ts` + 手写 SQL migration | 类型与迁移 |
 | 全文检索 | SQLite FTS5 | Worldbook 关键词 |
-| 向量检索 | sql.js BLOB + TS 余弦相似度（M5） | RAG、语义记忆；原设计 sqlite-vec 待迁原生 SQLite 时再评估 |
+| 向量检索 | sql.js BLOB + TS 余弦 + FTS5 RRF 混合（M5 + RAG 优化） | RAG、语义记忆 |
 | 定时任务 | node-cron | 本地调度 |
 | TTS | edge-tts 或等价方案 | 文本转语音 |
 | MCP | @modelcontextprotocol/sdk | 外部工具扩展 |
@@ -159,8 +160,9 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 
 - M1：基础表（sessions, messages）
 - M3：记忆表 + Worldbook + `memory_key` upsert + FTS5（可选）
-- M5：document_chunks `embedding BLOB`、语义记忆向量去重（非 sqlite-vec WASM 限制）
-- 未来若文档量极大（>5 万 chunk）：评估 SQLite + LanceDB 双库
+- M5：document_chunks `embedding BLOB`、语义记忆向量去重
+- M5-RAG 优化（2026-07）：FTS5 混合检索、chunk 内存缓存、Markdown 感知分块、文档 hash 去重、可调注入模式
+- 未来若文档量极大（>1 万 chunk）：评估 sqlite-vec 或 LanceDB 双库
 
 ### 4.3 模型适配
 
@@ -198,15 +200,16 @@ interface AgentRunRequest {
 
 **输出**：`AsyncIterable<AgUiEvent>`
 
-**上下文组装顺序**：
+**上下文组装顺序**（`context-builder.ts`）：
 
-1. 基础 System Prompt（人设）
-2. 用户画像摘要（`user_profile`）
-3. 长期记忆检索结果（向量 + 重要性）
-4. RAG 检索片段（若启用）
-5. Worldbook 命中条目（FTS5 关键词 + 可选向量）
-6. 当前激活技能说明
-7. 可用工具列表（内置 + MCP + 技能限制后）
+1. **稳定前缀**（`stable-context.ts`）：人设 System Prompt + 工具说明 + 技能 fragment（利于 prompt cache）
+2. **动态块**（随 query 变化）：
+   - 好感度阶段指引（`affection`）
+   - 用户画像摘要（`user_profile`）
+   - 会话摘要（`session_summaries`，长会话压缩后）
+   - 长期记忆检索（向量 + 重要性）
+   - Worldbook 命中条目（FTS5 关键词）
+   - RAG 文档目录 / 检索片段（按 `ragInjectMode` 决定，见 §5.5）
 
 ### 5.2 Function-Calling 循环
 
@@ -242,8 +245,8 @@ interface AgentRunRequest {
 **约束**：
 
 - 默认 `maxToolRounds = 10`，防止死循环
-- 每次 tool_call 记录到 `tool_invocations` 表（可选，用于调试）
-- 用户可在设置中中断进行中的 run
+- 同一会话通过 `session-run-lock` 串行运行，新消息需等待或中断当前 run
+- 用户可在设置中中断进行中的 run（`AbortController`）
 
 ### 5.3 工具系统 (Tool Registry)
 
@@ -266,14 +269,18 @@ interface ToolContext {
 }
 ```
 
-**内置工具（分期）**：
+**内置工具（当前）**：
 
-| 阶段 | 工具 |
+| 类别 | 工具 |
 |------|------|
-| M2 | `read_file`, `list_dir`, `web_search` |
-| M3 | `recall_memory`, `search_worldbook`, `save_memory`（可选 `key`） |
-| M6 | `write_file`, `fetch_url`, `get_weather`, `translate` |
-| M7 | `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`, `bookkeeping`, `travel_plan` |
+| 文件 | `read_file`, `write_file`, `list_dir` |
+| 网络 | `web_search`（博查）, `fetch_url`, `get_weather`, `translate` |
+| 文档 | `convert_to_markdown`, `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`, `read_xlsx` |
+| 记忆 / 知识 | `recall_memory`, `save_memory`, `search_worldbook`, `search_knowledge` |
+| 生活 | `bookkeeping`, `travel_plan` |
+| 日程 | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task` |
+
+工具可见性受 **设置 → 插件**（`PluginSettings`）与 **技能白名单** 双重过滤；核心伴侣工具（记忆、知识检索、定时任务）不受技能白名单限制。
 
 MCP 工具在运行时动态合并，与内置工具同名时 MCP 优先或加前缀（`mcp__server__tool`）。
 
@@ -315,25 +322,50 @@ MCP 工具在运行时动态合并，与内置工具同名时 MCP 优先或加�
 
 ### 5.5 RAG 子系统
 
+**支持格式**：`.md` / `.txt` / `.docx` / `.doc` / `.pdf`（二进制经 `format-converters` 转 Markdown 后入库，单文件 ≤ 10MB）。
+
 **导入流程**：
 
 ```
-用户选择文件 (PDF/MD/TXT/DOCX)
-  → 解析文本
-  → 分块 (chunk_size=512, overlap=64)
-  → 调用 embedding API
-  → 写入 document_chunks + 向量索引
+用户选择文件 / 对话归档
+  → 解析文本（Markdown 感知分块 splitMarkdownIntoChunks）
+  → content_hash 去重（相同内容跳过）
+  → 调用 Embedding API（text-embedding-v3 等）
+  → 写入 documents + document_chunks（BLOB 向量）
+  → 同步 document_chunks_fts（FTS5）
+  → invalidateChunkCache()
 ```
 
-**检索流程**：
+**检索流程**（`retriever.ts`）：
 
 ```
 用户 query
-  → embedding
-  → 向量 top-K + 可选 FTS 混合
-  → 去重、按 document 分组
-  → 格式化为 context 片段注入 prompt
+  → embedText(query)
+  → dense top-20（余弦，读 chunk-cache 内存缓存）
+  → sparse top-20（document_chunks_fts BM25）
+  → RRF 融合（hybrid.ts）
+  → 按 ragMinScore 过滤
+  → 按文档去重（ragMaxChunksPerDoc）
+  → 格式化为 context 片段
 ```
+
+**注入模式**（`RagInjectMode`，设置 → 性能）：
+
+| 模式 | 行为 |
+|------|------|
+| `catalog`（默认） | 仅注入文档目录；知识问答时模型自行调用 `search_knowledge` |
+| `auto` | 检测到知识意图时自动检索并注入 top-K 片段 |
+| `tool` | 完全不自动检索，仅依赖 `search_knowledge` 工具 |
+
+**相关模块**：
+
+| 文件 | 职责 |
+|------|------|
+| `chunk-cache.ts` | embedding 内存缓存，导入/删除时失效 |
+| `hybrid.ts` | Reciprocal Rank Fusion |
+| `embedding-store.ts` / `sqljs-embedding-store.ts` | 向量存储抽象（sql.js 实现） |
+| `reindex.ts` | 换 embedding 模型后批量重嵌入 |
+| `conversation-knowledge.ts` | 对话归档写入知识库（语义去重） |
 
 ### 5.6 Worldbook
 
@@ -402,7 +434,27 @@ interface PermissionPolicy {
 
 敏感操作（写文件、执行 MCP 写操作）弹出主进程 `dialog` 确认。
 
-### 5.11 Live2D 子系统
+### 5.11 好感度系统 (Affection)
+
+轻量伴侣进度，分数 0–100 持久化于 `app_settings`，分五阶段注入 prompt 语气指引：
+
+| 阶段 | 分数 | 说明 |
+|------|------|------|
+| 初醒 | 0–19 | 克制、工具式距离感 |
+| 同行 | 20–39 | 可靠同伴 |
+| 守望 | 40–59 | 默认起点，留意调律者状态 |
+| 羁绊 | 60–79 | 主动表达惦念 |
+| 岸畔 | 80–100 | 深层珍重，仍保持沉静底色 |
+
+**加分来源**：每日首次对话、连续轮次（有上限）、状态面板喂食。实现见 `src/affection/`。
+
+### 5.12 联网搜索
+
+- 默认提供商：**博查**（`src/tools/web/search-providers/bocha.ts`）
+- 配置：设置 → 插件，或 `.env` 中 `WEB_SEARCH_API_KEY` / `BOCHA_API_KEY`
+- `web_search` 工具经插件开关控制；与 RAG 知识库独立
+
+### 5.13 Live2D 子系统
 
 - 独立 `BrowserWindow`：`transparent: true`, `frame: false`
 - PixiJS Application 加载 `.model3.json`
@@ -539,6 +591,9 @@ interface AgentPresenceState {
 | mime_type | TEXT | |
 | chunk_count | INTEGER | |
 | imported_at | INTEGER | Unix ms |
+| content_hash | TEXT | SHA-256，导入去重 |
+| embedding_model | TEXT | 嵌入模型 ID |
+| embedding_dim | INTEGER | 向量维度 |
 
 #### document_chunks
 
@@ -548,7 +603,16 @@ interface AgentPresenceState {
 | document_id | TEXT FK | |
 | chunk_index | INTEGER | |
 | content | TEXT | 块文本 |
-| -- | vec | sqlite-vec 向量列（M5） |
+| embedding | BLOB | Float32Array 序列化 |
+
+#### document_chunks_fts（FTS5 虚表）
+
+```sql
+CREATE VIRTUAL TABLE document_chunks_fts USING fts5(
+  chunk_id UNINDEXED, document_id UNINDEXED,
+  content, filename, tokenize='unicode61'
+);
+```
 
 #### token_usage
 
@@ -559,6 +623,7 @@ interface AgentPresenceState {
 | model | TEXT | |
 | prompt_tokens | INTEGER | |
 | completion_tokens | INTEGER | |
+| cached_tokens | INTEGER | 显式缓存命中（可选） |
 | created_at | INTEGER | Unix ms |
 
 #### scheduled_tasks
@@ -572,6 +637,8 @@ interface AgentPresenceState {
 | action_payload | TEXT | JSON |
 | enabled | INTEGER | 0/1 |
 | last_run_at | INTEGER | 可选 |
+| schedule_kind | TEXT | cron / once |
+| run_at | INTEGER | 一次性任务触发时间 |
 
 #### mcp_servers
 
@@ -666,7 +733,8 @@ sessions 1───N token_usage (optional)
 |------|------|------|
 | API Keys | `app_settings` 或加密文件 | 不进渲染进程、不进 git |
 | 模型列表 | `app_settings` | 端点、模型 ID、协议类型 |
-| 人设 Prompt | `app_settings` | 可拆分 name/personality/rules |
+| 人设 Prompt | `app_settings` | `persona.system_prompt`、`persona.version`（`custom` 不自动覆盖）、`persona.display_name` |
+| 外观主题 | `app_settings` + `appearance/` | `ui.theme.preset_id`、`ui.theme.assets`、`ui.theme.veil_opacity`；用户图片存 `D:\SQLlite\appearance\` |
 | 权限策略 | `app_settings` | filesystem roots 等 |
 | 窗口位置 | `app_settings` | 各窗 last bounds（含 `window.bounds.dock`） |
 | Dock 偏好 | `app_settings` | alwaysOnTop、positionLocked |
@@ -686,102 +754,56 @@ sessions 1───N token_usage (optional)
 ```
 TheShorekeeper/
 ├── docs/
-│   └── DESIGN.md                 # 本文档
+│   ├── DESIGN.md                 # 架构设计（本文档）
+│   ├── DATABASE.md               # 数据库与 migration
+│   ├── MODELS.md                 # 模型与 API 配置
+│   └── superpowers/plans/        # 实施计划（RAG 优化等）
 ├── electron/
 │   ├── main.ts                   # 应用入口
 │   ├── preload.ts                # IPC 桥
 │   ├── tray.ts                   # 系统托盘
-│   ├── dock/
-│   │   ├── visibility.ts         # Dock 与主面板显隐同步
-│   │   └── preferences.ts        # Dock 置顶/固定
-│   ├── windows/
-│   │   ├── manager.ts            # 窗口创建与生命周期（panelShown）
-│   │   ├── dock.ts
-│   │   ├── chat.ts
-│   │   ├── status.ts
-│   │   ├── schedule.ts
-│   │   ├── reminder.ts
-│   │   └── live2d.ts             # M8
-│   └── ipc/
-│       ├── agent.ts
-│       ├── session.ts
-│       ├── profile.ts
-│       └── worldbook.ts
+│   ├── dock/                     # Dock 显隐与偏好
+│   ├── windows/                  # chat / status / schedule / dock / reminder / broadcast
+│   ├── ipc/                      # agent, session, documents, performance, web-search, …
+│   ├── scheduler/cron.ts         # 定时任务调度
+│   └── state/presence.ts         # Agent 在线状态
 ├── src/
-│   ├── agent/
-│   │   ├── orchestrator.ts
-│   │   ├── loop.ts
-│   │   ├── context-builder.ts
-│   │   └── types.ts              # AgUiEvent, AgentRunRequest
-│   ├── models/
-│   │   ├── base.ts
-│   │   ├── openai-compatible.ts
-│   │   └── anthropic-like.ts
-│   ├── tools/
-│   │   ├── registry.ts
-│   │   ├── file/
-│   │   ├── web/
-│   │   └── memory/
-│   ├── mcp/
-│   │   └── client.ts
-│   ├── memory/
-│   │   ├── long-term.ts          # saveMemory / upsertMemory
-│   │   ├── user-profile.ts
-│   │   ├── worldbook.ts
-│   │   ├── summarizer.ts         # 本轮增量提取
-│   │   ├── extraction-state.ts
-│   │   └── dedupe.ts
-│   ├── rag/
-│   │   ├── importer.ts
-│   │   ├── chunker.ts
-│   │   └── retriever.ts
-│   ├── skills/
-│   │   └── loader.ts
-│   ├── tts/
-│   │   └── engine.ts
-│   ├── scheduler/
-│   │   └── cron.ts
-│   └── db/
-│       ├── index.ts
-│       ├── schema.ts             # 表类型定义
-│       └── migrations/
-├── src/renderer/
-│   ├── dock/                     # DockPage、Status/Schedule/Token 信息条
-│   ├── live2d/
-│   │   ├── main.tsx
-│   │   └── Live2DStage.tsx
-│   ├── chat/
-│   ├── status/
-│   ├── schedule/
-│   ├── settings/
-│   ├── components/
-│   └── hooks/
-│       └── useAgentEvents.ts
-├── skills/                       # 用户技能包
-├── assets/
-│   └── live2d/                   # gitignore
+│   ├── agent/                    # orchestrator, loop, context-builder, session-run-lock
+│   ├── affection/                # 好感度阶段与加分
+│   ├── config/                   # paths, performance, plugins, web-search-config
+│   ├── models/                   # OpenAI-compatible / Anthropic-like 适配
+│   ├── tools/                    # 内置工具 + agent-registry
+│   │   └── web/search-providers/ # 博查等搜索后端
+│   ├── mcp/client.ts             # MCP Client
+│   ├── memory/                   # 长期记忆、Worldbook、摘要、提取
+│   ├── rag/                      # 导入、分块、混合检索、缓存、重嵌入
+│   ├── skills/                   # 技能加载与状态
+│   ├── scheduler/                # reminder 意图解析
+│   ├── session/                  # 活跃会话
+│   ├── workspace/                # 工作区导入
+│   └── db/                       # sql.js、schema、migrations、repositories
+├── src/renderer/                 # React UI（chat / dock / settings / status / schedule）
+├── skills/                       # 用户技能包（SKILL.md）
+├── scripts/                      # db:init / seed / cleanup / reset
 ├── .env.example
-├── .gitignore
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-└── drizzle.config.ts
+└── package.json
 ```
 
 ---
 
 ## 11. 开发里程碑
 
-| 里程碑 | 目标 | 交付物 |
-|--------|------|--------|
-| **M1** | 基础脚手架 | Electron+Vite+React，单窗聊天，流式 LLM，SQLite sessions/messages |
-| **M2** | Agent 核心 | Tool loop，AG-UI 事件，3 个内置工具，权限骨架 |
-| **M3** | 记忆 | 结构化长期记忆（memory_key upsert）、Worldbook、上下文组装、设置页 |
-| **M4** | 多窗 UI | 多窗管理、托盘、Dock 快捷栏、状态/日程/Token 面板、定时任务 |
-| **M5** | RAG | 文档导入、向量检索、语义记忆去重（sql.js BLOB；桌宠延后 M8） |
-| **M6** | 扩展 | MCP，技能系统，TTS |
-| **M7** | 工具补齐 | 文档生成、记账、旅行规划等；Token 优化与长会话压缩 |
-| **M8** | 桌宠 | Live2D 或精灵图窗，动作与对话联动 |
+| 里程碑 | 目标 | 状态 |
+|--------|------|------|
+| **M1** | 基础脚手架 | ✅ Electron+Vite+React，流式 LLM，SQLite |
+| **M2** | Agent 核心 | ✅ Tool loop，AG-UI 事件，内置工具 |
+| **M3** | 记忆 | ✅ memory_key upsert、Worldbook、设置页 |
+| **M4** | 多窗 UI | ✅ 多窗、托盘、Dock、Token/定时任务 |
+| **M5** | RAG | ✅ 文档导入、向量检索、语义记忆去重 |
+| **M5-RAG** | RAG 优化 | ✅ 混合检索、缓存、Markdown 分块、注入模式（见 plans/2026-07-01-rag-optimization.md） |
+| **M6** | 扩展 | ✅ MCP、技能、Anthropic 协议（TTS 延后） |
+| **M7** | 工具补齐 | ✅ 文档生成、记账、旅行规划；Token 优化与长会话压缩 |
+| **M8** | 桌宠 | ⏳ Live2D 或精灵图窗，动作与对话联动 |
 
 每个里程碑结束时应可独立运行、可测试。
 
@@ -792,7 +814,7 @@ TheShorekeeper/
 | 风险 | 影响 | 对策 |
 |------|------|------|
 | OpenAI / Anthropic 工具格式差异 | 工具循环失败 | 适配层统一 ToolCall 结构 |
-| better-sqlite3 与 Electron 版本 | 安装失败 | electron-rebuild，锁定版本 |
+| better-sqlite3 与 Electron 版本 | 安装失败 | 已改用 sql.js（WASM），免 native 编译 |
 | 上下文超长 | 成本高、超限 | 摘要压缩 + RAG 检索代替全量历史 |
 | Live2D 模型版权 | 法律风险 | 自用官方示例/授权模型，gitignore |
 | MCP Server 不稳定 | 工具超时 | 超时、重试、禁用开关 |
@@ -826,6 +848,7 @@ TheShorekeeper/
 |------|------|------|
 | 0.1.0-draft | 2026-06-29 | 初稿，基于需求讨论整理 |
 | 0.1.1 | 2026-06-29 | M4 多窗/Dock/托盘模型；M5 更正为 RAG（非 Live2D）；向量实现为 BLOB+余弦 |
+| 0.2.0 | 2026-07-01 | 反映 M1–M7 实现：混合 RAG、好感度、博查搜索、插件系统、目录与表结构更新 |
 
 ---
 

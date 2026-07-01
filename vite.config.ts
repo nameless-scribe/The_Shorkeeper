@@ -17,6 +17,8 @@ const isExternal = (id: string) =>
   id.startsWith('sql.js/');
 
 export default defineConfig({
+  // Electron 生产环境用 loadFile(file://)，须相对路径加载 public 资源
+  base: './',
   plugins: [
     react(),
     electron({

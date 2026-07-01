@@ -139,7 +139,10 @@ export function disableScheduledTask(id: string): void {
 }
 
 export function deleteScheduledTask(id: string): boolean {
-  getDatabase().prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
+  const db = getDatabase();
+  const existing = db.prepare('SELECT id FROM scheduled_tasks WHERE id = ?').get(id);
+  if (!existing) return false;
+  db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
   return true;
 }
 

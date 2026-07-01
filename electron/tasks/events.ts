@@ -1,5 +1,5 @@
-import { getWindowManager } from '../windows/manager';
+import { broadcastToAllRendererWindows } from '../windows/broadcast';
 
 export function broadcastTasksUpdated(): void {
-  getWindowManager().broadcast('tasks:updated', { ts: Date.now() });
+  broadcastToAllRendererWindows('tasks:updated', { ts: Date.now() });
 }

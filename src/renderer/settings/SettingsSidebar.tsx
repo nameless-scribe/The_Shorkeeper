@@ -1,8 +1,10 @@
 export type SettingsTab =
   | 'plugins'
+  | 'persona'
   | 'profile'
   | 'memory'
   | 'worldbook'
+  | 'appearance'
   | 'tasks'
   | 'documents'
   | 'skills'
@@ -34,10 +36,15 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: '人格与记忆',
     items: [
+      { id: 'persona', label: '人设', icon: '🎭' },
       { id: 'profile', label: '用户信息', icon: '👤' },
       { id: 'memory', label: '记忆', icon: '🧠' },
       { id: 'worldbook', label: 'Worldbook', icon: '📖' },
     ],
+  },
+  {
+    label: '个性化',
+    items: [{ id: 'appearance', label: '外观', icon: '🎨' }],
   },
   {
     label: '数据与任务',
@@ -125,9 +132,11 @@ export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
 
 export const SETTINGS_TAB_TITLES: Record<SettingsTab, { title: string; subtitle: string; icon: string }> = {
   plugins: { title: '插件', subtitle: '扩展功能与第三方集成', icon: '🧩' },
+  persona: { title: '人设', subtitle: '核心 System Prompt，每轮对话注入', icon: '🎭' },
   profile: { title: '用户信息', subtitle: '长期画像与偏好字段', icon: '👤' },
   memory: { title: '记忆', subtitle: 'RAG 注入、自动提取与上下文压缩', icon: '🧠' },
   worldbook: { title: 'Worldbook', subtitle: '触发词与背景设定', icon: '📖' },
+  appearance: { title: '外观', subtitle: '主题预设与背景、头像', icon: '🎨' },
   tasks: { title: '定时任务', subtitle: '提醒与静默 Agent 任务', icon: '⏰' },
   documents: { title: '文档', subtitle: '知识库导入与管理', icon: '📄' },
   skills: { title: '技能', subtitle: 'Agent Skills 包', icon: '✨' },

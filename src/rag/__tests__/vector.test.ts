@@ -4,6 +4,7 @@ import {
   deserializeEmbedding,
   serializeEmbedding,
   topKBySimilarity,
+  topKBySimilarityDiverse,
 } from '../vector';
 
 describe('vector utils', () => {
@@ -32,5 +33,25 @@ describe('vector utils', () => {
     );
     expect(results[0].item).toBe('near');
     expect(results[0].score).toBeCloseTo(1);
+  });
+
+  it('topKBySimilarityDiverse limits chunks per document', () => {
+    const query = new Float32Array([1, 0]);
+    const embedding = new Float32Array([1, 0]);
+    const items = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        data: { documentId: 'doc-a', id: `a${i}` },
+        embedding,
+      })),
+      ...Array.from({ length: 2 }, (_, i) => ({
+        data: { documentId: 'doc-b', id: `b${i}` },
+        embedding: new Float32Array([0.9, 0.1]),
+      })),
+    ];
+
+    const results = topKBySimilarityDiverse(query, items, 5, 2);
+    const docACount = results.filter((r) => r.item.documentId === 'doc-a').length;
+    expect(docACount).toBeLessThanOrEqual(2);
+    expect(results.length).toBeGreaterThan(2);
   });
 });

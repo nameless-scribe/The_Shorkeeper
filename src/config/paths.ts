@@ -18,3 +18,8 @@ export function getWorkspaceDir(): string {
     process.env.SHOREKEEPER_WORKSPACE_DIR ?? path.join(getDatabaseDir(), 'workspace')
   );
 }
+
+/** 用户自定义外观资源（背景、头像） */
+export function getAppearanceDir(): string {
+  return path.join(getDatabaseDir(), 'appearance');
+}

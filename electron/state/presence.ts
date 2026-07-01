@@ -1,25 +1,34 @@
 import type { AgentPresenceState } from '../../src/agent/types';
+import {
+  getAffectionStageLabel,
+  recordChatAffection,
+  recordFeedAffection,
+} from '../../src/affection';
 import { getModelConfigSafe } from '../../src/models/config';
 import { getTodayTokenCount } from '../../src/db/token-usage';
 import { ev } from '../../src/agent/events';
 import type { AgUiEvent } from '../../src/agent/types';
-import { getWindowManager } from '../windows/manager';
+import { broadcastToAllRendererWindows } from '../windows/broadcast';
 
 const DEFAULT_STATE: AgentPresenceState = {
   online: true,
   mood: 'calm',
   activity: 'idle',
+  affectionStage: '守望',
   currentModel: '未配置',
   tokenUsageToday: 0,
 };
 
 let state: AgentPresenceState = { ...DEFAULT_STATE };
 let feedingTimer: ReturnType<typeof setTimeout> | null = null;
+let activeRunCount = 0;
+let idleResetTimer: ReturnType<typeof setTimeout> | null = null;
 
 function refreshModelAndTokens(): void {
   const config = getModelConfigSafe();
   state = {
     ...state,
+    affectionStage: getAffectionStageLabel(),
     currentModel: config?.model ?? '未配置',
     tokenUsageToday: getTodayTokenCount(),
   };
@@ -27,7 +36,7 @@ function refreshModelAndTokens(): void {
 
 function broadcastState(): void {
   refreshModelAndTokens();
-  getWindowManager().broadcast('agent:event', ev.stateUpdate({ ...state }));
+  broadcastToAllRendererWindows('agent:event', ev.stateUpdate({ ...state }));
 }
 
 export function getPresenceState(): AgentPresenceState {
@@ -41,19 +50,40 @@ export function setPresencePatch(patch: Partial<AgentPresenceState>): void {
 }
 
 export function onRunStarted(): void {
+  activeRunCount += 1;
+  if (idleResetTimer) {
+    clearTimeout(idleResetTimer);
+    idleResetTimer = null;
+  }
   setPresencePatch({ online: true, mood: 'thinking', activity: 'working' });
 }
 
 export function onRunFinished(): void {
-  setPresencePatch({ online: true, mood: 'happy', activity: 'accompanying' });
-  setTimeout(() => {
-    if (state.activity === 'accompanying' && state.mood === 'happy') {
+  activeRunCount = Math.max(0, activeRunCount - 1);
+  if (activeRunCount > 0) return;
+
+  recordChatAffection();
+  setPresencePatch({
+    online: true,
+    mood: 'happy',
+    activity: 'accompanying',
+    affectionStage: getAffectionStageLabel(),
+  });
+  idleResetTimer = setTimeout(() => {
+    idleResetTimer = null;
+    if (activeRunCount === 0 && state.activity === 'accompanying' && state.mood === 'happy') {
       setPresencePatch({ mood: 'calm', activity: 'idle' });
     }
   }, 5000);
 }
 
 export function onRunError(): void {
+  activeRunCount = Math.max(0, activeRunCount - 1);
+  if (activeRunCount > 0) return;
+  if (idleResetTimer) {
+    clearTimeout(idleResetTimer);
+    idleResetTimer = null;
+  }
   setPresencePatch({ online: true, mood: 'calm', activity: 'idle' });
 }
 
@@ -61,7 +91,12 @@ export function feedShorekeeper(): void {
   if (feedingTimer) {
     clearTimeout(feedingTimer);
   }
-  setPresencePatch({ mood: 'happy', activity: 'feeding' });
+  recordFeedAffection();
+  setPresencePatch({
+    mood: 'happy',
+    activity: 'feeding',
+    affectionStage: getAffectionStageLabel(),
+  });
   feedingTimer = setTimeout(() => {
     feedingTimer = null;
     if (state.activity === 'feeding') {
@@ -74,11 +109,11 @@ export function broadcastAgentEvent(event: AgUiEvent): void {
   if (event.type === 'usage') {
     refreshModelAndTokens();
     const withTokens = ev.stateUpdate({ ...state, tokenUsageToday: getTodayTokenCount() });
-    getWindowManager().broadcast('agent:event', event);
-    getWindowManager().broadcast('agent:event', withTokens);
+    broadcastToAllRendererWindows('agent:event', event);
+    broadcastToAllRendererWindows('agent:event', withTokens);
     return;
   }
-  getWindowManager().broadcast('agent:event', event);
+  broadcastToAllRendererWindows('agent:event', event);
 }
 
 export function emitInitialState(): void {

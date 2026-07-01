@@ -1,5 +1,5 @@
 import { getProfileSummary } from '../memory/user-profile';
-import { formatMemoriesForPrompt, searchMemories } from '../memory/long-term';
+import { formatMemoriesForPrompt, searchMemories, searchMemoriesWithEmbedding } from '../memory/long-term';
 import { formatWorldbookForPrompt, matchWorldbook } from '../memory/worldbook';
 import {
   formatDocumentCatalogForPrompt,
@@ -7,11 +7,12 @@ import {
   retrieveRelevantChunks,
 } from '../rag/retriever';
 import { listDocuments } from '../rag/documents';
-import { shouldRunRag } from '../config/performance';
+import { shouldAutoRetrieveRag, shouldInjectRagCatalog, getPerformanceSettings } from '../config/performance';
 import {
   formatSummaryForPrompt,
   getSessionSummary,
 } from '../memory/session-context';
+import { formatAffectionForPrompt } from '../affection';
 import { formatToolGuideForPrompt, getStableSystemPrefix } from './stable-context';
 import type { ToolDefinition } from '../tools/types';
 
@@ -48,13 +49,18 @@ export async function buildSystemPromptParts(
   const stable = toolGuide ? `${stableBase}\n\n${toolGuide}` : stableBase;
   const dynamicSections: string[] = [];
 
+  dynamicSections.push(formatAffectionForPrompt());
+
   const profile = getProfileSummary();
   if (profile) dynamicSections.push(profile);
 
   const summaryBlock = formatSummaryForPrompt(getSessionSummary(input.sessionId));
   if (summaryBlock) dynamicSections.push(summaryBlock);
 
-  const memories = searchMemories(input.userMessage, 5);
+  const settings = getPerformanceSettings();
+  const memories = settings.memorySemanticInContext
+    ? await searchMemoriesWithEmbedding(input.userMessage, 5)
+    : searchMemories(input.userMessage, 5);
   const memoryBlock = formatMemoriesForPrompt(memories);
   if (memoryBlock) dynamicSections.push(memoryBlock);
 
@@ -65,11 +71,12 @@ export async function buildSystemPromptParts(
   try {
     const documents = listDocuments();
     const hasDocuments = documents.length > 0;
-    if (hasDocuments) {
+    const filenames = documents.map((d) => d.filename);
+    if (shouldInjectRagCatalog(hasDocuments)) {
       const catalog = formatDocumentCatalogForPrompt(documents);
       if (catalog) dynamicSections.push(catalog);
     }
-    if (shouldRunRag(input.userMessage, hasDocuments)) {
+    if (shouldAutoRetrieveRag(input.userMessage, hasDocuments, filenames)) {
       const ragChunks = await retrieveRelevantChunks(input.userMessage, 5);
       const ragBlock = formatRagForPrompt(ragChunks);
       if (ragBlock) dynamicSections.push(ragBlock);

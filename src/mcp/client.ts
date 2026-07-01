@@ -17,8 +17,8 @@ function sanitizeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'tool';
 }
 
-export function mcpToolName(serverName: string, toolName: string): string {
-  return `mcp__${sanitizeSegment(serverName)}__${sanitizeSegment(toolName)}`;
+export function mcpToolName(serverId: string, toolName: string): string {
+  return `mcp__${sanitizeSegment(serverId)}__${sanitizeSegment(toolName)}`;
 }
 
 function toJsonSchema(input: unknown): JSONSchema {
@@ -33,7 +33,7 @@ function mcpToolToDefinition(
   tool: { name: string; description?: string; inputSchema?: unknown },
   client: Client,
 ): ToolDefinition {
-  const registeredName = mcpToolName(server.name, tool.name);
+  const registeredName = mcpToolName(server.id, tool.name);
 
   return {
     name: registeredName,
@@ -50,7 +50,7 @@ function mcpToolToDefinition(
         const result = await client.callTool(
           { name: tool.name, arguments: (args ?? {}) as Record<string, unknown> },
           undefined,
-          { signal: ctx.signal },
+          { signal: ctx.signal, timeout: 60_000 },
         );
 
         const textParts: string[] = [];
@@ -79,11 +79,39 @@ function mcpToolToDefinition(
   };
 }
 
+const MCP_ENV_ALLOWLIST = new Set([
+  'PATH',
+  'PATHEXT',
+  'SystemRoot',
+  'HOME',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'TEMP',
+  'TMP',
+  'LANG',
+  'LC_ALL',
+]);
+
+function buildMcpEnv(server: McpServerInfo): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of MCP_ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  for (const [key, value] of Object.entries(server.env ?? {})) {
+    if (typeof value !== 'string') continue;
+    if (MCP_ENV_ALLOWLIST.has(key)) continue;
+    env[key] = value;
+  }
+  return env;
+}
+
 async function connectServer(server: McpServerInfo): Promise<ConnectedServer | null> {
   const transport = new StdioClientTransport({
     command: server.command,
     args: server.args,
-    env: { ...process.env, ...server.env } as Record<string, string>,
+    env: buildMcpEnv(server),
     stderr: 'pipe',
   });
 

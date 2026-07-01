@@ -6,9 +6,15 @@ import {
   markTaskRun,
 } from '../../src/db/scheduled-tasks';
 import { notifyTasksChanged } from '../../src/scheduler/task-events';
+import { resolveReminderBody } from '../../src/scheduler/reminder-message';
 import { runOrchestrator } from '../../src/agent/orchestrator';
+import {
+  acquireSessionRun,
+  releaseSessionRun,
+  setSessionRunId,
+} from '../../src/agent/session-run-lock';
 import { getActiveSession } from '../../src/session/active';
-import { broadcastAgentEvent } from '../state/presence';
+import { broadcastAgentEvent, onRunError, onRunFinished, onRunStarted } from '../state/presence';
 import { showReminderPopup } from '../reminder/popup';
 
 const cronJobs = new Map<string, ReturnType<typeof cron.schedule>>();
@@ -23,17 +29,14 @@ function parsePayload(raw: string): Record<string, unknown> {
 }
 
 async function executeReminder(task: ScheduledTaskInfo, payload: Record<string, unknown>) {
-  const body =
-    typeof payload.message === 'string'
-      ? payload.message
-      : typeof payload.text === 'string'
-        ? payload.text
-        : task.name;
-
+  const body = await resolveReminderBody(task, payload);
   await showReminderPopup(task.name, body);
 }
 
-async function executeAgentPrompt(task: ScheduledTaskInfo, payload: Record<string, unknown>) {
+async function executeAgentPrompt(
+  task: ScheduledTaskInfo,
+  payload: Record<string, unknown>,
+): Promise<{ skipped: boolean }> {
   const prompt =
     typeof payload.prompt === 'string'
       ? payload.prompt
@@ -42,21 +45,54 @@ async function executeAgentPrompt(task: ScheduledTaskInfo, payload: Record<strin
         : task.name;
 
   const session = getActiveSession();
-  for await (const event of runOrchestrator(prompt, session.id)) {
-    broadcastAgentEvent(event);
+  const controller = acquireSessionRun(session.id);
+  if (!controller) {
+    console.warn(`[scheduler] 跳过任务「${task.name}」：会话 ${session.id} 正在运行 Agent`);
+    return { skipped: true };
+  }
+
+  onRunStarted();
+
+  let terminalError = false;
+  try {
+    for await (const event of runOrchestrator(prompt, session.id, controller.signal)) {
+      if (event.type === 'run_started') {
+        setSessionRunId(session.id, event.runId);
+      }
+      broadcastAgentEvent(event);
+      if (event.type === 'run_error') {
+        terminalError = true;
+      }
+    }
+    if (terminalError) {
+      onRunError();
+    } else {
+      onRunFinished();
+    }
+    return { skipped: false };
+  } catch (err) {
+    onRunError();
+    throw err;
+  } finally {
+    releaseSessionRun(session.id);
   }
 }
 
 async function runTask(task: ScheduledTaskInfo): Promise<void> {
   const payload = parsePayload(task.actionPayload);
   try {
+    let skipped = false;
     if (task.actionType === 'reminder') {
       await executeReminder(task, payload);
     } else if (task.actionType === 'agent_prompt') {
-      await executeAgentPrompt(task, payload);
+      const result = await executeAgentPrompt(task, payload);
+      skipped = result.skipped;
     } else {
       console.warn(`[scheduler] 未知 action_type: ${task.actionType}`);
     }
+
+    if (skipped) return;
+
     markTaskRun(task.id);
 
     if (task.scheduleKind === 'once') {

@@ -19,6 +19,7 @@ const DEFAULT_STATE: AgentPresenceState = {
   online: true,
   mood: 'calm',
   activity: 'idle',
+  affectionStage: '守望',
   currentModel: '—',
   tokenUsageToday: 0,
 };

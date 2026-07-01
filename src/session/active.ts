@@ -25,17 +25,18 @@ export function restoreActiveSession(db?: AppDatabase): Session {
   const persisted = readPersistedActiveSessionId();
   if (persisted) {
     const existing = getSession(persisted, db);
-    if (existing) {
+    if (existing && !existing.archived) {
       activeSessionId = persisted;
       return existing;
     }
   }
 
   const { sessions } = listSessions({ limit: 1 }, db);
-  if (sessions[0]) {
-    activeSessionId = sessions[0].id;
-    persistActiveSessionId(sessions[0].id, db);
-    return sessions[0];
+  const firstActive = sessions.find((s) => !s.archived);
+  if (firstActive) {
+    activeSessionId = firstActive.id;
+    persistActiveSessionId(firstActive.id, db);
+    return firstActive;
   }
 
   return resetActiveSession(db);
@@ -70,6 +71,9 @@ export function switchActiveSession(id: string, db?: AppDatabase): Session {
   const session = getSession(id, db);
   if (!session) {
     throw new Error('会话不存在');
+  }
+  if (session.archived) {
+    throw new Error('无法切换到已归档的会话');
   }
   activeSessionId = id;
   persistActiveSessionId(id, db);

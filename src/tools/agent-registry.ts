@@ -19,10 +19,15 @@ const CORE_TOOL_NAMES = new Set([
   'recall_memory',
   'save_memory',
   'search_worldbook',
+  'search_knowledge',
 ]);
 
-function buildCacheKey(skillIds: string[], mcpCount: number, pluginsKey: string): string {
-  return `${skillIds.sort().join(',')}:${mcpCount}:${pluginsKey}`;
+function buildCacheKey(skillIds: string[], mcpTools: { name: string }[], pluginsKey: string): string {
+  const mcpHash = mcpTools
+    .map((t) => t.name)
+    .sort()
+    .join(',');
+  return `${skillIds.sort().join(',')}:${mcpHash}:${pluginsKey}`;
 }
 
 function applyPluginFilter(registry: ToolRegistry): ToolRegistry {
@@ -61,7 +66,7 @@ export async function getAgentRegistry(): Promise<ToolRegistry> {
   const mcpTools = await getMcpToolDefinitions();
   const skillIds = getEnabledSkills().map((s) => s.id);
   const pluginsKey = pluginSettingsCacheKey(getPluginSettings());
-  const key = buildCacheKey(skillIds, mcpTools.length, pluginsKey);
+  const key = buildCacheKey(skillIds, mcpTools, pluginsKey);
 
   if (cachedRegistry && cacheKey === key) {
     return cachedRegistry;

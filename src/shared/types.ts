@@ -113,6 +113,19 @@ export interface EmbeddingSettingsPatch {
   apiKey?: string;
 }
 
+export type WebSearchConfigSource = 'app' | 'env' | 'none';
+
+export interface WebSearchSettingsInfo {
+  apiKeyMasked: string;
+  apiKeyConfigured: boolean;
+  provider: 'bocha';
+  source: WebSearchConfigSource;
+}
+
+export interface WebSearchSettingsPatch {
+  apiKey?: string;
+}
+
 export interface McpServerInfo {
   id: string;
   name: string;
@@ -124,10 +137,14 @@ export interface McpServerInfo {
 
 export interface PerformanceSettingsInfo {
   ragEnabled: boolean;
+  ragInjectMode: 'auto' | 'catalog' | 'tool';
+  ragMinScore: number;
+  ragMaxChunksPerDoc: number;
   memoryExtractMode: 'always' | 'manual' | 'every_n';
   memoryExtractInterval: number;
   maxHistoryMessages: number;
   compressThreshold: number;
+  memorySemanticInContext: boolean;
 }
 
 export type FilesystemMode = 'readonly' | 'confirm' | 'full';
@@ -176,7 +193,9 @@ export interface SessionListResult {
 }
 
 export interface SessionDeleteResult {
-  ok: true;
+  ok: boolean;
+  error?: string;
+  busy?: boolean;
   /** 删除的是当前活跃会话时，自动创建的新会话 */
   replacementSession?: SessionInfo;
 }
@@ -259,10 +278,79 @@ export type ImportProgress =
   | { phase: 'reading' }
   | { phase: 'chunking'; chunkCount: number }
   | { phase: 'embedding'; done: number; total: number }
-  | { phase: 'done'; document: DocumentInfo };
+  | { phase: 'done'; document: DocumentInfo }
+  | { phase: 'skipped'; document: DocumentInfo; reason: string };
+
+export type ReindexProgress = {
+  done: number;
+  total: number;
+  filename?: string;
+};
 
 export interface PermissionRequestPayload {
   requestId: string;
   toolName: string;
   args: unknown;
 }
+
+export interface PersonaSettingsInfo {
+  systemPrompt: string;
+  version: string;
+  displayName: string;
+  isCustom: boolean;
+  builtinVersion: string;
+  charCount: number;
+  updatedAt: number | null;
+}
+
+export interface PersonaSettingsPatch {
+  systemPrompt?: string;
+  displayName?: string;
+}
+
+export interface ThemeColorTokens {
+  navyDeep: string;
+  navy: string;
+  ice: string;
+  iceDeep: string;
+  cyan: string;
+  cyanDim: string;
+  silver: string;
+  silverLight: string;
+}
+
+export interface ThemePresetSummary {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface AppearanceAssetUrls {
+  backgroundUrl: string | null;
+  keeperAvatarUrl: string;
+  userAvatarUrl: string;
+  builtinBackground: string;
+  builtinKeeperAvatar: string;
+  builtinUserAvatar: string;
+}
+
+export type BackgroundFitMode = 'cover' | 'contain';
+
+export interface AppearanceSettingsInfo {
+  presetId: string;
+  presetName: string;
+  presets: ThemePresetSummary[];
+  colors: ThemeColorTokens;
+  assets: AppearanceAssetUrls;
+  veil: {
+    chat: string;
+    status: string;
+  };
+  hasCustomAssets: boolean;
+  /** 背景图适应方式：cover 铺满窗口，contain 完整显示 */
+  backgroundFit: BackgroundFitMode;
+  veilOpacity: number;
+  showStars: boolean;
+}
+
+export type AppearanceAssetSlot = 'background' | 'keeperAvatar' | 'userAvatar';

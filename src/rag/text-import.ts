@@ -1,37 +1,66 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getWorkspaceDir } from '../config/paths';
-import { splitTextIntoChunks } from './chunker';
+import { getEmbeddingModelName } from '../models/embedding-config';
+import { splitIntoChunks } from './chunker';
 import { embedTexts } from './embedding';
-import { insertDocumentWithChunks, type DocumentInfo } from './documents';
+import {
+  computeContentHash,
+  findDocumentByContentHash,
+  insertDocumentWithChunks,
+  type DocumentInfo,
+} from './documents';
 import { serializeEmbedding } from './vector';
-
-const KNOWLEDGE_DIR = () => path.join(getWorkspaceDir(), 'knowledge');
+import {
+  assertPathWithinKnowledge,
+  getKnowledgeDir,
+  sanitizeKnowledgeFilename,
+} from './knowledge-path';
 
 export type ImportProgress =
   | { phase: 'reading' }
   | { phase: 'chunking'; chunkCount: number }
   | { phase: 'embedding'; done: number; total: number }
-  | { phase: 'done'; document: DocumentInfo };
+  | { phase: 'done'; document: DocumentInfo }
+  | { phase: 'skipped'; document: DocumentInfo; reason: string };
+
+export interface ImportTextOptions {
+  skipHashDedup?: boolean;
+}
 
 export async function importTextAsKnowledge(
   text: string,
   filename: string,
   onProgress?: (p: ImportProgress) => void,
+  options?: ImportTextOptions,
 ): Promise<DocumentInfo> {
   const normalized = text.trim();
   if (!normalized) throw new Error('内容为空');
 
   onProgress?.({ phase: 'reading' });
 
-  const chunks = splitTextIntoChunks(normalized);
+  const contentHash = computeContentHash(normalized);
+  if (!options?.skipHashDedup) {
+    const existing = findDocumentByContentHash(contentHash);
+    if (existing) {
+      onProgress?.({
+        phase: 'skipped',
+        document: existing,
+        reason: '相同内容已导入',
+      });
+      return existing;
+    }
+  }
+
+  const chunks = splitIntoChunks(normalized, filename);
   if (!chunks.length) throw new Error('内容为空');
 
   onProgress?.({ phase: 'chunking', chunkCount: chunks.length });
 
-  await fs.mkdir(KNOWLEDGE_DIR(), { recursive: true });
-  const safeName = filename.replace(/[<>:"|?*\\]/g, '_').trim() || 'knowledge.md';
-  const destPath = path.join(KNOWLEDGE_DIR(), `${Date.now()}_${safeName}`);
+  await fs.mkdir(getKnowledgeDir(), { recursive: true });
+  const safeName = sanitizeKnowledgeFilename(filename);
+  const destPath = path.join(getKnowledgeDir(), `${Date.now()}_${safeName}`);
+  assertPathWithinKnowledge(destPath);
   await fs.writeFile(destPath, normalized, 'utf8');
 
   const relativePath = path.relative(getWorkspaceDir(), destPath).replace(/\\/g, '/');
@@ -40,11 +69,13 @@ export async function importTextAsKnowledge(
 
   const BATCH = 10;
   const embeddedChunks: Array<{ content: string; embedding: Uint8Array }> = [];
+  let embeddingDim = 0;
 
   for (let i = 0; i < chunks.length; i += BATCH) {
     const batch = chunks.slice(i, i + BATCH);
     const vectors = await embedTexts(batch);
     for (let j = 0; j < batch.length; j++) {
+      embeddingDim = vectors[j].length;
       embeddedChunks.push({
         content: batch[j],
         embedding: serializeEmbedding(vectors[j]),
@@ -62,6 +93,9 @@ export async function importTextAsKnowledge(
     filepath: relativePath,
     mimeType,
     chunks: embeddedChunks,
+    contentHash,
+    embeddingModel: getEmbeddingModelName(),
+    embeddingDim,
   });
 
   onProgress?.({ phase: 'done', document: doc });

@@ -58,7 +58,8 @@ export function bootstrapDataLayout(
   options?: { primaryRoot?: string },
 ): DataLayoutBootstrapResult {
   const explicitRoot = process.env.SHOREKEEPER_DB_DIR?.trim();
-  const primaryRoot = explicitRoot || options?.primaryRoot || DEFAULT_DATA_ROOT;
+  const primaryRoot =
+    explicitRoot || options?.primaryRoot || path.join(userDataFallback, 'data');
 
   const primaryDbPath =
     process.env.SHOREKEEPER_DB_PATH?.trim() || path.join(primaryRoot, 'shorekeeper.db');

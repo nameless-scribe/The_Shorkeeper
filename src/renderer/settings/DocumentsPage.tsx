@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { DocumentInfo, EmbeddingSettingsInfo, ImportProgress } from '@/shared/types';
+import type { DocumentInfo, EmbeddingSettingsInfo, ImportProgress, ReindexProgress } from '@/shared/types';
 import { SettingsSegmented } from './components/SettingsSegmented';
 import {
   SettingsActionLink,
@@ -33,9 +33,17 @@ function formatProgress(progress: ImportProgress | null): string {
       return `向量化 ${progress.done}/${progress.total}…`;
     case 'done':
       return `导入完成：${progress.document.filename}`;
+    case 'skipped':
+      return `已跳过：${progress.reason}（${progress.document.filename}）`;
     default:
       return '';
   }
+}
+
+function formatReindexProgress(progress: ReindexProgress | null): string {
+  if (!progress) return '';
+  if (progress.total === 0) return '无文档需要重建';
+  return `重建向量 ${progress.done}/${progress.total}${progress.filename ? ` · ${progress.filename}` : ''}`;
 }
 
 function formatDate(ms: number): string {
@@ -62,12 +70,19 @@ export function DocumentsPage() {
   const [embeddingSaved, setEmbeddingSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
+  const [reindexProgress, setReindexProgress] = useState<ReindexProgress | null>(null);
+  const [embeddingMismatch, setEmbeddingMismatch] = useState(false);
+  const [storedDimensions, setStoredDimensions] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await window.shorekeeper.documents.list();
     setDocuments(list);
+    const mismatch = await window.shorekeeper.documents.embeddingMismatch();
+    setEmbeddingMismatch(mismatch.hasMismatch);
+    setStoredDimensions(mismatch.storedDimensions);
     setLoading(false);
   }, []);
 
@@ -90,6 +105,13 @@ export function DocumentsPage() {
   useEffect(() => {
     const unsub = window.shorekeeper.documents.onImportProgress((p) => {
       setProgress(p);
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = window.shorekeeper.documents.onReindexProgress((p) => {
+      setReindexProgress(p);
     });
     return unsub;
   }, []);
@@ -160,6 +182,21 @@ export function DocumentsPage() {
     }
   };
 
+  const handleReindex = async () => {
+    if (!confirm('将使用当前 Embedding 模型重建全部文档向量，是否继续？')) return;
+    setError(null);
+    setReindexing(true);
+    setReindexProgress(null);
+    try {
+      await window.shorekeeper.documents.reindex();
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReindexing(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     await window.shorekeeper.documents.delete(id);
     await refresh();
@@ -170,9 +207,17 @@ export function DocumentsPage() {
   return (
     <SettingsPageShell>
       <SettingsIntro>
-        导入 MD 或 TXT 后，对话将自动检索相关内容。第三方 Claude 代理通常<strong className="text-keeper-ice/90">不支持</strong>{' '}
+        导入 MD、TXT、DOCX 或 PDF 后，对话将按性能设置中的 RAG 模式检索相关内容。第三方 Claude
+        代理通常<strong className="text-keeper-ice/90">不支持</strong>{' '}
         向量接口，请在下方向量 API 单独配置百炼等 Embedding 接入；对话仍可在 API 设置里使用 Claude。
       </SettingsIntro>
+
+      {embeddingMismatch && (
+        <p className="rounded-xl border border-amber-400/30 bg-amber-950/30 px-3 py-2 text-[11px] leading-relaxed text-amber-200/90">
+          知识库中存在多种向量维度（{storedDimensions.join('、')}），检索可能失效。请确认 Embedding
+          模型配置后点击「重建全部向量」。
+        </p>
+      )}
 
       <SettingsPanel
         title="向量 API（Embedding）"
@@ -311,20 +356,34 @@ export function DocumentsPage() {
       <SettingsPanel title="导入文档" icon="📥">
         <SettingsPrimaryButton
           className="w-full"
-          disabled={importing}
+          disabled={importing || reindexing}
           onClick={() => void handleImport()}
         >
           {importing ? '导入中…' : '选择文件导入'}
         </SettingsPrimaryButton>
+        {documents.length > 0 && (
+          <SettingsPrimaryButton
+            className="w-full"
+            disabled={importing || reindexing}
+            onClick={() => void handleReindex()}
+          >
+            {reindexing ? '重建中…' : '重建全部向量'}
+          </SettingsPrimaryButton>
+        )}
         {progress && (
           <p className="text-center text-xs text-keeper-cyan/80">{formatProgress(progress)}</p>
+        )}
+        {reindexProgress && (
+          <p className="text-center text-xs text-keeper-cyan/80">
+            {formatReindexProgress(reindexProgress)}
+          </p>
         )}
         {error && <p className="text-xs text-red-300/80">{error}</p>}
       </SettingsPanel>
 
       <SettingsSection title="知识库" hint={`${documents.length} 个文档`}>
         {documents.length === 0 ? (
-          <SettingsEmpty title="暂无导入文档" hint="点击上方按钮导入 MD / TXT" />
+          <SettingsEmpty title="暂无导入文档" hint="点击上方按钮导入 MD / TXT / DOCX / PDF" />
         ) : (
           <div className="space-y-2">
             {documents.map((doc) => (

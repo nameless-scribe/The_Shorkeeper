@@ -2,7 +2,7 @@ import { openDatabase, getDatabasePath, getDatabaseDir, getWorkspaceDir } from '
 
 const db = await openDatabase();
 const version = db.prepare('SELECT sqlite_version() AS version').get();
-db.close();
+await db.closeAsync();
 
 console.log('数据库目录:', getDatabaseDir());
 console.log('数据库文件:', getDatabasePath());

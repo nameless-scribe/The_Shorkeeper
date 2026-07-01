@@ -3,6 +3,7 @@ import { getJsonSetting, setJsonSetting } from '../../src/db/app-settings';
 import type { WindowBounds } from '../../src/db/schema';
 import { syncDockVisibility } from '../dock/visibility';
 import { getPreloadPath, getRendererIndexPath } from '../paths';
+import { clampBoundsToWorkArea } from './bounds';
 import { hideWindowToTray, showWindowFromTray } from '../tray';
 
 export type WindowKind = 'chat' | 'status' | 'schedule';
@@ -40,8 +41,19 @@ function loadWindowContent(win: BrowserWindow, kind: WindowKind): void {
 }
 
 function baseOptions(kind: WindowKind): BrowserWindowConstructorOptions {
-  const saved = getJsonSetting<WindowBounds>(BOUNDS_KEYS[kind]);
-  const bounds = saved ?? DEFAULT_BOUNDS[kind];
+  const saved = getJsonSetting<Partial<WindowBounds>>(BOUNDS_KEYS[kind]);
+  const defaults = DEFAULT_BOUNDS[kind];
+  const bounds = clampBoundsToWorkArea(saved ?? {}, defaults);
+
+  if (
+    !saved ||
+    saved.x !== bounds.x ||
+    saved.y !== bounds.y ||
+    saved.width !== bounds.width ||
+    saved.height !== bounds.height
+  ) {
+    setJsonSetting(BOUNDS_KEYS[kind], bounds);
+  }
 
   return {
     x: bounds.x,
@@ -52,7 +64,7 @@ function baseOptions(kind: WindowKind): BrowserWindowConstructorOptions {
     frame: false,
     transparent: true,
     resizable: true,
-    backgroundColor: '#00000000',
+    backgroundColor: '#0A1128',
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
@@ -111,7 +123,20 @@ export class WindowManager {
 
     loadWindowContent(win, kind);
     win.once('ready-to-show', () => {
-      if (showOnReady) {
+      const clamped = clampBoundsToWorkArea(win.getBounds(), DEFAULT_BOUNDS[kind]);
+      const current = win.getBounds();
+      if (
+        current.x !== clamped.x ||
+        current.y !== clamped.y ||
+        current.width !== clamped.width ||
+        current.height !== clamped.height
+      ) {
+        win.setBounds(clamped);
+        setJsonSetting(BOUNDS_KEYS[kind], clamped);
+      }
+
+      const shouldShow = showOnReady || this.panelShown.get(kind) === true;
+      if (shouldShow) {
         this.panelShown.set(kind, true);
         showWindowFromTray(win);
       } else {
@@ -161,12 +186,28 @@ export class WindowManager {
   show(kind: WindowKind): BrowserWindow {
     let win = this.get(kind);
     if (!win) {
-      win = this.create(kind, { showOnReady: false });
+      this.panelShown.set(kind, true);
+      return this.create(kind, { showOnReady: true });
     }
     this.panelShown.set(kind, true);
     showWindowFromTray(win);
     syncDockVisibility();
     return win;
+  }
+
+  /** 逻辑状态与 Electron 可见性不一致时，以实际可见性为准并同步 Dock */
+  reconcileVisibility(): void {
+    for (const kind of ['chat', 'status', 'schedule'] as const) {
+      const win = this.get(kind);
+      if (!win) {
+        this.panelShown.set(kind, false);
+        continue;
+      }
+      if (this.panelShown.get(kind) && !win.isVisible()) {
+        showWindowFromTray(win);
+      }
+    }
+    syncDockVisibility();
   }
 
   hideAll(): void {

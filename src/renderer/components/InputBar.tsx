@@ -1,12 +1,14 @@
 import { useCallback, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react';
 import type { WorkspaceAttachment } from '@/shared/types';
+import { ModelQuickSwitcher } from './ModelQuickSwitcher';
 
 interface InputBarProps {
   disabled?: boolean;
   onSend: (text: string, attachments: WorkspaceAttachment[]) => void;
+  onModelChange?: () => void;
 }
 
-export function InputBar({ disabled, onSend }: InputBarProps) {
+export function InputBar({ disabled, onSend, onModelChange }: InputBarProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<WorkspaceAttachment[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
@@ -110,6 +112,8 @@ export function InputBar({ disabled, onSend }: InputBarProps) {
         >
           📎
         </button>
+
+        <ModelQuickSwitcher disabled={disabled} onModelChange={onModelChange} />
 
         <textarea
           value={text}

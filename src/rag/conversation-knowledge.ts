@@ -1,8 +1,12 @@
 import { listMessages } from '../db/repositories/messages';
 import { completeChat } from '../models/complete-chat';
 import { getModelConfigSafe } from '../models/config';
+import { getPerformanceSettings } from '../config/performance';
+import { embedText } from './embedding';
+import { getDocument, loadAllChunkEmbeddings } from './documents';
 import { importTextAsKnowledge } from './text-import';
 import type { DocumentInfo } from './documents';
+import { cosineSimilarity } from './vector';
 
 export type KnowledgeArchiveScope = 'session' | 'turn';
 
@@ -123,6 +127,37 @@ function buildFilename(titleHint: string, sessionId: string): string {
 export interface ArchiveConversationResult {
   document: DocumentInfo;
   title: string;
+  skippedDuplicate?: boolean;
+}
+
+async function findSemanticallySimilarDocument(
+  summaryText: string,
+  threshold: number,
+): Promise<DocumentInfo | null> {
+  const stored = loadAllChunkEmbeddings();
+  if (!stored.length) return null;
+
+  const firstChunks = new Map<string, (typeof stored)[0]>();
+  for (const chunk of stored) {
+    if (!firstChunks.has(chunk.documentId) || chunk.chunkIndex === 0) {
+      firstChunks.set(chunk.documentId, chunk);
+    }
+  }
+
+  const queryVec = new Float32Array(await embedText(summaryText.slice(0, 500)));
+  let bestDocId: string | null = null;
+  let bestScore = 0;
+
+  for (const chunk of firstChunks.values()) {
+    const score = cosineSimilarity(queryVec, chunk.embedding);
+    if (score > bestScore) {
+      bestScore = score;
+      bestDocId = chunk.documentId;
+    }
+  }
+
+  if (!bestDocId || bestScore < threshold) return null;
+  return getDocument(bestDocId) ?? null;
 }
 
 /** 提炼对话并写入 RAG 知识库 */
@@ -166,6 +201,21 @@ export async function archiveConversationToKnowledge(
 
   const titleLine = content.split('\n').find((line) => line.startsWith('#')) ?? '# 对话摘要';
   const filename = buildFilename(titleLine, sessionId);
+
+  const summarySection =
+    content.match(/##\s*摘要\s*\n([\s\S]*?)(?=\n##|$)/)?.[1]?.trim() ??
+    content.slice(0, 500);
+
+  const threshold = getPerformanceSettings().ragArchiveDedupeThreshold;
+  const similar = await findSemanticallySimilarDocument(summarySection, threshold);
+  if (similar) {
+    return {
+      document: similar,
+      title: titleLine.replace(/^#+\s*/, '').trim(),
+      skippedDuplicate: true,
+    };
+  }
+
   const document = await importTextAsKnowledge(content, filename);
 
   return {
@@ -175,6 +225,12 @@ export async function archiveConversationToKnowledge(
 }
 
 export function buildArchiveConfirmation(result: ArchiveConversationResult): string {
+  if (result.skippedDuplicate) {
+    return `检测到与已有知识库文档「${result.document.filename}」内容高度相似，已跳过重复归档。
+
+如需更新该文档，请在设置 → 文档中重新导入或重建向量。`;
+  }
+
   return `已将对话提炼并写入知识库。
 
 **标题：** ${result.title}

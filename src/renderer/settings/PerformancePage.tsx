@@ -21,6 +21,16 @@ const MEMORY_MODE_OPTIONS: {
   { value: 'manual', label: '手动' },
 ];
 
+const RAG_INJECT_OPTIONS: {
+  value: PerformanceSettingsInfo['ragInjectMode'];
+  label: string;
+  hint: string;
+}[] = [
+  { value: 'catalog', label: '目录', hint: '仅注入文件名列表（默认，省 Token）' },
+  { value: 'auto', label: '自动', hint: '知识问句时自动检索并注入片段' },
+  { value: 'tool', label: '工具', hint: '不自动检索，靠 search_knowledge' },
+];
+
 export function PerformancePage() {
   const [settings, setSettings] = useState<PerformanceSettingsInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +65,41 @@ export function PerformancePage() {
           <SettingsToggle
             checked={settings.ragEnabled}
             onChange={(ragEnabled) => void update({ ragEnabled })}
+          />
+        </SettingsRow>
+
+        {settings.ragEnabled && (
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-keeper-ice/75">RAG 注入模式</span>
+            <SettingsSegmented
+              value={settings.ragInjectMode}
+              options={RAG_INJECT_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              onChange={(ragInjectMode) => void update({ ragInjectMode })}
+            />
+            <p className="text-[11px] leading-relaxed text-keeper-ice/45">
+              {RAG_INJECT_OPTIONS.find((o) => o.value === settings.ragInjectMode)?.hint}
+            </p>
+            <SettingsField label="RAG 最低相似度" hint="0.2–0.8，越高越严格">
+              <input
+                type="range"
+                min={0.2}
+                max={0.8}
+                step={0.05}
+                value={settings.ragMinScore}
+                onChange={(e) =>
+                  void update({ ragMinScore: Number.parseFloat(e.target.value) })
+                }
+                className="w-full accent-keeper-cyan"
+              />
+              <span className="text-[11px] text-keeper-ice/50">{settings.ragMinScore.toFixed(2)}</span>
+            </SettingsField>
+          </div>
+        )}
+
+        <SettingsRow label="Context 用语义记忆检索">
+          <SettingsToggle
+            checked={settings.memorySemanticInContext}
+            onChange={(memorySemanticInContext) => void update({ memorySemanticInContext })}
           />
         </SettingsRow>
 

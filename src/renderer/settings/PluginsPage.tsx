@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { FilesystemMode, PluginSettingsInfo } from '@/shared/types';
+import type { FilesystemMode, PluginSettingsInfo, WebSearchSettingsInfo } from '@/shared/types';
 import { PluginCard, PluginStatusDot } from './components/PluginCard';
 import { SettingsSegmented } from './components/SettingsSegmented';
 import { SettingsToggle } from './components/SettingsToggle';
@@ -19,12 +19,18 @@ const LIFE_TOOL_ITEMS = [
 
 export function PluginsPage() {
   const [settings, setSettings] = useState<PluginSettingsInfo | null>(null);
+  const [webSearchSettings, setWebSearchSettings] = useState<WebSearchSettingsInfo | null>(null);
+  const [webSearchKey, setWebSearchKey] = useState('');
   const [lifeExpanded, setLifeExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const value = await window.shorekeeper.plugins.get();
+    const [value, webSearch] = await Promise.all([
+      window.shorekeeper.plugins.get(),
+      window.shorekeeper.webSearch.getSettings(),
+    ]);
     setSettings(value);
+    setWebSearchSettings(webSearch);
     setLoading(false);
   }, []);
 
@@ -42,7 +48,15 @@ export function PluginsPage() {
     setSettings(value);
   };
 
-  if (loading || !settings) return <SettingsLoading />;
+  const saveWebSearchKey = async () => {
+    const trimmed = webSearchKey.trim();
+    if (!trimmed) return;
+    const value = await window.shorekeeper.webSearch.saveSettings({ apiKey: trimmed });
+    setWebSearchSettings(value);
+    setWebSearchKey('');
+  };
+
+  if (loading || !settings || !webSearchSettings) return <SettingsLoading />;
 
   return (
     <SettingsPageShell>
@@ -52,12 +66,38 @@ export function PluginsPage() {
         <PluginCard
           icon="🌐"
           title="联网搜索"
-          description="允许 Agent 调用 web_search 实时检索网络信息"
+          description="通过博查 API 调用 web_search；天气请由 get_weather 处理"
           control={
             <SettingsToggle
               checked={settings.webSearch}
               onChange={(webSearch) => void patch({ webSearch })}
             />
+          }
+          footer={
+            <div className="space-y-2">
+              <p className="text-[11px] text-keeper-ice/50">
+                {webSearchSettings.apiKeyConfigured
+                  ? `已配置 Key（${webSearchSettings.source === 'env' ? '.env' : '应用内'} · ${webSearchSettings.apiKeyMasked}）`
+                  : '未配置 API Key，搜索将不可用'}
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={webSearchKey}
+                  onChange={(e) => setWebSearchKey(e.target.value)}
+                  placeholder="博查 API Key（open.bochaai.com）"
+                  className="min-w-0 flex-1 rounded-lg border border-keeper-silver/20 bg-keeper-deep/40 px-3 py-2 text-[12px] text-keeper-ice outline-none focus:border-keeper-cyan/40"
+                />
+                <button
+                  type="button"
+                  onClick={() => void saveWebSearchKey()}
+                  disabled={!webSearchKey.trim()}
+                  className="rounded-lg border border-keeper-cyan/30 px-3 py-2 text-[11px] text-keeper-cyan disabled:opacity-40"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
           }
         />
 

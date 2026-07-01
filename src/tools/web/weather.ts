@@ -1,7 +1,17 @@
 import type { ToolDefinition } from '../types';
+import { normalizeCityForWeather } from './city-normalize';
+
+interface GeocodePlace {
+  name: string;
+  latitude: number;
+  longitude: number;
+  country?: string;
+  admin1?: string;
+  population?: number;
+}
 
 interface GeocodeResult {
-  results?: Array<{ name: string; latitude: number; longitude: number; country?: string }>;
+  results?: GeocodePlace[];
 }
 
 interface ForecastResult {
@@ -42,9 +52,19 @@ function weatherLabel(code: number): string {
   return WEATHER_LABELS[code] ?? `天气码 ${code}`;
 }
 
+function pickBestPlace(results: GeocodePlace[], rawCity: string): GeocodePlace | undefined {
+  if (!results.length) return undefined;
+  const normalized = normalizeCityForWeather(rawCity);
+
+  const exact = results.find((r) => r.name === normalized || r.name === rawCity.trim());
+  if (exact) return exact;
+
+  return [...results].sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
+}
+
 export const weatherTool: ToolDefinition = {
   name: 'get_weather',
-  description: '查询指定城市的当前天气与未来 3 日预报',
+  description: '查询指定城市的当前天气与未来 3 日预报（请传入城市名，如「大连市」「上海」）',
   category: 'web',
   requiresPermission: ['network'],
   parameters: {
@@ -52,7 +72,7 @@ export const weatherTool: ToolDefinition = {
     properties: {
       city: {
         type: 'string',
-        description: '城市名称，如「上海」「北京」',
+        description: '城市名称，如「大连市」「上海」「北京」',
       },
     },
     required: ['city'],
@@ -67,17 +87,25 @@ export const weatherTool: ToolDefinition = {
       return { success: false, output: '', error: '已取消' };
     }
 
+    const lookupCity = normalizeCityForWeather(city);
+
     try {
-      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city.trim())}&count=1&language=zh`;
+      const geoUrl =
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(lookupCity)}` +
+        `&count=5&language=zh`;
       const geoRes = await fetch(geoUrl, { signal: ctx.signal });
       if (!geoRes.ok) {
         return { success: false, output: '', error: `地理编码失败: HTTP ${geoRes.status}` };
       }
 
       const geo = (await geoRes.json()) as GeocodeResult;
-      const place = geo.results?.[0];
+      const place = pickBestPlace(geo.results ?? [], city);
       if (!place) {
-        return { success: false, output: '', error: `未找到城市「${city}」` };
+        return {
+          success: false,
+          output: '',
+          error: `未找到城市「${city}」（已尝试解析为「${lookupCity}」）`,
+        };
       }
 
       const forecastUrl =
@@ -91,7 +119,8 @@ export const weatherTool: ToolDefinition = {
       }
 
       const data = (await forecastRes.json()) as ForecastResult;
-      const lines: string[] = [`${place.name}${place.country ? `（${place.country}）` : ''} 天气`];
+      const region = [place.admin1, place.country].filter(Boolean).join(' · ');
+      const lines: string[] = [`${place.name}${region ? `（${region}）` : ''} 天气`];
 
       if (data.current) {
         lines.push(

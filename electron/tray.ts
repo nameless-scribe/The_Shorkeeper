@@ -5,28 +5,57 @@ import { syncDockVisibility } from './dock/visibility';
 import { showChatWindow } from './windows/chat';
 import { showStatusWindow } from './windows/status';
 import { showScheduleWindow } from './windows/schedule';
+import { getDistAssetPath } from './paths';
+import { getKeeperAvatarPathForTray } from '../src/config/appearance-assets';
 
 let tray: Tray | null = null;
 let appQuitting = false;
 
+const TRAY_ICON_SIZE = 16;
+
+function fallbackTrayIcon(): Electron.NativeImage {
+  // Windows 托盘不支持 raw SVG buffer，用 data URL PNG 兜底
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="7" fill="#30BCED"/></svg>';
+  const fromSvg = nativeImage.createFromDataURL(
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+  );
+  if (!fromSvg.isEmpty()) {
+    return fromSvg.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
+  }
+  // 最终兜底：16×16 青色 PNG
+  return nativeImage
+    .createFromDataURL(
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJqAf0Yf5o9AAAAAElFTkSuQmCC',
+    )
+    .resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
+}
+
 function resolveTrayIcon(): Electron.NativeImage {
+  const customPath = getKeeperAvatarPathForTray();
+  if (customPath) {
+    const custom = nativeImage.createFromPath(customPath);
+    if (!custom.isEmpty()) {
+      return custom.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
+    }
+  }
+
   const candidates = [
-    path.join(process.cwd(), 'public', 'keeper-avatar.png'),
-    path.join(app.getAppPath(), 'public', 'keeper-avatar.png'),
+    getDistAssetPath('keeper-avatar.png'),
+    path.join(app.getAppPath(), 'dist', 'keeper-avatar.png'),
     path.join(process.cwd(), 'dist', 'keeper-avatar.png'),
+    path.join(process.cwd(), 'public', 'keeper-avatar.png'),
   ];
 
   for (const file of candidates) {
     const image = nativeImage.createFromPath(file);
     if (!image.isEmpty()) {
-      return image.resize({ width: 16, height: 16 });
+      return image.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
     }
   }
 
-  // 16×16 青色圆点 fallback
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="7" fill="#30BCED"/></svg>';
-  return nativeImage.createFromBuffer(Buffer.from(svg)).resize({ width: 16, height: 16 });
+  console.warn('[tray] 未找到 keeper-avatar.png，使用内置 fallback 图标');
+  return fallbackTrayIcon();
 }
 
 function buildTrayMenu(): Menu {

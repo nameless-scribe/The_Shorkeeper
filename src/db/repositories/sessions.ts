@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { getDatabase, type AppDatabase } from '../index';
+import { clearSessionExtractionState } from '../../memory/extraction-state';
 
 export interface Session {
   id: string;
@@ -60,13 +61,14 @@ function buildSessionFilters(options: ListSessionsOptions): {
 
   if (query) {
     where += ` AND (
-      s.title LIKE ?
+      s.title LIKE ? ESCAPE '\\'
       OR EXISTS (
         SELECT 1 FROM messages m
-        WHERE m.session_id = s.id AND m.content LIKE ?
+        WHERE m.session_id = s.id AND m.content LIKE ? ESCAPE '\\'
       )
     )`;
-    const pattern = `%${query}%`;
+    const escaped = query.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const pattern = `%${escaped}%`;
     params.push(pattern, pattern);
   }
 
@@ -150,11 +152,14 @@ export function deleteSession(id: string, db: AppDatabase = getDatabase()): void
   db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
   db.prepare(`DELETE FROM session_summaries WHERE session_id = ?`).run(id);
   db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
+  clearSessionExtractionState(id);
 }
 
 export interface DeleteEmptySessionsOptions {
   /** 不删除此会话（通常为当前活跃会话） */
   keepSessionId?: string | null;
+  /** 额外跳过的会话（如正在运行 Agent 的会话） */
+  excludeSessionIds?: string[];
 }
 
 export interface DeleteEmptySessionsResult {
@@ -169,6 +174,7 @@ export function deleteEmptySessions(
   db: AppDatabase = getDatabase(),
 ): DeleteEmptySessionsResult {
   const keepId = options.keepSessionId ?? null;
+  const exclude = new Set(options.excludeSessionIds ?? []);
 
   const rows = db
     .prepare(
@@ -181,6 +187,7 @@ export function deleteEmptySessions(
 
   const deletedIds: string[] = [];
   for (const row of rows) {
+    if (exclude.has(row.id)) continue;
     deleteSession(row.id, db);
     deletedIds.push(row.id);
   }

@@ -4,6 +4,8 @@ export interface AgentPresenceState {
   online: boolean;
   mood: 'happy' | 'calm' | 'sleepy' | 'thinking';
   activity: 'idle' | 'accompanying' | 'feeding' | 'working';
+  /** 羁绊阶段名（不含数值） */
+  affectionStage: string;
   currentModel: string;
   tokenUsageToday: number;
 }
@@ -11,7 +13,7 @@ export interface AgentPresenceState {
 export type AgUiEvent =
   | { type: 'run_started'; runId: string; sessionId: string }
   | { type: 'run_finished'; runId: string }
-  | { type: 'run_error'; runId: string; message: string }
+  | { type: 'run_error'; runId: string; message: string; sessionId?: string }
   | { type: 'text_delta'; runId: string; delta: string }
   | { type: 'reasoning_delta'; runId: string; delta: string }
   | { type: 'tool_call_start'; runId: string; callId: string; name: string; args: unknown }

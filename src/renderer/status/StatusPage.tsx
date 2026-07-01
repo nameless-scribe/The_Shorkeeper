@@ -45,6 +45,7 @@ const DEFAULT_STATE: AgentPresenceState = {
   online: true,
   mood: 'calm',
   activity: 'idle',
+  affectionStage: '守望',
   currentModel: '—',
   tokenUsageToday: 0,
 };
@@ -83,9 +84,11 @@ function StatCard({
 export function StatusPage() {
   const [state, setState] = useState<AgentPresenceState>(DEFAULT_STATE);
   const [feeding, setFeeding] = useState(false);
+  const [displayName, setDisplayName] = useState('守岸人');
 
   useEffect(() => {
     window.shorekeeper.presence.get().then(setState).catch(console.error);
+    window.shorekeeper.persona.get().then((p) => setDisplayName(p.displayName)).catch(console.error);
 
     const off = window.shorekeeper.agent.onEvent((event) => {
       const e = event as { type?: string; state?: AgentPresenceState };
@@ -122,7 +125,7 @@ export function StatusPage() {
       <AppBackground variant="status" />
 
       <div className="relative z-10 flex h-full min-h-0 flex-col">
-        <PanelTitleBar title="守岸人" subtitle="状态面板" />
+        <PanelTitleBar title={displayName} subtitle="状态面板" />
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-5">
           {/* 角色头像区 */}
@@ -148,7 +151,7 @@ export function StatusPage() {
               />
             </div>
 
-            <h2 className="mt-4 text-lg font-semibold tracking-wide text-keeper-ice">守岸人</h2>
+            <h2 className="mt-4 text-lg font-semibold tracking-wide text-keeper-ice">{displayName}</h2>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-keeper-cyan/85">
               <span
                 className={`inline-block h-1.5 w-1.5 rounded-full ${
@@ -161,8 +164,8 @@ export function StatusPage() {
             </p>
           </div>
 
-          {/* 状态 / 心情 */}
-          <div className="grid grid-cols-2 gap-2.5">
+          {/* 状态 / 心情 / 羁绊 */}
+          <div className="grid grid-cols-3 gap-2">
             <StatCard
               label="状态"
               value={ACTIVITY_LABELS[state.activity]}
@@ -180,6 +183,12 @@ export function StatusPage() {
               value={MOOD_LABELS[state.mood]}
               icon={MOOD_ICON[state.mood]}
               accent={`${moodRing} text-keeper-ice`}
+            />
+            <StatCard
+              label="羁绊"
+              value={state.affectionStage}
+              icon="♡"
+              accent="from-rose-400/25 via-keeper-cyan/20 to-rose-300/10 text-rose-100"
             />
           </div>
 

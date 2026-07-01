@@ -103,6 +103,10 @@ export function SessionHistoryPanel({
     e.stopPropagation();
     if (!window.confirm('确定删除此会话？消息将无法恢复。')) return;
     const result = await window.shorekeeper.sessions.delete(sessionId);
+    if (!result.ok) {
+      window.alert(result.error ?? '无法删除会话');
+      return;
+    }
     if (sessionId === currentSessionId && result.replacementSession) {
       onSelect(result.replacementSession.id);
     }

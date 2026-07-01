@@ -103,6 +103,11 @@ export function getStableSystemPrefix(): string {
   const skillsBlock = formatSkillsForPrompt(getEnabledSkills());
   if (skillsBlock) sections.push(skillsBlock);
 
+  sections.push(
+    '【上下文优先级】Worldbook 提供行为与背景规则；长期记忆记录用户偏好与事实；' +
+      'RAG 引用块来自用户导入文档的事实。若内容冲突，以 RAG 引用为准。',
+  );
+
   const text = sections.join('\n\n');
   cachedStablePrefix = { key, text };
   return text;

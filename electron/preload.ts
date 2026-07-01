@@ -18,6 +18,7 @@ import type {
   WorldbookEntryInfo,
   DocumentInfo,
   ImportProgress,
+  ReindexProgress,
   ModelProtocol,
   ModelProfileInfo,
   ModelProfileInput,
@@ -30,6 +31,13 @@ import type {
   McpServerInfo,
   PerformanceSettingsInfo,
   PluginSettingsInfo,
+  PersonaSettingsInfo,
+  PersonaSettingsPatch,
+  AppearanceSettingsInfo,
+  AppearanceAssetSlot,
+  BackgroundFitMode,
+  WebSearchSettingsInfo,
+  WebSearchSettingsPatch,
   PermissionRequestPayload,
   FilesystemMode,
   SkillInfo,
@@ -72,6 +80,39 @@ const shorekeeperApi = {
     set: (key: string, value: string) => ipcRenderer.invoke('profile:set', key, value),
     delete: (key: string) => ipcRenderer.invoke('profile:delete', key),
   },
+  persona: {
+    get: (): Promise<PersonaSettingsInfo> => ipcRenderer.invoke('persona:get'),
+    set: (patch: PersonaSettingsPatch): Promise<PersonaSettingsInfo> =>
+      ipcRenderer.invoke('persona:set', patch),
+    reset: (): Promise<PersonaSettingsInfo> => ipcRenderer.invoke('persona:reset'),
+  },
+  appearance: {
+    get: (): Promise<AppearanceSettingsInfo> => ipcRenderer.invoke('appearance:get'),
+    setPreset: (presetId: string): Promise<AppearanceSettingsInfo> =>
+      ipcRenderer.invoke('appearance:setPreset', presetId),
+    setVeilOpacity: (opacity: number): Promise<AppearanceSettingsInfo> =>
+      ipcRenderer.invoke('appearance:setVeilOpacity', opacity),
+    setBackgroundFit: (fit: BackgroundFitMode): Promise<AppearanceSettingsInfo> =>
+      ipcRenderer.invoke('appearance:setBackgroundFit', fit),
+    pickBackground: (): Promise<AppearanceSettingsInfo | null> =>
+      ipcRenderer.invoke('appearance:pickBackground'),
+    importBackground: (sourcePath: string): Promise<AppearanceSettingsInfo> =>
+      ipcRenderer.invoke('appearance:importBackground', sourcePath),
+    pickKeeperAvatar: (): Promise<AppearanceSettingsInfo | null> =>
+      ipcRenderer.invoke('appearance:pickKeeperAvatar'),
+    pickUserAvatar: (): Promise<AppearanceSettingsInfo | null> =>
+      ipcRenderer.invoke('appearance:pickUserAvatar'),
+    clearAsset: (slot: AppearanceAssetSlot): Promise<AppearanceSettingsInfo> =>
+      ipcRenderer.invoke('appearance:clearAsset', slot),
+    onChanged: (callback: (info: AppearanceSettingsInfo) => void) => {
+      const listener = (_: Electron.IpcRendererEvent, data: AppearanceSettingsInfo) =>
+        callback(data);
+      ipcRenderer.on('appearance:changed', listener);
+      return () => {
+        ipcRenderer.removeListener('appearance:changed', listener);
+      };
+    },
+  },
   worldbook: {
     list: (): Promise<WorldbookEntryInfo[]> => ipcRenderer.invoke('worldbook:list'),
     create: (input: {
@@ -95,11 +136,21 @@ const shorekeeperApi = {
     list: (): Promise<DocumentInfo[]> => ipcRenderer.invoke('documents:list'),
     import: (): Promise<DocumentInfo | null> => ipcRenderer.invoke('documents:import'),
     delete: (id: string) => ipcRenderer.invoke('documents:delete', id),
+    reindex: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('documents:reindex'),
+    embeddingMismatch: (): Promise<{ storedDimensions: number[]; hasMismatch: boolean }> =>
+      ipcRenderer.invoke('documents:embeddingMismatch'),
     onImportProgress: (callback: (progress: ImportProgress) => void) => {
       const listener = (_: Electron.IpcRendererEvent, data: ImportProgress) => callback(data);
       ipcRenderer.on('documents:importProgress', listener);
       return () => {
         ipcRenderer.removeListener('documents:importProgress', listener);
+      };
+    },
+    onReindexProgress: (callback: (progress: ReindexProgress) => void) => {
+      const listener = (_: Electron.IpcRendererEvent, data: ReindexProgress) => callback(data);
+      ipcRenderer.on('documents:reindexProgress', listener);
+      return () => {
+        ipcRenderer.removeListener('documents:reindexProgress', listener);
       };
     },
   },
@@ -244,6 +295,11 @@ const shorekeeperApi = {
       ipcRenderer.invoke('plugins:set', patch),
     setFilesystemMode: (mode: FilesystemMode): Promise<PluginSettingsInfo> =>
       ipcRenderer.invoke('plugins:setFilesystemMode', mode),
+  },
+  webSearch: {
+    getSettings: (): Promise<WebSearchSettingsInfo> => ipcRenderer.invoke('web-search:getSettings'),
+    saveSettings: (patch: WebSearchSettingsPatch): Promise<WebSearchSettingsInfo> =>
+      ipcRenderer.invoke('web-search:saveSettings', patch),
   },
   permission: {
     respond: (requestId: string, approved: boolean) =>

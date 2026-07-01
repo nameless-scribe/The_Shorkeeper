@@ -60,6 +60,9 @@ export interface DocumentRow {
   mime_type: string | null;
   chunk_count: number;
   imported_at: number;
+  content_hash?: string | null;
+  embedding_model?: string | null;
+  embedding_dim?: number | null;
 }
 
 export interface DocumentChunkRow {

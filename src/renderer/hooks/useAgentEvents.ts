@@ -29,6 +29,7 @@ export function useAgentEvents(
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
   const runSessionIdRef = useRef<string | null>(null);
+  const loadGenerationRef = useRef(0);
 
   useEffect(() => {
     if (!sessionId) {
@@ -40,6 +41,7 @@ export function useAgentEvents(
     setIsRunning(false);
     setError(null);
     setMessages([]);
+    loadGenerationRef.current += 1;
     setLoadingMessages(true);
     window.shorekeeper.messages
       .list(sessionId)
@@ -196,8 +198,14 @@ export function useAgentEvents(
             finishedSessionId &&
             finishedSessionId === sessionIdRef.current
           ) {
+            const generation = loadGenerationRef.current;
             window.shorekeeper.messages.list(finishedSessionId).then((list) => {
-              if (sessionIdRef.current !== finishedSessionId) return;
+              if (
+                sessionIdRef.current !== finishedSessionId ||
+                loadGenerationRef.current !== generation
+              ) {
+                return;
+              }
               const dbMessages: UiMessage[] = list
                 .filter((m) => m.role === 'user' || m.role === 'assistant')
                 .map((m) => ({
@@ -231,7 +239,19 @@ export function useAgentEvents(
       }
 
       if (event.type === 'run_error') {
-        if (runSessionIdRef.current !== activeSessionId) return;
+        if (runSessionIdRef.current !== activeSessionId) {
+          if (
+            event.sessionId &&
+            event.sessionId === activeSessionId &&
+            !runSessionIdRef.current
+          ) {
+            setIsRunning(false);
+            currentRunId = null;
+            setError(event.message);
+            setMessages((prev) => prev.filter((m) => !m.streaming));
+          }
+          return;
+        }
         setIsRunning(false);
         currentRunId = null;
         runSessionIdRef.current = null;
@@ -271,11 +291,16 @@ export function useAgentEvents(
     setMessages((prev) => [...prev, userMsg]);
     setError(null);
 
-    await window.shorekeeper.agent.send({
+    const result = await window.shorekeeper.agent.send({
       sessionId: activeSessionId,
       message: trimmed,
       attachments,
     });
+
+    if (result && !result.ok && result.error) {
+      setError(result.error);
+      setIsRunning(false);
+    }
   };
 
   return { messages, loadingMessages, isRunning, error, send };

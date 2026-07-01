@@ -22,11 +22,26 @@ export function registerWorkspaceIpc() {
 
   ipcMain.handle(
     'workspace:importPaths',
-    async (_event, paths: string[]): Promise<WorkspaceImportResult[]> => {
+    async (event, paths: string[]): Promise<WorkspaceImportResult[]> => {
       if (!Array.isArray(paths) || !paths.length) return [];
+
+      const normalized = paths.filter(
+        (p): p is string => typeof p === 'string' && p.trim().length > 0,
+      );
+      const preview = normalized.slice(0, 5).join('\n');
+      const confirm = await dialog.showMessageBox({
+        type: 'question',
+        buttons: ['导入', '取消'],
+        defaultId: 0,
+        cancelId: 1,
+        title: '确认导入到工作区',
+        message: `将 ${normalized.length} 个文件导入 Agent 工作区？`,
+        detail: preview + (normalized.length > 5 ? '\n…' : ''),
+      });
+      if (confirm.response !== 0) return [];
+
       const imported: WorkspaceImportResult[] = [];
-      for (const p of paths) {
-        if (typeof p !== 'string' || !p.trim()) continue;
+      for (const p of normalized) {
         try {
           imported.push(await importFileToWorkspace(p));
         } catch (err) {

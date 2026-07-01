@@ -6,14 +6,14 @@ export default {
       colors: {
         keeper: {
           white: '#FFFFFF',
-          ice: '#E1E9F0',
-          iceDeep: '#89BBFE',
-          navy: '#274690',
-          navyDeep: '#0A1128',
-          cyan: '#30BCED',
-          cyanDim: '#00B4D8',
-          silver: '#C0C0C0',
-          silverLight: '#E8EEF5',
+          ice: 'rgb(var(--sk-ice-rgb) / <alpha-value>)',
+          iceDeep: 'rgb(var(--sk-ice-deep-rgb) / <alpha-value>)',
+          navy: 'rgb(var(--sk-navy-rgb) / <alpha-value>)',
+          navyDeep: 'rgb(var(--sk-navy-deep-rgb) / <alpha-value>)',
+          cyan: 'rgb(var(--sk-cyan-rgb) / <alpha-value>)',
+          cyanDim: 'rgb(var(--sk-cyan-dim-rgb) / <alpha-value>)',
+          silver: 'rgb(var(--sk-silver-rgb) / <alpha-value>)',
+          silverLight: 'rgb(var(--sk-silver-light-rgb) / <alpha-value>)',
         },
       },
       fontFamily: {

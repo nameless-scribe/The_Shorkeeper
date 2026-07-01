@@ -1,5 +1,13 @@
 import { ipcMain } from 'electron';
 import type { AgentSendPayload } from '../../src/shared/types';
+import { ev } from '../../src/agent/events';
+import {
+  acquireSessionRun,
+  abortAllSessionRuns,
+  releaseSessionRun,
+  setSessionRunId,
+} from '../../src/agent/session-run-lock';
+import { resolveAgentSession } from '../../src/agent/resolve-session';
 import { cancelAllPendingPermissions } from './permission';
 import { formatAttachmentsForMessage } from '../../src/workspace/import';
 import { runOrchestrator } from '../../src/agent/orchestrator';
@@ -12,13 +20,18 @@ import {
   onRunStarted,
 } from '../state/presence';
 
-const activeRuns = new Map<string, AbortController>();
-
 export function registerAgentIpc() {
   ipcMain.handle('agent:send', async (_event, payload: AgentSendPayload) => {
-    const controller = new AbortController();
-    const runKey = `${payload.sessionId ?? 'default'}:${Date.now()}`;
-    activeRuns.set(runKey, controller);
+    const session = resolveAgentSession(payload.sessionId);
+    if (!session) {
+      return { ok: false, error: '会话不存在' };
+    }
+
+    const resolvedSessionId = session.id;
+    const controller = acquireSessionRun(resolvedSessionId);
+    if (!controller) {
+      return { ok: false, error: '上一条消息仍在处理中' };
+    }
 
     onRunStarted();
 
@@ -27,19 +40,27 @@ export function registerAgentIpc() {
       payload.attachments ?? [],
     );
 
+    let runId: string | null = null;
+    let terminalError: string | null = null;
+
     try {
       for await (const agEvent of runOrchestrator(
         userMessage,
-        payload.sessionId,
+        resolvedSessionId,
         controller.signal,
       )) {
         if (controller.signal.aborted) break;
+
+        if (agEvent.type === 'run_started') {
+          runId = agEvent.runId;
+          setSessionRunId(resolvedSessionId, agEvent.runId);
+        }
 
         if (agEvent.type === 'usage') {
           const config = getModelConfigSafe();
           if (config) {
             recordTokenUsage({
-              sessionId: payload.sessionId,
+              sessionId: resolvedSessionId,
               model: config.model,
               promptTokens: agEvent.promptTokens,
               completionTokens: agEvent.completionTokens,
@@ -52,32 +73,39 @@ export function registerAgentIpc() {
           onRunFinished();
         } else if (agEvent.type === 'run_error') {
           onRunError();
+          terminalError = agEvent.message;
         }
 
         broadcastAgentEvent(agEvent);
+      }
+
+      if (terminalError) {
+        return { ok: false, error: terminalError };
       }
       return { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       onRunError();
-      broadcastAgentEvent({
-        type: 'run_error',
-        runId: runKey,
-        message,
-      });
+      broadcastAgentEvent(
+        ev.runError(runId ?? 'unknown', message, resolvedSessionId),
+      );
       return { ok: false, error: message };
     } finally {
-      activeRuns.delete(runKey);
+      releaseSessionRun(resolvedSessionId);
     }
   });
 
   ipcMain.handle('agent:abort', () => {
     cancelAllPendingPermissions();
-    for (const controller of activeRuns.values()) {
-      controller.abort();
+    const cancelled = abortAllSessionRuns();
+    for (const { sessionId, runId } of cancelled) {
+      broadcastAgentEvent(
+        ev.runError(runId ?? 'unknown', '已取消', sessionId),
+      );
     }
-    activeRuns.clear();
     onRunError();
     return { ok: true };
   });
 }
+
+export { isSessionRunActive } from '../../src/agent/session-run-lock';

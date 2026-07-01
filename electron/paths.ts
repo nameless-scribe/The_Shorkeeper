@@ -11,3 +11,8 @@ export function getPreloadPath(): string {
 export function getRendererIndexPath(): string {
   return path.join(electronDist, '../dist/index.html');
 }
+
+/** 渲染层构建产物（public/ → dist/）中的静态资源 */
+export function getDistAssetPath(filename: string): string {
+  return path.join(electronDist, '../dist', filename);
+}

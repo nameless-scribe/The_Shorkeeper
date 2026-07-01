@@ -246,7 +246,10 @@ export async function* streamChat(
     };
     yield { type: 'done' };
   } catch (err) {
-    if (options?.signal?.aborted) return;
+    if (options?.signal?.aborted) {
+      yield { type: 'error', message: '已取消' };
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
     yield { type: 'error', message };
   }

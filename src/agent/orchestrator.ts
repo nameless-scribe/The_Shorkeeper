@@ -21,6 +21,12 @@ import {
   getRecentChatMessages,
   maybeCompressSession,
 } from '../memory/session-context';
+import {
+  awaitPendingSessionWork,
+  scheduleMemoryExtract,
+  scheduleSessionCompress,
+} from './session-background';
+import { shouldPersistAssistantMessage } from './run-state';
 import { parseScheduleReminderIntent } from '../scheduler/reminder-intent';
 import { executeScheduleReminderIntent } from '../scheduler/reminder-handler';
 
@@ -42,7 +48,7 @@ export async function* runOrchestrator(
     : getActiveSession();
 
   if (!session) {
-    yield ev.runError(runId, '会话不存在');
+    yield ev.runError(runId, '会话不存在', sessionId);
     return;
   }
 
@@ -50,6 +56,7 @@ export async function* runOrchestrator(
 
   try {
     loadModelConfig();
+    await awaitPendingSessionWork(session.id);
     insertMessage(session.id, 'user', userMessage);
 
     const archiveIntent = parseKnowledgeArchiveIntent(userMessage);
@@ -105,15 +112,28 @@ export async function* runOrchestrator(
       }
 
       if (event.type === 'run_error') {
-        yield event;
+        yield { ...event, sessionId: event.sessionId ?? session.id };
         return;
       }
 
       yield event;
     }
 
-    if (!assistantText.trim()) {
-      yield ev.runError(runId, '未能生成回复，请重试');
+    if (signal?.aborted) {
+      yield ev.runError(runId, '已取消', session.id);
+      return;
+    }
+
+    if (
+      !shouldPersistAssistantMessage({
+        runId,
+        sessionId: session.id,
+        assistantText,
+        signal,
+        reason: 'finished',
+      })
+    ) {
+      yield ev.runError(runId, '未能生成回复，请重试', session.id);
       return;
     }
 
@@ -121,17 +141,23 @@ export async function* runOrchestrator(
 
     yield ev.runFinished(runId);
 
-    void maybeCompressSession(session.id).catch((err) => {
-      console.error('[session] 压缩失败:', err);
-    });
+    void scheduleSessionCompress(session.id, () =>
+      maybeCompressSession(session.id).catch((err) => {
+        console.error('[session] 压缩失败:', err);
+        return false;
+      }),
+    );
 
     if (shouldAutoExtractMemories(session.id, userMessage)) {
-      void extractMemoriesFromSession(session.id).catch((err) => {
-        console.error('[memory] 提取失败:', err);
-      });
+      scheduleMemoryExtract(session.id, () =>
+        extractMemoriesFromSession(session.id).catch((err) => {
+          console.error('[memory] 提取失败:', err);
+          return 0;
+        }),
+      );
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    yield ev.runError(runId, message);
+    yield ev.runError(runId, message, session?.id ?? sessionId);
   }
 }

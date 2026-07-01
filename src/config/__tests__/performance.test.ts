@@ -2,16 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   isCasualChat,
   looksLikeKnowledgeQuery,
-  shouldRunRag,
+  shouldAutoRetrieveRag,
+  shouldInjectRagCatalog,
   type PerformanceSettings,
 } from '../performance';
 
-const defaultSettings: PerformanceSettings = {
+const baseSettings: PerformanceSettings = {
   ragEnabled: true,
+  ragInjectMode: 'catalog',
+  ragMinScore: 0.35,
+  ragMaxChunksPerDoc: 2,
+  ragArchiveDedupeThreshold: 0.92,
   memoryExtractMode: 'always',
   memoryExtractInterval: 3,
   maxHistoryMessages: 20,
   compressThreshold: 30,
+  memorySemanticInContext: true,
 };
 
 describe('performance config', () => {
@@ -22,28 +28,48 @@ describe('performance config', () => {
     expect(isCasualChat('知识库里有什么')).toBe(false);
   });
 
-  it('runs rag for any non-casual query when documents exist', () => {
-    expect(shouldRunRag('OA', true, defaultSettings)).toBe(true);
-    expect(shouldRunRag('知识库里现在有哪些内容', true, defaultSettings)).toBe(true);
-    expect(shouldRunRag('伸宏贸易关账日是什么？', true, defaultSettings)).toBe(true);
+  it('looksLikeKnowledgeQuery detects question patterns', () => {
+    expect(looksLikeKnowledgeQuery('你好')).toBe(false);
+    expect(looksLikeKnowledgeQuery('需求文档里登录流程是什么？')).toBe(true);
+    expect(looksLikeKnowledgeQuery('OA')).toBe(false);
+    expect(looksLikeKnowledgeQuery('帮我看看 requirements.md', ['requirements.md'])).toBe(
+      true,
+    );
   });
 
-  it('skips rag without documents', () => {
-    expect(shouldRunRag('关账日是什么', false, defaultSettings)).toBe(false);
-  });
-
-  it('skips rag for casual chat even with documents', () => {
-    expect(shouldRunRag('谢谢', true, defaultSettings)).toBe(false);
-  });
-
-  it('respects ragEnabled flag', () => {
+  it('catalog mode injects catalog but not auto retrieve', () => {
+    expect(shouldInjectRagCatalog(true, baseSettings)).toBe(true);
     expect(
-      shouldRunRag('文档里关账日是什么？', true, { ...defaultSettings, ragEnabled: false }),
+      shouldAutoRetrieveRag('需求文档里登录流程是什么？', true, [], baseSettings),
     ).toBe(false);
   });
 
-  it('looksLikeKnowledgeQuery aligns with non-casual', () => {
-    expect(looksLikeKnowledgeQuery('你好')).toBe(false);
-    expect(looksLikeKnowledgeQuery('OA')).toBe(true);
+  it('auto mode retrieves for knowledge queries', () => {
+    const auto = { ...baseSettings, ragInjectMode: 'auto' as const };
+    expect(shouldAutoRetrieveRag('需求文档里登录流程是什么？', true, [], auto)).toBe(true);
+    expect(shouldAutoRetrieveRag('你好', true, [], auto)).toBe(false);
+    expect(shouldAutoRetrieveRag('OA', true, [], auto)).toBe(false);
+  });
+
+  it('tool mode skips catalog and auto retrieve', () => {
+    const tool = { ...baseSettings, ragInjectMode: 'tool' as const };
+    expect(shouldInjectRagCatalog(true, tool)).toBe(false);
+    expect(shouldAutoRetrieveRag('关账日是什么？', true, [], tool)).toBe(false);
+  });
+
+  it('skips rag without documents', () => {
+    const auto = { ...baseSettings, ragInjectMode: 'auto' as const };
+    expect(shouldAutoRetrieveRag('关账日是什么？', false, [], auto)).toBe(false);
+  });
+
+  it('respects ragEnabled flag', () => {
+    const disabled = { ...baseSettings, ragEnabled: false };
+    expect(shouldInjectRagCatalog(true, disabled)).toBe(false);
+    expect(
+      shouldAutoRetrieveRag('文档里关账日是什么？', true, [], {
+        ...disabled,
+        ragInjectMode: 'auto',
+      }),
+    ).toBe(false);
   });
 });

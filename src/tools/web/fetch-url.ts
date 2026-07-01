@@ -2,6 +2,31 @@ import type { ToolDefinition } from '../types';
 
 const MAX_BYTES = 64_000;
 
+function isBlockedHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host === '0.0.0.0') return true;
+
+  const bare = host.replace(/^\[/, '').replace(/\]$/, '');
+  if (bare.includes(':')) {
+    if (bare === '::1') return true;
+    if (bare.startsWith('fe80:') || bare.startsWith('fc') || bare.startsWith('fd')) return true;
+  }
+
+  const parts = bare.split('.').map((p) => Number.parseInt(p, 10));
+  if (parts.length === 4 && parts.every((n) => Number.isFinite(n))) {
+    const [a, b] = parts;
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 0) return true;
+  }
+
+  return false;
+}
+
 function stripHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -41,6 +66,10 @@ export const fetchUrlTool: ToolDefinition = {
 
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return { success: false, output: '', error: '仅支持 http/https' };
+    }
+
+    if (isBlockedHost(parsed.hostname)) {
+      return { success: false, output: '', error: '不允许访问本地或私有网络地址' };
     }
 
     if (ctx.signal.aborted) {

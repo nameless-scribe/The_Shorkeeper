@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { getDatabaseDir, getDatabasePath, getWorkspaceDir } from '../config/paths';
+import { getDatabaseDir, getDatabasePath, getWorkspaceDir, getAppearanceDir } from '../config/paths';
 import { resolveSqlWasmPath } from './runtime-paths';
 import { runMigrations } from './migrate';
 import { ensurePersonaUpToDate } from './seed';
@@ -45,15 +45,32 @@ function getWasmPath(file = 'sql-wasm.wasm'): string {
 }
 
 export class SqliteDb {
+  private persistQueue: Promise<void> = Promise.resolve();
+  private closed = false;
+  private persistDeferred = 0;
+
   constructor(
     private readonly sql: import('sql.js').SqlJsStatic,
     private readonly db: import('sql.js').SqlJsDatabase,
     private readonly dbPath: string,
   ) {}
 
+  beginBatch(): void {
+    this.persistDeferred += 1;
+  }
+
+  endBatch(): void {
+    if (this.persistDeferred > 0) {
+      this.persistDeferred -= 1;
+    }
+    if (this.persistDeferred === 0) {
+      this.persist();
+    }
+  }
+
   exec(sql: string): void {
     this.db.run(sql);
-    this.persist();
+    this.maybePersist();
   }
 
   prepare(sql: string) {
@@ -89,22 +106,59 @@ export class SqliteDb {
         } finally {
           stmt.free();
         }
-        this.persist();
+        this.maybePersist();
       },
     };
   }
 
+  private maybePersist(): void {
+    if (this.persistDeferred === 0) {
+      this.persist();
+    }
+  }
+
+  /** 等待异步 persist 队列落盘（批量脚本退出前调用） */
+  async flushPersist(): Promise<void> {
+    await this.persistQueue;
+    if (!this.closed) {
+      this.persistSync();
+    }
+  }
+
   close(): void {
-    this.persist();
+    if (this.closed) return;
+    this.persistSync();
+    this.closed = true;
     this.db.close();
   }
 
-  persist(): void {
+  async closeAsync(): Promise<void> {
+    if (this.closed) return;
+    await this.flushPersist();
+    this.closed = true;
+    this.db.close();
+  }
+
+  private persistSync(): void {
+    if (this.closed) return;
+
     const dir = path.dirname(this.dbPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(this.dbPath, Buffer.from(this.db.export()));
+  }
+
+  persist(): void {
+    if (this.closed) return;
+
+    this.persistQueue = this.persistQueue
+      .then(() => {
+        this.persistSync();
+      })
+      .catch((err) => {
+        console.error('[db] persist 失败:', err);
+      });
   }
 }
 
@@ -112,7 +166,7 @@ let dbInstance: SqliteDb | null = null;
 let initPromise: Promise<SqliteDb> | null = null;
 
 export function ensureDataDirs(): void {
-  for (const dir of [getDatabaseDir(), getWorkspaceDir()]) {
+  for (const dir of [getDatabaseDir(), getWorkspaceDir(), getAppearanceDir()]) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
@@ -135,7 +189,7 @@ function loadDatabaseBuffer(
   try {
     const probe = new SQL.Database(buffer);
     probe.run('PRAGMA foreign_keys = ON');
-    probe.exec('SELECT 1');
+    probe.run('SELECT 1');
     probe.close();
     return buffer;
   } catch {
@@ -178,6 +232,14 @@ export function getDatabase(): SqliteDb {
 export function closeDatabase(): void {
   if (dbInstance) {
     dbInstance.close();
+    dbInstance = null;
+    initPromise = null;
+  }
+}
+
+export async function closeDatabaseAsync(): Promise<void> {
+  if (dbInstance) {
+    await dbInstance.closeAsync();
     dbInstance = null;
     initPromise = null;
   }

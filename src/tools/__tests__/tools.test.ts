@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ToolRegistry } from '../registry';
 import { readFileTool } from '../file/read-file';
 import { writeFileTool } from '../file/write-file';
@@ -84,16 +84,35 @@ describe('list_dir', () => {
 });
 
 describe('web_search', () => {
-  it('returns output for a query', async () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.WEB_SEARCH_API_KEY;
+    delete process.env.BOCHA_API_KEY;
+  });
+
+  it('returns output for a query when bocha key is configured', async () => {
+    process.env.WEB_SEARCH_API_KEY = 'test-key';
+
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
-          Heading: 'TypeScript',
-          AbstractText: 'A typed superset of JavaScript.',
-          AbstractURL: 'https://example.com',
-        }),
+        text: async () =>
+          JSON.stringify({
+            code: 200,
+            data: {
+              webPages: {
+                value: [
+                  {
+                    name: 'TypeScript 新闻',
+                    url: 'https://example.com/ts',
+                    snippet: 'A typed superset of JavaScript.',
+                    siteName: 'Example',
+                  },
+                ],
+              },
+            },
+          }),
       }),
     );
 
@@ -104,7 +123,16 @@ describe('web_search', () => {
 
     expect(result.success).toBe(true);
     expect(result.output).toContain('TypeScript');
-    vi.unstubAllGlobals();
+  });
+
+  it('reports missing api key', async () => {
+    const result = await webSearchTool.execute(
+      { query: '热搜' },
+      { sessionId: 's1', workspaceRoot: os.tmpdir(), signal: new AbortController().signal },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('未配置联网搜索 API Key');
   });
 });
 
@@ -185,9 +213,14 @@ describe('gen_markdown', () => {
 });
 
 describe('read_xlsx / gen_xlsx', () => {
-  it(
-    'round-trips xlsx via read and gen',
-    async () => {
+  beforeAll(async () => {
+    const ExcelJS = await import('exceljs');
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet('warmup');
+    await wb.xlsx.writeBuffer();
+  }, 30_000);
+
+  it('round-trips xlsx via read and gen', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-xlsx-'));
     const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
 
@@ -213,9 +246,7 @@ describe('read_xlsx / gen_xlsx', () => {
     expect(parsed.sheet).toBe('Q1');
     expect(parsed.headers).toEqual(['产品', '数量']);
     expect(parsed.rows).toEqual([['键盘', '10'], ['鼠标', '20']]);
-  },
-    15_000,
-  );
+  });
 });
 
 describe('convert_to_markdown', () => {

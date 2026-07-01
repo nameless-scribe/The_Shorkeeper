@@ -2,7 +2,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../db';
 import { embedText } from '../rag/embedding';
 import { serializeEmbedding } from '../rag/vector';
+import { deserializeEmbedding, topKBySimilarity } from '../rag/vector';
 import { isDuplicateMemory, isSemanticallyDuplicateMemory } from './dedupe';
+import { queueMemoryReembed } from './reembed-queue';
 
 export interface MemoryEntry {
   id: string;
@@ -72,6 +74,22 @@ export function getMemoryByKey(memoryKey: string): MemoryEntry | undefined {
   return row ? rowToEntry(row) : undefined;
 }
 
+function getMemoryEmbeddingByKey(memoryKey: string): Uint8Array | null {
+  const db = getDatabase();
+  const row = db
+    .prepare(`SELECT embedding FROM long_term_memory WHERE memory_key = ?`)
+    .get(memoryKey) as { embedding: Uint8Array | null } | undefined;
+
+  if (!row?.embedding) return null;
+  return row.embedding instanceof Uint8Array
+    ? row.embedding
+    : new Uint8Array(row.embedding as ArrayBuffer);
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 export function searchMemories(query: string, limit = 5): MemoryEntry[] {
   const trimmed = query.trim();
   const db = getDatabase();
@@ -80,7 +98,7 @@ export function searchMemories(query: string, limit = 5): MemoryEntry[] {
     return [];
   }
 
-  const pattern = `%${trimmed}%`;
+  const pattern = `%${escapeLikePattern(trimmed)}%`;
   const rows = db
     .prepare(
       `SELECT ${MEMORY_SELECT}
@@ -103,6 +121,44 @@ export function searchMemories(query: string, limit = 5): MemoryEntry[] {
   }
 
   return [];
+}
+
+/** LIKE 无结果时用语义向量检索补充 */
+export async function searchMemoriesWithEmbedding(
+  query: string,
+  limit = 5,
+): Promise<MemoryEntry[]> {
+  const likeHits = searchMemories(query, limit);
+  if (likeHits.length) return likeHits;
+
+  const stored = listMemoryEmbeddings(500);
+  const withVec = stored.filter((s) => s.embedding);
+  if (!withVec.length) return [];
+
+  try {
+    const queryVec = new Float32Array(await embedText(query.trim()));
+    const hits = topKBySimilarity(
+      queryVec,
+      withVec.map((s) => ({
+        data: s,
+        embedding: deserializeEmbedding(s.embedding!),
+      })),
+      limit,
+    ).filter((h) => h.score >= 0.5);
+
+    if (!hits.length) return [];
+
+    const db = getDatabase();
+    return hits.map((h) => {
+      const row = db
+        .prepare(`SELECT ${MEMORY_SELECT} FROM long_term_memory WHERE content = ? LIMIT 1`)
+        .get(h.item.content) as Parameters<typeof rowToEntry>[0] | undefined;
+      return row ? rowToEntry(row) : null;
+    }).filter((e): e is MemoryEntry => e !== null);
+  } catch (err) {
+    console.warn('[memory] 向量检索失败，回退 LIKE:', err);
+    return [];
+  }
 }
 
 function listMemoryEmbeddings(limit = 200): Array<{
@@ -154,9 +210,23 @@ export async function upsertMemory(
   const clampedImportance = Math.max(0, Math.min(1, importance));
   const now = Date.now();
   const existing = getMemoryByKey(key);
+  const existingEmbedding = getMemoryEmbeddingByKey(key);
   const embeddingBlob = await computeEmbeddingBlob(trimmed, options?.skipEmbedding);
 
   if (existing) {
+    const contentChanged = existing.content !== trimmed;
+    let embeddingToWrite: Uint8Array | null;
+
+    if (options?.skipEmbedding) {
+      if (contentChanged) {
+        embeddingToWrite = null;
+      } else {
+        embeddingToWrite = existingEmbedding;
+      }
+    } else {
+      embeddingToWrite = embeddingBlob ?? existingEmbedding;
+    }
+
     db.prepare(
       `UPDATE long_term_memory
        SET content = ?, importance = ?, source_session_id = ?, created_at = ?, embedding = ?
@@ -166,9 +236,13 @@ export async function upsertMemory(
       clampedImportance,
       sessionId ?? null,
       now,
-      embeddingBlob,
+      embeddingToWrite,
       key,
     );
+
+    if (options?.skipEmbedding && contentChanged) {
+      queueMemoryReembed(key, trimmed);
+    }
 
     return {
       ...existing,
@@ -184,6 +258,10 @@ export async function upsertMemory(
     `INSERT INTO long_term_memory (id, memory_key, content, importance, source_session_id, created_at, embedding)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, key, trimmed, clampedImportance, sessionId ?? null, now, embeddingBlob);
+
+  if (options?.skipEmbedding) {
+    queueMemoryReembed(key, trimmed);
+  }
 
   return {
     id,

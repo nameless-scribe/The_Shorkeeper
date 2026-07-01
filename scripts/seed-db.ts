@@ -6,7 +6,7 @@ import { SHOREKEEPER_WORLDBOOK } from '../src/db/seeds/index.js';
 const db = await openDatabase();
 const applied = runMigrations(db);
 const result = seedShorekeeper(db);
-db.close();
+await db.closeAsync();
 
 console.log('数据库:', getDatabasePath());
 if (applied.length) {

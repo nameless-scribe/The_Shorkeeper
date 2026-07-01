@@ -1,5 +1,9 @@
 export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-  if (a.length !== b.length || a.length === 0) return 0;
+  if (a.length !== b.length) {
+    console.warn(`[vector] embedding 维度不匹配: ${a.length} vs ${b.length}`);
+    return 0;
+  }
+  if (a.length === 0) return 0;
   let dot = 0;
   let normA = 0;
   let normB = 0;
@@ -36,4 +40,31 @@ export function topKBySimilarity<T>(
   }));
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, k);
+}
+
+export function topKBySimilarityDiverse<T extends { documentId: string }>(
+  query: Float32Array,
+  items: Array<{ data: T; embedding: Float32Array }>,
+  k: number,
+  maxPerDocument = 2,
+): Scored<T>[] {
+  const scored = items.map(({ data, embedding }) => ({
+    item: data,
+    score: cosineSimilarity(query, embedding),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+
+  const docCounts = new Map<string, number>();
+  const result: Scored<T>[] = [];
+
+  for (const hit of scored) {
+    if (result.length >= k) break;
+    const docId = hit.item.documentId;
+    const count = docCounts.get(docId) ?? 0;
+    if (count >= maxPerDocument) continue;
+    docCounts.set(docId, count + 1);
+    result.push(hit);
+  }
+
+  return result;
 }

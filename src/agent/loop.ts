@@ -23,11 +23,11 @@ export interface AgentLoopOptions {
   cacheStablePrefix?: string;
 }
 
-function parseToolArgs(raw: string): unknown {
+function parseToolArgs(raw: string): { args: unknown; error?: string } {
   try {
-    return JSON.parse(raw || '{}');
+    return { args: JSON.parse(raw || '{}') };
   } catch {
-    return {};
+    return { args: null, error: '工具参数 JSON 解析失败' };
   }
 }
 
@@ -46,7 +46,16 @@ async function executeToolCall(
     };
   }
 
-  const args = parseToolArgs(toolCall.function.arguments);
+  const parsed = parseToolArgs(toolCall.function.arguments);
+  if (parsed.error) {
+    return {
+      success: false,
+      output: '',
+      error: parsed.error,
+    };
+  }
+
+  const args = parsed.args;
   const decision = checkPermission(tool, policy, args);
 
   if (decision === 'deny') {
@@ -91,7 +100,7 @@ export async function* runAgentLoop(
 
   while (rounds < maxRounds) {
     if (signal?.aborted) {
-      yield ev.runError(runId, '已取消');
+      yield ev.runError(runId, '已取消', sessionId);
       return;
     }
 
@@ -114,12 +123,15 @@ export async function* runAgentLoop(
         roundContent = event.content;
         roundToolCalls = event.toolCalls;
       } else if (event.type === 'error') {
-        yield ev.runError(runId, event.message);
+        yield ev.runError(runId, event.message, sessionId);
         return;
       }
     }
 
     if (!roundToolCalls.length) {
+      if (signal?.aborted) {
+        yield ev.runError(runId, '已取消', sessionId);
+      }
       return;
     }
 
@@ -138,16 +150,18 @@ export async function* runAgentLoop(
 
     for (const toolCall of roundToolCalls) {
       const callId = toolCall.id || createCallId();
-      const args = parseToolArgs(toolCall.function.arguments);
+      const parsedArgs = parseToolArgs(toolCall.function.arguments);
 
-      yield ev.toolCallStart(runId, callId, toolCall.function.name, args);
+      yield ev.toolCallStart(runId, callId, toolCall.function.name, parsedArgs.args);
 
-      const result = await executeToolCall(
-        toolCall,
-        toolCtx,
-        registry,
-        policy,
-      );
+      const result = parsedArgs.error
+        ? { success: false as const, output: '', error: parsedArgs.error }
+        : await executeToolCall(
+            { ...toolCall, id: callId },
+            toolCtx,
+            registry,
+            policy,
+          );
 
       yield ev.toolCallEnd(runId, callId, result);
 
@@ -155,7 +169,7 @@ export async function* runAgentLoop(
         ...messages,
         {
           role: 'tool',
-          tool_call_id: toolCall.id,
+          tool_call_id: callId,
           content: result.success
             ? result.output
             : `错误: ${result.error ?? '执行失败'}`,
@@ -164,5 +178,5 @@ export async function* runAgentLoop(
     }
   }
 
-  yield ev.runError(runId, `已达到最大工具轮次 (${maxRounds})`);
+  yield ev.runError(runId, `已达到最大工具轮次 (${maxRounds})`, sessionId);
 }

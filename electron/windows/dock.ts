@@ -2,6 +2,7 @@ import { BrowserWindow, screen } from 'electron';
 import { getJsonSetting, setJsonSetting } from '../../src/db/app-settings';
 import type { WindowBounds } from '../../src/db/schema';
 import { getPreloadPath, getRendererIndexPath } from '../paths';
+import { clampBoundsToWorkArea } from './bounds';
 import { getWindowManager } from './manager';
 import { getDockPreferences, type DockPreferences } from '../dock/preferences';
 
@@ -60,9 +61,14 @@ export function createDockWindow(): BrowserWindow {
 
   const saved = getJsonSetting<WindowBounds>(BOUNDS_KEY);
   const defaults = defaultBounds();
-  const bounds = saved
-    ? { ...defaults, x: saved.x, y: saved.y }
+  const merged = saved
+    ? { ...defaults, x: saved.x, y: saved.y, width: DOCK_WIDTH, height: DOCK_HEIGHT }
     : defaults;
+  const bounds = clampBoundsToWorkArea(merged, defaults);
+
+  if (saved && (saved.x !== bounds.x || saved.y !== bounds.y)) {
+    setJsonSetting(BOUNDS_KEY, { x: bounds.x, y: bounds.y, width: DOCK_WIDTH, height: DOCK_HEIGHT });
+  }
 
   const win = new BrowserWindow({
     x: bounds.x,
@@ -78,7 +84,7 @@ export function createDockWindow(): BrowserWindow {
     skipTaskbar: true,
     hasShadow: false,
     focusable: true,
-    backgroundColor: '#00000000',
+    backgroundColor: '#0A1128',
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
@@ -110,6 +116,7 @@ export function showDockWindow(): void {
   applyDockPreferences(win);
   if (win.isVisible()) return;
   win.showInactive();
+  win.webContents.send('tasks:updated', { ts: Date.now() });
 }
 
 export function refreshDockPreferences(): DockPreferences {

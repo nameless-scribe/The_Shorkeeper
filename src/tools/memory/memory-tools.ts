@@ -1,5 +1,5 @@
 import type { ToolDefinition } from '../types';
-import { searchMemories, saveMemory, upsertMemory, formatMemoriesForPrompt } from '../../memory/long-term';
+import { searchMemories, searchMemoriesWithEmbedding, saveMemory, upsertMemory, formatMemoriesForPrompt } from '../../memory/long-term';
 import { searchWorldbook, formatWorldbookForPrompt } from '../../memory/worldbook';
 
 export const recallMemoryTool: ToolDefinition = {
@@ -27,7 +27,7 @@ export const recallMemoryTool: ToolDefinition = {
       return { success: false, output: '', error: '缺少 query 参数' };
     }
 
-    const memories = searchMemories(query, limit ?? 5);
+    const memories = await searchMemoriesWithEmbedding(query, limit ?? 5);
     if (!memories.length) {
       return { success: true, output: '未找到相关长期记忆。' };
     }

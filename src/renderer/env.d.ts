@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { ShorekeeperApi } from '../../electron/preload.js';
 
 declare global {

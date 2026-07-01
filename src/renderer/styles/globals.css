@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --sk-navy-deep-rgb: 10 17 40;
+  --sk-navy-rgb: 39 70 144;
+  --sk-ice-rgb: 225 233 240;
+  --sk-ice-deep-rgb: 137 187 254;
+  --sk-cyan-rgb: 48 188 237;
+  --sk-cyan-dim-rgb: 0 180 216;
+  --sk-silver-rgb: 192 192 192;
+  --sk-silver-light-rgb: 232 238 245;
+  --sk-veil-opacity: 1;
+  --sk-bg-size: cover;
+  --sk-bg-image: url('/keeper-bg.png');
+  --sk-veil-chat: linear-gradient(
+    90deg,
+    rgba(10, 17, 40, 0.9) 0%,
+    rgba(10, 17, 40, 0.72) 38%,
+    rgba(10, 17, 40, 0.28) 62%,
+    rgba(10, 17, 40, 0.08) 100%
+  );
+  --sk-veil-status: radial-gradient(
+    ellipse 95% 75% at 50% 28%,
+    rgba(10, 17, 40, 0.22) 0%,
+    rgba(10, 17, 40, 0.52) 50%,
+    rgba(10, 17, 40, 0.88) 100%
+  );
+  --sk-show-stars: 1;
+}
+
 html,
 body,
 #root {
@@ -14,7 +42,7 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;
-  background: #0a1128;
+  background: rgb(var(--sk-navy-deep-rgb));
 }
 
 .drag-region {
@@ -25,40 +53,38 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* 全幅立绘背景（public/keeper-bg.png） */
 .keeper-scene {
-  background-color: #0a1128;
-  background-image: url('/keeper-bg.png');
+  background-color: rgb(var(--sk-navy-deep-rgb));
+  background-image: var(--sk-bg-image);
   background-repeat: no-repeat;
   background-position: center center;
-  background-size: cover;
+  background-size: var(--sk-bg-size, cover);
+}
+
+/* 内置立绘微调构图；自定义壁纸不做 scale，随窗口 cover/contain 自适应 */
+.keeper-scene-builtin {
   transform: scale(1.02);
 }
 
-/* 左侧聊天区阅读遮罩，右侧保留角色与光效 */
-.keeper-veil {
-  background: linear-gradient(
-    90deg,
-    rgba(10, 17, 40, 0.9) 0%,
-    rgba(10, 17, 40, 0.72) 38%,
-    rgba(10, 17, 40, 0.28) 62%,
-    rgba(10, 17, 40, 0.08) 100%
-  );
-}
-
-/* 状态面板：居中展示角色，四周渐深保证卡片可读 */
-.keeper-scene-status {
+.keeper-scene-status.keeper-scene-builtin {
   background-position: 58% 22%;
   transform: scale(1.12);
 }
 
+.keeper-veil {
+  background: var(--sk-veil-chat);
+}
+
+.keeper-scene-status {
+  background-position: center center;
+}
+
 .keeper-veil-status {
-  background: radial-gradient(
-    ellipse 95% 75% at 50% 28%,
-    rgba(10, 17, 40, 0.22) 0%,
-    rgba(10, 17, 40, 0.52) 50%,
-    rgba(10, 17, 40, 0.88) 100%
-  );
+  background: var(--sk-veil-status);
+}
+
+.keeper-stars-layer {
+  opacity: calc(0.3 * var(--sk-show-stars));
 }
 
 .status-avatar-ring {
@@ -89,6 +115,6 @@ body {
   width: 5px;
 }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #274690, #30bced);
+  background: linear-gradient(180deg, rgb(var(--sk-navy-rgb)), rgb(var(--sk-cyan-rgb)));
   border-radius: 3px;
 }

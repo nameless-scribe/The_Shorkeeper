@@ -21,3 +21,9 @@ export function markExtractedUpToMessageId(sessionId: string, messageId: string)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
   ).run(key, messageId, now);
 }
+
+export function clearSessionExtractionState(sessionId: string): void {
+  const db = getDatabase();
+  db.prepare('DELETE FROM app_settings WHERE key = ?').run(`${KEY_PREFIX}${sessionId}`);
+  db.prepare('DELETE FROM app_settings WHERE key = ?').run(`memory.extract_turns.${sessionId}`);
+}

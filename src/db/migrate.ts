@@ -32,7 +32,7 @@ export function runMigrations(db: SqliteDb): string[] {
     try {
       db.exec(sql);
     } catch (err) {
-      if (file.includes('fts5')) {
+      if (file.includes('fts5') || file.includes('rag_fts')) {
         console.warn(`[migrate] 跳过 ${file}（当前 SQLite 不支持 FTS5）`);
         db.prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)').run(
           file,

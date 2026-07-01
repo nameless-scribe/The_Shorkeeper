@@ -86,8 +86,8 @@ function plainTextToMarkdown(content: string, title: string, ext: string): strin
 
 async function convertDocx(absolute: string, title: string): Promise<string> {
   const mammoth = await import('mammoth');
-  const result = await mammoth.convertToMarkdown({ path: absolute });
-  return ensureTitle(result.value, title);
+  const result = await mammoth.extractRawText({ path: absolute });
+  return plainTextToMarkdown(result.value, title, '.txt');
 }
 
 async function convertDoc(absolute: string, title: string): Promise<string> {

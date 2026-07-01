@@ -60,6 +60,11 @@ export function checkPermission(
 
     if (flag === 'filesystem:write') {
       if (!policy.filesystem.writeAllowed) return 'deny';
+      const filePath =
+        args && typeof args === 'object' && 'path' in args
+          ? String((args as { path?: string }).path ?? '.')
+          : '.';
+      if (checkFilesystemRead(filePath, policy) === 'deny') return 'deny';
       if (policy.filesystem.requireConfirmOnWrite) return 'confirm';
     }
 

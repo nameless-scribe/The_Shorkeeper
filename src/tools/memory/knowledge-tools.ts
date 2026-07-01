@@ -39,7 +39,7 @@ export const searchKnowledgeTool: ToolDefinition = {
     }
 
     try {
-      const chunks = await retrieveRelevantChunks(query, limit ?? 5);
+      const chunks = await retrieveRelevantChunks(query, limit ?? 5, { skipCache: true });
       if (!chunks.length) {
         return {
           success: true,

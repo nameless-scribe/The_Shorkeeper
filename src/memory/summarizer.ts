@@ -92,7 +92,7 @@ function getLatestTurn(sessionId: string): Array<{ id: string; role: string; con
   }
 
   if (last.role === 'user') {
-    return [{ id: last.id, role: last.role, content: last.content }];
+    return [];
   }
 
   return [];
@@ -128,16 +128,19 @@ export async function extractMemoriesFromSession(sessionId: string): Promise<num
     { sessionId },
   );
 
-  markExtractedUpToMessageId(sessionId, latestUserMessage.id);
-
   const facts = parseStructuredFacts(reply);
-  if (!facts.length) return 0;
+  if (!facts.length) {
+    markExtractedUpToMessageId(sessionId, latestUserMessage.id);
+    return 0;
+  }
 
   let saved = 0;
   for (const fact of facts) {
     await upsertMemory(fact.key, fact.content, 0.55, sessionId, { skipEmbedding: true });
     saved += 1;
   }
+
+  markExtractedUpToMessageId(sessionId, latestUserMessage.id);
 
   return saved;
 }

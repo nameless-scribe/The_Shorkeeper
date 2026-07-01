@@ -19,8 +19,10 @@ export const ev = {
     return { type: 'run_finished', runId };
   },
 
-  runError(runId: string, message: string): AgUiEvent {
-    return { type: 'run_error', runId, message };
+  runError(runId: string, message: string, sessionId?: string): AgUiEvent {
+    return sessionId
+      ? { type: 'run_error', runId, message, sessionId }
+      : { type: 'run_error', runId, message };
   },
 
   textDelta(runId: string, delta: string): AgUiEvent {

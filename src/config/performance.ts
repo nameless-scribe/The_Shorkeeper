@@ -2,20 +2,33 @@ import { getSetting, setSetting } from '../db/app-settings';
 
 export type MemoryExtractMode = 'always' | 'manual' | 'every_n';
 
+/** auto: 知识问答时自动注入片段；catalog: 仅注入文档目录；tool: 完全不自动检索，靠 search_knowledge */
+export type RagInjectMode = 'auto' | 'catalog' | 'tool';
+
 export interface PerformanceSettings {
   ragEnabled: boolean;
+  ragInjectMode: RagInjectMode;
+  ragMinScore: number;
+  ragMaxChunksPerDoc: number;
+  ragArchiveDedupeThreshold: number;
   memoryExtractMode: MemoryExtractMode;
   memoryExtractInterval: number;
   maxHistoryMessages: number;
   compressThreshold: number;
+  memorySemanticInContext: boolean;
 }
 
 const DEFAULTS: PerformanceSettings = {
   ragEnabled: true,
+  ragInjectMode: 'catalog',
+  ragMinScore: 0.35,
+  ragMaxChunksPerDoc: 2,
+  ragArchiveDedupeThreshold: 0.92,
   memoryExtractMode: 'always',
   memoryExtractInterval: 3,
   maxHistoryMessages: 20,
   compressThreshold: 30,
+  memorySemanticInContext: true,
 };
 
 function envBool(key: string, fallback: boolean): boolean {
@@ -31,9 +44,21 @@ function envInt(key: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function envFloat(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (raw == null || raw === '') return fallback;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function parseMemoryExtractMode(raw: string | null): MemoryExtractMode {
   if (raw === 'manual' || raw === 'every_n' || raw === 'always') return raw;
   return DEFAULTS.memoryExtractMode;
+}
+
+function parseRagInjectMode(raw: string | null): RagInjectMode {
+  if (raw === 'auto' || raw === 'catalog' || raw === 'tool') return raw;
+  return DEFAULTS.ragInjectMode;
 }
 
 export function getPerformanceSettings(): PerformanceSettings {
@@ -41,6 +66,23 @@ export function getPerformanceSettings(): PerformanceSettings {
     ragEnabled: getSetting('RAG_ENABLED') != null
       ? getSetting('RAG_ENABLED') === 'true'
       : envBool('RAG_ENABLED', DEFAULTS.ragEnabled),
+    ragInjectMode: getSetting('RAG_INJECT_MODE') != null
+      ? parseRagInjectMode(getSetting('RAG_INJECT_MODE'))
+      : (process.env.RAG_INJECT_MODE as RagInjectMode | undefined) &&
+          ['auto', 'catalog', 'tool'].includes(process.env.RAG_INJECT_MODE!)
+        ? (process.env.RAG_INJECT_MODE as RagInjectMode)
+        : DEFAULTS.ragInjectMode,
+    ragMinScore: getSetting('RAG_MIN_SCORE') != null
+      ? Number.parseFloat(getSetting('RAG_MIN_SCORE')!) || DEFAULTS.ragMinScore
+      : envFloat('RAG_MIN_SCORE', DEFAULTS.ragMinScore),
+    ragMaxChunksPerDoc: getSetting('RAG_MAX_CHUNKS_PER_DOC') != null
+      ? Number.parseInt(getSetting('RAG_MAX_CHUNKS_PER_DOC')!, 10) ||
+        DEFAULTS.ragMaxChunksPerDoc
+      : envInt('RAG_MAX_CHUNKS_PER_DOC', DEFAULTS.ragMaxChunksPerDoc),
+    ragArchiveDedupeThreshold: getSetting('RAG_ARCHIVE_DEDUPE_THRESHOLD') != null
+      ? Number.parseFloat(getSetting('RAG_ARCHIVE_DEDUPE_THRESHOLD')!) ||
+        DEFAULTS.ragArchiveDedupeThreshold
+      : envFloat('RAG_ARCHIVE_DEDUPE_THRESHOLD', DEFAULTS.ragArchiveDedupeThreshold),
     memoryExtractMode: getSetting('AUTO_MEMORY_EXTRACT') != null
       ? parseMemoryExtractMode(getSetting('AUTO_MEMORY_EXTRACT'))
       : envBool('AUTO_MEMORY_EXTRACT', true)
@@ -55,11 +97,22 @@ export function getPerformanceSettings(): PerformanceSettings {
     compressThreshold: getSetting('COMPRESS_THRESHOLD') != null
       ? Number.parseInt(getSetting('COMPRESS_THRESHOLD')!, 10) || DEFAULTS.compressThreshold
       : envInt('COMPRESS_THRESHOLD', DEFAULTS.compressThreshold),
+    memorySemanticInContext: getSetting('MEMORY_SEMANTIC_IN_CONTEXT') != null
+      ? getSetting('MEMORY_SEMANTIC_IN_CONTEXT') === 'true'
+      : envBool('MEMORY_SEMANTIC_IN_CONTEXT', DEFAULTS.memorySemanticInContext),
   };
 }
 
 export function savePerformanceSettings(patch: Partial<PerformanceSettings>): PerformanceSettings {
   if (patch.ragEnabled != null) setSetting('RAG_ENABLED', String(patch.ragEnabled));
+  if (patch.ragInjectMode != null) setSetting('RAG_INJECT_MODE', patch.ragInjectMode);
+  if (patch.ragMinScore != null) setSetting('RAG_MIN_SCORE', String(patch.ragMinScore));
+  if (patch.ragMaxChunksPerDoc != null) {
+    setSetting('RAG_MAX_CHUNKS_PER_DOC', String(patch.ragMaxChunksPerDoc));
+  }
+  if (patch.ragArchiveDedupeThreshold != null) {
+    setSetting('RAG_ARCHIVE_DEDUPE_THRESHOLD', String(patch.ragArchiveDedupeThreshold));
+  }
   if (patch.memoryExtractMode != null) setSetting('AUTO_MEMORY_EXTRACT', patch.memoryExtractMode);
   if (patch.memoryExtractInterval != null) {
     setSetting('MEMORY_EXTRACT_INTERVAL', String(patch.memoryExtractInterval));
@@ -69,6 +122,9 @@ export function savePerformanceSettings(patch: Partial<PerformanceSettings>): Pe
   }
   if (patch.compressThreshold != null) {
     setSetting('COMPRESS_THRESHOLD', String(patch.compressThreshold));
+  }
+  if (patch.memorySemanticInContext != null) {
+    setSetting('MEMORY_SEMANTIC_IN_CONTEXT', String(patch.memorySemanticInContext));
   }
 
   return getPerformanceSettings();
@@ -86,19 +142,54 @@ export function isCasualChat(query: string): boolean {
   return CASUAL_PATTERNS.some((p) => p.test(trimmed));
 }
 
-/** @deprecated 保留供测试对比；RAG 触发已改为「有文档且非寒暄」 */
-export function looksLikeKnowledgeQuery(query: string): boolean {
+export function looksLikeKnowledgeQuery(query: string, filenames: string[] = []): boolean {
   const trimmed = query.trim();
   if (isCasualChat(trimmed)) return false;
-  return trimmed.length >= 2;
+
+  if (/[?？]/.test(trimmed)) return true;
+  if (/(吗|什么|如何|怎么|哪|谁|为何|为什么|多少|是否)/.test(trimmed)) return true;
+
+  const lower = trimmed.toLowerCase();
+  if (
+    filenames.some((name) => {
+      const base = name.replace(/\.[^.]+$/, '');
+      return lower.includes(name.toLowerCase()) || lower.includes(base.toLowerCase());
+    })
+  ) {
+    return true;
+  }
+
+  if (trimmed.length >= 8 && !/^[\p{Emoji}\s]+$/u.test(trimmed)) return true;
+
+  return false;
 }
 
-export function shouldRunRag(
-  query: string,
+export function shouldInjectRagCatalog(
   hasDocuments: boolean,
   settings: PerformanceSettings = getPerformanceSettings(),
 ): boolean {
   if (!settings.ragEnabled) return false;
   if (!hasDocuments) return false;
-  return !isCasualChat(query);
+  return settings.ragInjectMode !== 'tool';
+}
+
+export function shouldAutoRetrieveRag(
+  query: string,
+  hasDocuments: boolean,
+  filenames: string[] = [],
+  settings: PerformanceSettings = getPerformanceSettings(),
+): boolean {
+  if (!settings.ragEnabled) return false;
+  if (!hasDocuments) return false;
+  if (settings.ragInjectMode !== 'auto') return false;
+  return looksLikeKnowledgeQuery(query, filenames);
+}
+
+/** @deprecated 使用 shouldInjectRagCatalog / shouldAutoRetrieveRag */
+export function shouldRunRag(
+  query: string,
+  hasDocuments: boolean,
+  settings: PerformanceSettings = getPerformanceSettings(),
+): boolean {
+  return shouldAutoRetrieveRag(query, hasDocuments, [], settings);
 }

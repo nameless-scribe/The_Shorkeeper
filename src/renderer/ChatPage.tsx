@@ -107,6 +107,7 @@ export function ChatPage() {
           <InputBar
             disabled={isRunning || !status?.apiConfigured}
             onSend={(text, attachments) => send(text, attachments)}
+            onModelChange={refreshStatus}
           />
           <SettingsDrawer
             open={settingsOpen}

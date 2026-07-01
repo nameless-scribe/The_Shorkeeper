@@ -8,9 +8,12 @@ import {
   listSessions,
   setSessionArchived,
 } from '../../src/db/repositories/sessions';
+import { isSessionRunActive } from '../../src/agent/session-run-lock';
 import { getActiveSession, getActiveSessionId, resetActiveSession, switchActiveSession } from '../../src/session/active';
 import { listMessages } from '../../src/db/repositories/messages';
 import type { AppStatus, DeleteEmptySessionsResult, MessageInfo, SessionDeleteResult, SessionInfo, SessionListOptions, SessionListResult } from '../../src/shared/types';
+
+const SESSION_BUSY_ERROR = '该会话正在处理消息';
 
 function toSessionInfo(session: NonNullable<ReturnType<typeof getSession>>): SessionInfo {
   return {
@@ -21,6 +24,12 @@ function toSessionInfo(session: NonNullable<ReturnType<typeof getSession>>): Ses
     archived: session.archived,
     compressed: session.compressed,
   };
+}
+
+function assertSessionNotBusy(sessionId: string): void {
+  if (isSessionRunActive(sessionId)) {
+    throw new Error(SESSION_BUSY_ERROR);
+  }
 }
 
 export function registerSessionIpc() {
@@ -59,11 +68,15 @@ export function registerSessionIpc() {
   });
 
   ipcMain.handle('sessions:switch', (_event, id: string): SessionInfo => {
+    assertSessionNotBusy(id);
     const session = switchActiveSession(id);
     return toSessionInfo(session);
   });
 
   ipcMain.handle('sessions:delete', (_event, id: string): SessionDeleteResult => {
+    if (isSessionRunActive(id)) {
+      return { ok: false, error: SESSION_BUSY_ERROR, busy: true };
+    }
     const wasActive = getActiveSessionId() === id;
     deleteSession(id);
     if (wasActive) {
@@ -74,11 +87,25 @@ export function registerSessionIpc() {
   });
 
   ipcMain.handle('sessions:deleteEmpty', (): DeleteEmptySessionsResult => {
-    return deleteEmptySessions({ keepSessionId: getActiveSessionId() });
+    const keepId = getActiveSessionId();
+    const { sessions } = listSessions({ limit: 500 });
+    const excludeIds = sessions
+      .map((s) => s.id)
+      .filter((id) => id !== keepId && isSessionRunActive(id));
+    return deleteEmptySessions({ keepSessionId: keepId, excludeSessionIds: excludeIds });
   });
 
   ipcMain.handle('sessions:archive', (_event, id: string, archived: boolean): SessionInfo => {
+    assertSessionNotBusy(id);
     setSessionArchived(id, archived);
+    if (archived && getActiveSessionId() === id) {
+      const { sessions } = listSessions({ limit: 1 });
+      if (sessions[0] && sessions[0].id !== id) {
+        switchActiveSession(sessions[0].id);
+      } else {
+        resetActiveSession();
+      }
+    }
     const session = getSession(id);
     if (!session) throw new Error('会话不存在');
     return toSessionInfo(session);

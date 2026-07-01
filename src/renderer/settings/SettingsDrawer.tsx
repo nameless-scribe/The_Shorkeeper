@@ -1,5 +1,8 @@
 import { useState } from 'react';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ProfilePage } from './ProfilePage';
+import { PersonaPage } from './PersonaPage';
+import { AppearancePage } from './AppearancePage';
 import { WorldbookPage } from './WorldbookPage';
 import { TasksPage } from './TasksPage';
 import { DocumentsPage } from './DocumentsPage';
@@ -54,16 +57,22 @@ export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawer
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          {tab === 'plugins' && <PluginsPage />}
-          {tab === 'profile' && <ProfilePage />}
-          {tab === 'memory' && <PerformancePage />}
-          {tab === 'worldbook' && <WorldbookPage />}
-          {tab === 'tasks' && <TasksPage />}
-          {tab === 'documents' && <DocumentsPage />}
-          {tab === 'skills' && <SkillsPage />}
-          {tab === 'mcp' && <McpPage />}
-          {tab === 'model' && <ModelPage onConfigChange={onConfigChange} />}
-          {tab === 'disclaimer' && <DisclaimerPage />}
+          <ErrorBoundary>
+            {tab === 'plugins' && <PluginsPage />}
+            {tab === 'persona' && (
+              <PersonaPage onOpenWorldbook={() => setTab('worldbook')} />
+            )}
+            {tab === 'profile' && <ProfilePage />}
+            {tab === 'memory' && <PerformancePage />}
+            {tab === 'worldbook' && <WorldbookPage />}
+            {tab === 'appearance' && <AppearancePage />}
+            {tab === 'tasks' && <TasksPage />}
+            {tab === 'documents' && <DocumentsPage />}
+            {tab === 'skills' && <SkillsPage />}
+            {tab === 'mcp' && <McpPage />}
+            {tab === 'model' && <ModelPage onConfigChange={onConfigChange} />}
+            {tab === 'disclaimer' && <DisclaimerPage />}
+          </ErrorBoundary>
         </div>
       </div>
     </div>
