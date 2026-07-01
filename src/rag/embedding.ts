@@ -71,6 +71,12 @@ export function formatEmbeddingApiError(status: number, body: string): string {
   if (lower.includes('batch size is invalid') || lower.includes('should not be larger than 10')) {
     return `Embeddings API ${status}：单次最多向量化 10 段文本，请重试导入（应用已自动分批，若仍报错请重启后再试）`;
   }
+  if (
+    status === 403 ||
+    lower.includes('forbidden') ||
+    lower.includes('无权') ||
+    lower.includes('business space')
+  ) {
     return (
       `Embeddings API ${status}：百炼业务空间无权访问。` +
       ' 请检查 Base URL 是否为「你的」接入地址（勿用文档里的 llm-xxxx 占位符），' +

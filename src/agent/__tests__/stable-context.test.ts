@@ -65,5 +65,7 @@ describe('stable context', () => {
   it('includes schedule hint when schedule tool is available', () => {
     const guide = formatToolGuideForPrompt([createScheduledTaskTool]);
     expect(guide).toContain('schedule_kind=once');
+    expect(guide).toContain('create_scheduled_task');
+    expect(guide).toContain('禁止仅口头答应');
   });
 });

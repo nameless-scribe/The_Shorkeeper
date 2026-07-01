@@ -30,7 +30,10 @@ const TOOL_SUMMARY: Record<string, string> = {
 };
 
 const SCHEDULE_TOOL_HINT =
-  '「每天几点提醒我…」→ schedule_kind=recurring + cron；「指定日期时间提醒一次」→ schedule_kind=once + run_at（ISO 本地时间，如 2026-06-30T10:00:00）。';
+  '用户要求定时/周期/每天/几点提醒时，必须调用 create_scheduled_task，禁止仅口头答应「已设好」。' +
+  '这是应用内弹窗提醒（需 Shorekeeper 保持运行），不是手机或系统闹钟。' +
+  '「每天几点提醒我…」→ schedule_kind=recurring + cron（如每天 17:30 → "30 17 * * *"）；' +
+  '「指定日期时间提醒一次」→ schedule_kind=once + run_at（ISO 本地时间，如 2026-06-30T17:30:00）。';
 
 /** 根据当前可用工具生成说明，避免技能白名单禁用后仍提示不可用工具 */
 export function formatToolGuideForPrompt(tools: ToolDefinition[]): string | null {

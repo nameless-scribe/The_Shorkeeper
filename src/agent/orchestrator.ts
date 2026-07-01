@@ -21,6 +21,8 @@ import {
   getRecentChatMessages,
   maybeCompressSession,
 } from '../memory/session-context';
+import { parseScheduleReminderIntent } from '../scheduler/reminder-intent';
+import { executeScheduleReminderIntent } from '../scheduler/reminder-handler';
 
 async function* streamText(runId: string, text: string): AsyncGenerator<AgUiEvent> {
   const chunkSize = 12;
@@ -58,6 +60,15 @@ export async function* runOrchestrator(
         signal,
       );
       const reply = buildArchiveConfirmation(result);
+      insertMessage(session.id, 'assistant', reply);
+      yield* streamText(runId, reply);
+      yield ev.runFinished(runId);
+      return;
+    }
+
+    const scheduleIntent = parseScheduleReminderIntent(userMessage);
+    if (scheduleIntent.triggered) {
+      const reply = await executeScheduleReminderIntent(scheduleIntent);
       insertMessage(session.id, 'assistant', reply);
       yield* streamText(runId, reply);
       yield ev.runFinished(runId);

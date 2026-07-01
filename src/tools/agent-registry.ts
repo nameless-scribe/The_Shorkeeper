@@ -11,6 +11,16 @@ import { ToolRegistry } from './registry';
 let cachedRegistry: ToolRegistry | null = null;
 let cacheKey = '';
 
+/** 核心伴侣能力：不受技能工具白名单限制 */
+const CORE_TOOL_NAMES = new Set([
+  'create_scheduled_task',
+  'list_scheduled_tasks',
+  'delete_scheduled_task',
+  'recall_memory',
+  'save_memory',
+  'search_worldbook',
+]);
+
 function buildCacheKey(skillIds: string[], mcpCount: number, pluginsKey: string): string {
   return `${skillIds.sort().join(',')}:${mcpCount}:${pluginsKey}`;
 }
@@ -40,7 +50,7 @@ function applySkillToolFilter(registry: ToolRegistry): ToolRegistry {
 
   const filtered = new ToolRegistry();
   for (const tool of registry.list()) {
-    if (allowed.has(tool.name)) {
+    if (allowed.has(tool.name) || CORE_TOOL_NAMES.has(tool.name)) {
       filtered.register(tool);
     }
   }

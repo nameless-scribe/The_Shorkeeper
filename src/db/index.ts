@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 import { getDatabaseDir, getDatabasePath, getWorkspaceDir } from '../config/paths';
 import { resolveSqlWasmPath } from './runtime-paths';
 import { runMigrations } from './migrate';
+import { ensurePersonaUpToDate } from './seed';
+import { SHOREKEEPER_PERSONA } from './seeds';
 
 const require = createRequire(import.meta.url);
 // sql.js 为 CJS 包，在 Electron ESM 主进程中用 require 加载更稳定
@@ -151,6 +153,9 @@ export async function openDatabase(dbPath: string = getDatabasePath()): Promise<
   const wrapped = new SqliteDb(SQL, db, dbPath);
   wrapped.exec(INIT_SQL);
   runMigrations(wrapped);
+  if (ensurePersonaUpToDate(wrapped)) {
+    console.info('[seed] 人设已升级至', SHOREKEEPER_PERSONA.version);
+  }
   return wrapped;
 }
 
