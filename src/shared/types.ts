@@ -357,3 +357,51 @@ export interface AppearanceSettingsInfo {
 }
 
 export type AppearanceAssetSlot = 'background' | 'keeperAvatar' | 'userAvatar';
+
+export type {
+  CosyVoiceModel,
+  PlaybackTarget,
+  SttLanguage,
+  VoiceSettings,
+  VoiceSource,
+} from '../voice/types';
+
+export interface VoiceSettingsInfo {
+  ttsEnabled: boolean;
+  ttsAutoPlay: boolean;
+  ttsModel: import('../voice/types').CosyVoiceModel;
+  ttsVoiceId: string;
+  ttsVoiceSource: import('../voice/types').VoiceSource;
+  activeClonedProfileId: string | null;
+  ttsRate: number;
+  ttsMaxChars: number;
+  sttEnabled: boolean;
+  sttLanguage: import('../voice/types').SttLanguage;
+  pushToTalk: boolean;
+  sttAutoSend: boolean;
+  playbackTarget: import('../voice/types').PlaybackTarget;
+  useChatApi: boolean;
+  voiceTtsEndpoint: string;
+  apiKeyConfigured: boolean;
+  voiceApiKeyMasked: string;
+  voiceConfigured: boolean;
+  /** Resolved CosyVoice HTTP endpoint (for troubleshooting). */
+  ttsEndpoint: string;
+}
+
+export type VoiceSettingsPatch = Partial<
+  Omit<
+    VoiceSettingsInfo,
+    'apiKeyConfigured' | 'voiceApiKeyMasked' | 'voiceConfigured' | 'ttsEndpoint'
+  >
+> & {
+  voiceApiKey?: string;
+};
+
+export interface VoiceSynthesizePayload {
+  text: string;
+}
+
+export type VoiceSynthesizeResult =
+  | { ok: true; audio: ArrayBuffer; mime: string }
+  | { ok: false; error: string };

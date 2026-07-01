@@ -7,6 +7,7 @@ export type SettingsTab =
   | 'memory'
   | 'worldbook'
   | 'appearance'
+  | 'voice'
   | 'tasks'
   | 'documents'
   | 'skills'
@@ -46,7 +47,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: '个性化',
-    items: [{ id: 'appearance', label: '外观', icon: '🎨' }],
+    items: [
+      { id: 'appearance', label: '外观', icon: '🎨' },
+      { id: 'voice', label: '语音', icon: '🔊' },
+    ],
   },
   {
     label: '数据与任务',
@@ -144,6 +148,7 @@ export const SETTINGS_TAB_TITLES: Record<SettingsTab, { title: string; subtitle:
   memory: { title: '记忆', subtitle: 'RAG 注入、自动提取与上下文压缩', icon: '🧠' },
   worldbook: { title: 'Worldbook', subtitle: '触发词与背景设定', icon: '📖' },
   appearance: { title: '外观', subtitle: '主题预设与背景、头像', icon: '🎨' },
+  voice: { title: '语音', subtitle: 'CosyVoice 朗读与复刻音色', icon: '🔊' },
   tasks: { title: '定时任务', subtitle: '提醒与静默 Agent 任务', icon: '⏰' },
   documents: { title: '泰提斯终端', subtitle: '知识库导入与管理', icon: '🛰' },
   skills: { title: '技能', subtitle: 'Agent Skills 包', icon: '✨' },

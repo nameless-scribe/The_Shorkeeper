@@ -41,6 +41,10 @@ import type {
   PermissionRequestPayload,
   FilesystemMode,
   SkillInfo,
+  VoiceSettingsInfo,
+  VoiceSettingsPatch,
+  VoiceSynthesizePayload,
+  VoiceSynthesizeResult,
 } from '../src/shared/types';
 
 const shorekeeperApi = {
@@ -300,6 +304,13 @@ const shorekeeperApi = {
     getSettings: (): Promise<WebSearchSettingsInfo> => ipcRenderer.invoke('web-search:getSettings'),
     saveSettings: (patch: WebSearchSettingsPatch): Promise<WebSearchSettingsInfo> =>
       ipcRenderer.invoke('web-search:saveSettings', patch),
+  },
+  voice: {
+    getSettings: (): Promise<VoiceSettingsInfo> => ipcRenderer.invoke('voice:getSettings'),
+    saveSettings: (patch: VoiceSettingsPatch): Promise<VoiceSettingsInfo> =>
+      ipcRenderer.invoke('voice:saveSettings', patch),
+    synthesize: (payload: VoiceSynthesizePayload): Promise<VoiceSynthesizeResult> =>
+      ipcRenderer.invoke('voice:synthesize', payload),
   },
   permission: {
     respond: (requestId: string, approved: boolean) =>

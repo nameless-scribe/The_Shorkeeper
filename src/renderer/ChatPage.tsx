@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AppStatus } from '@/shared/types';
 import { useAgentEvents } from './hooks/useAgentEvents';
 import { deriveAgentWorkflow } from './hooks/agent-workflow';
+import { useVoicePlayback } from './hooks/useVoicePlayback';
 import { AppBackground } from './components/AppBackground';
 import { TitleBar } from './components/TitleBar';
 import { AgentWorkflowStrip } from './components/AgentWorkflowStrip';
@@ -18,6 +19,14 @@ export function ChatPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+
+  const refreshVoiceSettings = useCallback(() => {
+    window.shorekeeper?.voice
+      .getSettings()
+      .then((s) => setVoiceEnabled(s.ttsEnabled && s.voiceConfigured))
+      .catch(console.error);
+  }, []);
 
   const bumpHistory = useCallback(() => {
     setHistoryRefreshKey((k) => k + 1);
@@ -33,10 +42,11 @@ export function ChatPage() {
     window.shorekeeper.sessions.current().then((s) => setSessionId(s.id)).catch(console.error);
 
     const off = window.shorekeeper.window.onOpenSettings(() => setSettingsOpen(true));
+    refreshVoiceSettings();
     return () => {
       off();
     };
-  }, [refreshStatus]);
+  }, [refreshStatus, refreshVoiceSettings]);
 
   const ensureSession = useCallback(async () => {
     if (sessionId) return sessionId;
@@ -50,6 +60,7 @@ export function ChatPage() {
   });
 
   const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
+  const { playText, playingId, loadingId, error: voiceError } = useVoicePlayback();
 
   const workflow = useMemo(
     () => deriveAgentWorkflow(messages, isRunning, permissionRequest),
@@ -98,10 +109,17 @@ export function ChatPage() {
             historyOpen={historyOpen}
           />
           <AgentWorkflowStrip status={workflow} />
-          <MessageList messages={messages} loading={loadingMessages} />
-          {error && (
+          <MessageList
+            messages={messages}
+            loading={loadingMessages}
+            voiceEnabled={voiceEnabled}
+            speechPlayingId={playingId}
+            speechLoadingId={loadingId}
+            onSpeechToggle={(id, text) => void playText(id, text)}
+          />
+          {(error || voiceError) && (
             <div className="mx-4 mb-2 rounded-xl border border-red-400/30 bg-red-950/40 px-3 py-2 text-xs text-red-200 no-drag">
-              {error}
+              {error ?? voiceError}
             </div>
           )}
           <InputBar
@@ -111,8 +129,14 @@ export function ChatPage() {
           />
           <SettingsDrawer
             open={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
-            onConfigChange={refreshStatus}
+            onClose={() => {
+              setSettingsOpen(false);
+              refreshVoiceSettings();
+            }}
+            onConfigChange={() => {
+              refreshStatus();
+              refreshVoiceSettings();
+            }}
           />
         </div>
       </div>

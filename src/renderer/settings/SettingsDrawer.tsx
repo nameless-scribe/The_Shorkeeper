@@ -12,6 +12,7 @@ import { ModelPage } from './ModelPage';
 import { PerformancePage } from './PerformancePage';
 import { PluginsPage } from './PluginsPage';
 import { DisclaimerPage } from './DisclaimerPage';
+import { VoicePage } from './VoicePage';
 import {
   SettingsSidebar,
   SETTINGS_TAB_TITLES,
@@ -66,6 +67,7 @@ export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawer
             {tab === 'memory' && <PerformancePage />}
             {tab === 'worldbook' && <WorldbookPage />}
             {tab === 'appearance' && <AppearancePage />}
+            {tab === 'voice' && <VoicePage />}
             {tab === 'tasks' && <TasksPage />}
             {tab === 'documents' && <DocumentsPage />}
             {tab === 'skills' && <SkillsPage />}

@@ -3,12 +3,17 @@ import { AgentAvatar } from './AgentAvatar';
 import { UserAvatar } from './UserAvatar';
 import { ToolCallCard } from './ToolCallCard';
 import { FileAttachmentCard } from './FileAttachmentCard';
+import { MessageSpeechButton } from './MessageSpeechButton';
 import { collectMessageFiles } from './file-attachment-utils';
 import type { UiMessage } from '../hooks/useAgentEvents';
 
 interface MessageListProps {
   messages: UiMessage[];
   loading?: boolean;
+  voiceEnabled?: boolean;
+  speechPlayingId?: string | null;
+  speechLoadingId?: string | null;
+  onSpeechToggle?: (messageId: string, text: string) => void;
 }
 
 function formatTime(ts?: number) {
@@ -19,7 +24,14 @@ function formatTime(ts?: number) {
 
 const SCROLL_PIN_THRESHOLD = 80;
 
-export function MessageList({ messages, loading = false }: MessageListProps) {
+export function MessageList({
+  messages,
+  loading = false,
+  voiceEnabled = false,
+  speechPlayingId = null,
+  speechLoadingId = null,
+  onSpeechToggle,
+}: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pinnedToBottomRef = useRef(true);
   const prevMessageCountRef = useRef(messages.length);
@@ -124,28 +136,43 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
                 </div>
               )}
               {showTextBubble && (
-                <div className="keeper-assistant-bubble keeper-glass-soft rounded-2xl rounded-tl-md border border-keeper-cyan/20 px-4 py-2.5 text-sm leading-relaxed text-keeper-ice shadow-sm">
-                  {msg.thinking && !msg.content ? (
-                    <span className="inline-flex items-center gap-2 text-keeper-ice/60">
-                      思考中
-                      <span className="inline-flex gap-1">
-                        {[0, 1, 2].map((i) => (
-                          <span
-                            key={i}
-                            className="h-1.5 w-1.5 animate-bounce rounded-full bg-keeper-cyan shadow-accent-sm"
-                            style={{ animationDelay: `${i * 160}ms` }}
-                          />
-                        ))}
+                <div className="flex items-start gap-2">
+                  <div className="keeper-assistant-bubble keeper-glass-soft min-w-0 flex-1 rounded-2xl rounded-tl-md border border-keeper-cyan/20 px-4 py-2.5 text-sm leading-relaxed text-keeper-ice shadow-sm">
+                    {msg.thinking && !msg.content ? (
+                      <span className="inline-flex items-center gap-2 text-keeper-ice/60">
+                        思考中
+                        <span className="inline-flex gap-1">
+                          {[0, 1, 2].map((i) => (
+                            <span
+                              key={i}
+                              className="h-1.5 w-1.5 animate-bounce rounded-full bg-keeper-cyan shadow-accent-sm"
+                              style={{ animationDelay: `${i * 160}ms` }}
+                            />
+                          ))}
+                        </span>
                       </span>
-                    </span>
-                  ) : (
-                    <p className="whitespace-pre-wrap break-words">
-                      {msg.content}
-                      {msg.streaming && (
-                        <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-keeper-cyan shadow-accent-sm" />
-                      )}
-                    </p>
-                  )}
+                    ) : (
+                      <p className="whitespace-pre-wrap break-words">
+                        {msg.content}
+                        {msg.streaming && (
+                          <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-keeper-cyan shadow-accent-sm" />
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  {voiceEnabled &&
+                    onSpeechToggle &&
+                    msg.content.trim() &&
+                    !msg.streaming &&
+                    !msg.thinking && (
+                      <MessageSpeechButton
+                        messageId={msg.id}
+                        text={msg.content}
+                        playing={speechPlayingId === msg.id}
+                        loading={speechLoadingId === msg.id}
+                        onToggle={onSpeechToggle}
+                      />
+                    )}
                 </div>
               )}
               {msg.createdAt && !msg.streaming && (

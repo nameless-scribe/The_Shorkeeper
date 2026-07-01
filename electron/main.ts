@@ -43,6 +43,7 @@ import { registerModelIpc } from './ipc/model';
 import { registerPerformanceIpc } from './ipc/performance';
 import { registerPluginsIpc } from './ipc/plugins';
 import { registerWebSearchIpc } from './ipc/web-search';
+import { registerVoiceIpc } from './ipc/voice';
 import { registerPermissionIpc, requestPermissionConfirm } from './ipc/permission';
 import { setPermissionConfirmer } from '../src/agent/permissions';
 import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron';
@@ -142,6 +143,7 @@ app.whenReady().then(async () => {
     registerPerformanceIpc();
     registerPluginsIpc();
     registerWebSearchIpc();
+    registerVoiceIpc();
     registerPermissionIpc();
     setPermissionConfirmer(requestPermissionConfirm);
 
