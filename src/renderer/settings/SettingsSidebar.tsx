@@ -1,3 +1,5 @@
+import { TETHYS_EMBLEM_URL } from '../public-assets';
+
 export type SettingsTab =
   | 'plugins'
   | 'persona'
@@ -49,7 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: '数据与任务',
     items: [
-      { id: 'documents', label: '文档', icon: '📄' },
+      { id: 'documents', label: '泰提斯终端', icon: '🛰' },
       { id: 'tasks', label: '定时任务', icon: '⏰' },
     ],
   },
@@ -74,8 +76,13 @@ export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
     <aside className="flex w-48 shrink-0 flex-col border-r border-keeper-cyan/10 bg-gradient-to-b from-keeper-navyDeep/80 to-keeper-navyDeep/95">
       <div className="shrink-0 border-b border-keeper-cyan/10 px-4 py-4">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-keeper-cyan/15 text-sm">
-            ⚓
+          <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-white/90 p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.15)]">
+            <img
+              src={TETHYS_EMBLEM_URL}
+              alt=""
+              className="h-full w-full object-contain"
+              draggable={false}
+            />
           </span>
           <div>
             <p className="text-sm font-semibold text-keeper-ice">守岸人</p>
@@ -101,7 +108,7 @@ export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
                       onClick={() => onTabChange(item.id)}
                       className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition ${
                         active
-                          ? 'bg-gradient-to-r from-keeper-cyan/20 to-keeper-cyan/5 font-medium text-keeper-cyan shadow-[inset_0_0_0_1px_rgba(0,212,255,0.25)]'
+                          ? 'bg-gradient-to-r from-keeper-cyan/20 to-keeper-cyan/5 font-medium text-keeper-cyan shadow-inset-accent'
                           : 'text-keeper-ice/60 hover:bg-white/5 hover:text-keeper-ice'
                       } ${item.disabled ? 'cursor-not-allowed opacity-40' : ''}`}
                     >
@@ -138,7 +145,7 @@ export const SETTINGS_TAB_TITLES: Record<SettingsTab, { title: string; subtitle:
   worldbook: { title: 'Worldbook', subtitle: '触发词与背景设定', icon: '📖' },
   appearance: { title: '外观', subtitle: '主题预设与背景、头像', icon: '🎨' },
   tasks: { title: '定时任务', subtitle: '提醒与静默 Agent 任务', icon: '⏰' },
-  documents: { title: '文档', subtitle: '知识库导入与管理', icon: '📄' },
+  documents: { title: '泰提斯终端', subtitle: '知识库导入与管理', icon: '🛰' },
   skills: { title: '技能', subtitle: 'Agent Skills 包', icon: '✨' },
   mcp: { title: 'MCP', subtitle: 'Model Context Protocol 服务器', icon: '🔌' },
   model: { title: 'API 设置', subtitle: '模型协议与接入配置', icon: '🔑' },

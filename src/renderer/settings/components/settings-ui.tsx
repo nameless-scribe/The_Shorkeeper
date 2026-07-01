@@ -128,7 +128,7 @@ export function SettingsPrimaryButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-xl bg-gradient-to-r from-keeper-cyan/30 to-keeper-cyan/15 py-2.5 text-sm font-medium text-keeper-cyan shadow-[0_0_20px_rgba(0,212,255,0.08)] transition hover:from-keeper-cyan/40 hover:to-keeper-cyan/20 disabled:opacity-40 ${className}`}
+      className={`rounded-xl bg-gradient-to-r from-keeper-cyan/30 to-keeper-cyan/15 py-2.5 text-sm font-medium text-keeper-cyan shadow-glow-md transition hover:from-keeper-cyan/40 hover:to-keeper-cyan/20 disabled:opacity-40 ${className}`}
     >
       {children}
     </button>

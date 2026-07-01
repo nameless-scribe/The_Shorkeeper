@@ -20,16 +20,14 @@ export default {
         sans: ['"Segoe UI"', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        cyan: '0 0 24px rgba(0, 212, 255, 0.35)',
-        cyanSm: '0 0 12px rgba(0, 212, 255, 0.2)',
-        glass: '0 8px 32px rgba(11, 16, 38, 0.45)',
+        cyan: '0 0 24px rgb(var(--sk-cyan-rgb) / 0.35)',
+        cyanSm: '0 0 12px rgb(var(--sk-cyan-rgb) / 0.2)',
+        glass: '0 8px 32px rgb(var(--sk-navy-deep-rgb) / 0.45)',
       },
       backgroundImage: {
-        'keeper-stars':
-          'radial-gradient(1.5px 1.5px at 18% 22%, rgba(0,212,255,0.55) 0%, transparent 100%), radial-gradient(1px 1px at 72% 18%, rgba(255,255,255,0.45) 0%, transparent 100%), radial-gradient(1px 1px at 45% 65%, rgba(168,201,240,0.35) 0%, transparent 100%), radial-gradient(1.5px 1.5px at 85% 78%, rgba(0,212,255,0.3) 0%, transparent 100%), radial-gradient(1px 1px at 8% 88%, rgba(255,255,255,0.25) 0%, transparent 100%)',
-        'keeper-user': 'linear-gradient(135deg, #274690 0%, #30BCED 55%, #89BBFE 100%)',
-        'keeper-glass':
-          'linear-gradient(145deg, rgba(39,70,144,0.75) 0%, rgba(10,17,40,0.85) 100%)',
+        'keeper-stars': 'var(--sk-stars-image)',
+        'keeper-user': 'var(--sk-user-bubble)',
+        'keeper-glass': 'var(--sk-glass)',
       },
       animation: {
         twinkle: 'twinkle 4s ease-in-out infinite',

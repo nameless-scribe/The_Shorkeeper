@@ -144,7 +144,7 @@ export function StatusPage() {
               <span
                 className={`absolute bottom-1.5 right-1.5 h-3.5 w-3.5 rounded-full border-2 border-keeper-navyDeep ${
                   state.online
-                    ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]'
+                    ? 'bg-emerald-400 shadow-emerald-md'
                     : 'bg-gray-500'
                 }`}
                 title={state.online ? '在线' : '离线'}
@@ -155,7 +155,7 @@ export function StatusPage() {
             <p className="mt-1 flex items-center gap-1.5 text-xs text-keeper-cyan/85">
               <span
                 className={`inline-block h-1.5 w-1.5 rounded-full ${
-                  state.online ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-gray-500'
+                  state.online ? 'bg-emerald-400 shadow-emerald-sm' : 'bg-gray-500'
                 }`}
               />
               {state.online ? '在线' : '离线'}
@@ -198,7 +198,7 @@ export function StatusPage() {
             <div className="relative flex items-end justify-between gap-3">
               <div>
                 <p className="text-[10px] tracking-wider text-keeper-ice/45">今日 Token</p>
-                <p className="mt-0.5 text-2xl font-semibold tabular-nums text-keeper-cyan drop-shadow-[0_0_12px_rgba(48,188,237,0.35)]">
+                <p className="mt-0.5 text-2xl font-semibold tabular-nums text-keeper-cyan drop-shadow-accent-md">
                   {state.tokenUsageToday.toLocaleString()}
                 </p>
               </div>

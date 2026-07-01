@@ -60,7 +60,7 @@ export function DockStatusBar() {
         <span className="inline-flex items-center gap-1 text-[10px] text-keeper-ice/40">
           <span
             className={`h-1.5 w-1.5 rounded-full ${
-              state.online ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-gray-500'
+              state.online ? 'bg-emerald-400 shadow-emerald-sm' : 'bg-gray-500'
             }`}
           />
           {state.online ? '在线' : '离线'}

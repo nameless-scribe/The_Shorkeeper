@@ -32,7 +32,7 @@ export function TitleBar({
         <p className="text-xs text-keeper-ice/60">
           {status?.apiConfigured ? (
             <>
-              <span className="text-keeper-cyan drop-shadow-[0_0_6px_rgba(0,212,255,0.8)]">◆</span>{' '}
+              <span className="text-keeper-cyan drop-shadow-accent">◆</span>{' '}
               {formatConnectionLabel(status)} 已连接
             </>
           ) : (

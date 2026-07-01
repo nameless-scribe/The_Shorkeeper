@@ -74,7 +74,7 @@ pnpm dist
 3. **设置 → 外观** — 切换主题或上传背景/头像
 4. **设置 → 技能** — 打开需要的技能（`skills/` 已内置）
 5. **设置 → 插件** — 按需开启联网搜索、文档生成等工具
-6. **设置 → 文档** — 导入知识库（支持 MD / TXT / PDF / DOCX）
+6. **设置 → 泰提斯终端** — 导入知识库（支持 MD / TXT / PDF / DOCX）
 
 自定义数据目录（可选）：环境变量 `SHOREKEEPER_DB_DIR` / `SHOREKEEPER_WORKSPACE_DIR`，或在安装目录旁放置 `.env`。
 

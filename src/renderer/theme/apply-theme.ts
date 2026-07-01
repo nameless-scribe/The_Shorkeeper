@@ -1,4 +1,5 @@
 import type { AppearanceSettingsInfo } from '../../shared/types';
+import { buildThemeCssVars, hexToRgbChannels } from '../../shared/theme-styles';
 
 const COLOR_KEYS = [
   'navyDeep',
@@ -21,24 +22,6 @@ const CSS_VAR_MAP: Record<(typeof COLOR_KEYS)[number], string> = {
   silver: '--sk-silver-rgb',
   silverLight: '--sk-silver-light-rgb',
 };
-
-function hexToRgbChannels(hex: string): string {
-  const normalized = hex.replace('#', '').trim();
-  const full =
-    normalized.length === 3
-      ? normalized
-          .split('')
-          .map((c) => c + c)
-          .join('')
-      : normalized;
-  if (full.length !== 6) {
-    return '10 17 40';
-  }
-  const r = Number.parseInt(full.slice(0, 2), 16);
-  const g = Number.parseInt(full.slice(2, 4), 16);
-  const b = Number.parseInt(full.slice(4, 6), 16);
-  return `${r} ${g} ${b}`;
-}
 
 function publicAssetUrl(filename: string): string {
   const base = import.meta.env.BASE_URL;
@@ -70,6 +53,11 @@ export function applyTheme(info: AppearanceSettingsInfo): void {
 
   for (const key of COLOR_KEYS) {
     root.style.setProperty(CSS_VAR_MAP[key], hexToRgbChannels(info.colors[key]));
+  }
+
+  const derived = buildThemeCssVars(info.colors);
+  for (const [key, value] of Object.entries(derived)) {
+    root.style.setProperty(key, value);
   }
 
   root.style.setProperty('--sk-veil-opacity', String(info.veilOpacity));

@@ -128,7 +128,7 @@ export function PermissionDialog({ request, onRespond }: PermissionDialogProps) 
       <button
         type="button"
         aria-label="关闭"
-        className="absolute inset-0 bg-[#050a18]/88 backdrop-blur-md"
+        className="absolute inset-0 bg-keeper-navyDeep/88 backdrop-blur-md"
         onClick={() => onRespond(false)}
       />
 
@@ -136,9 +136,9 @@ export function PermissionDialog({ request, onRespond }: PermissionDialogProps) 
         role="dialog"
         aria-modal="true"
         aria-labelledby="permission-dialog-title"
-        className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-keeper-cyan/30 bg-[#0d1630] shadow-[0_24px_80px_rgba(0,0,0,0.65)]"
+        className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-keeper-cyan/30 bg-keeper-navyDeep shadow-[0_24px_80px_rgba(0,0,0,0.65)]"
       >
-        <header className="flex items-center gap-3 border-b border-keeper-cyan/15 bg-[#111d3a] px-5 py-4">
+        <header className="flex items-center gap-3 border-b border-keeper-cyan/15 bg-keeper-navy/25 px-5 py-4">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-400/15 text-xl">
             🔐
           </span>
@@ -164,11 +164,11 @@ export function PermissionDialog({ request, onRespond }: PermissionDialogProps) 
           <ArgPreview args={request.args} />
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-keeper-cyan/15 bg-[#111d3a] px-5 py-4">
+        <footer className="flex items-center justify-end gap-2 border-t border-keeper-cyan/15 bg-keeper-navy/25 px-5 py-4">
           <button
             type="button"
             onClick={() => onRespond(false)}
-            className={`rounded-xl border border-keeper-silver/25 bg-[#0d1630] px-4 py-2.5 text-sm text-keeper-ice/75 transition hover:border-keeper-ice/35 hover:bg-white/5 hover:text-keeper-ice ${dialogButtonClass}`}
+            className={`rounded-xl border border-keeper-silver/25 bg-keeper-navyDeep px-4 py-2.5 text-sm text-keeper-ice/75 transition hover:border-keeper-ice/35 hover:bg-white/5 hover:text-keeper-ice ${dialogButtonClass}`}
           >
             拒绝
           </button>

@@ -105,12 +105,12 @@ export function loadEmbeddingConfig(): EmbeddingApiConfig {
 
   if (!apiKey) {
     throw new Error(
-      '未配置 Embedding API Key。请在 设置 → 文档 → 向量 API 填写，或在 .env 设置 EMBEDDING_API_KEY',
+      '未配置 Embedding API Key。请在 设置 → 泰提斯终端 → 向量 API 填写，或在 .env 设置 EMBEDDING_API_KEY',
     );
   }
   if (!baseUrl) {
     throw new Error(
-      '未配置 Embedding 接入 URL。请在 设置 → 文档 → 向量 API 填写，或在 .env 设置 EMBEDDING_BASE_URL',
+      '未配置 Embedding 接入 URL。请在 设置 → 泰提斯终端 → 向量 API 填写，或在 .env 设置 EMBEDDING_BASE_URL',
     );
   }
 

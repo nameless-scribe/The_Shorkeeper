@@ -25,7 +25,7 @@ export function SettingsSegmented<T extends string>({
             onClick={() => onChange(opt.value)}
             className={`flex-1 rounded-lg px-3 py-2 text-xs transition ${
               active
-                ? 'bg-keeper-cyan/20 font-medium text-keeper-cyan shadow-[inset_0_0_0_1px_rgba(0,212,255,0.2)]'
+                ? 'bg-keeper-cyan/20 font-medium text-keeper-cyan shadow-inset-accent-sm'
                 : 'text-keeper-ice/55 hover:text-keeper-ice/80'
             }`}
           >

@@ -228,7 +228,7 @@ export function buildArchiveConfirmation(result: ArchiveConversationResult): str
   if (result.skippedDuplicate) {
     return `检测到与已有知识库文档「${result.document.filename}」内容高度相似，已跳过重复归档。
 
-如需更新该文档，请在设置 → 文档中重新导入或重建向量。`;
+如需更新该文档，请在设置 → 泰提斯终端中重新导入或重建向量。`;
   }
 
   return `已将对话提炼并写入知识库。

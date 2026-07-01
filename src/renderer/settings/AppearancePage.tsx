@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AppearanceSettingsInfo } from '@/shared/types';
 import { getResolvedKeeperAvatarSrc, getResolvedUserAvatarSrc } from '../theme/apply-theme';
 import {
-  SettingsBadge,
   SettingsField,
   SettingsIntro,
   SettingsLoading,
@@ -11,6 +10,7 @@ import {
   SettingsPrimaryButton,
   SettingsSecondaryButton,
 } from './components/settings-ui';
+import { SettingsThemeSelect } from './components/SettingsThemeSelect';
 
 function resolvePreviewBackground(info: AppearanceSettingsInfo): string {
   if (info.assets.backgroundUrl) return info.assets.backgroundUrl;
@@ -42,7 +42,9 @@ export function AppearancePage() {
     setError(null);
     try {
       const result = await action();
-      if (result) setInfo(result);
+      if (result) {
+        setInfo(result);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -68,7 +70,8 @@ export function AppearancePage() {
   return (
     <SettingsPageShell>
       <SettingsIntro>
-        外观仅影响界面配色与背景，不会改变 Agent 人格。Dock 快捷栏保持透明，仅同步主题色与头像。
+        主题预设会切换配色、气泡、遮罩与强调色。<strong>已上传的自定义壁纸会保留</strong>
+        ；若需恢复内置立绘，请点「恢复预设背景」。
       </SettingsIntro>
 
       {error && (
@@ -77,35 +80,14 @@ export function AppearancePage() {
         </p>
       )}
 
-      <SettingsPanel title="主题预设" subtitle="点击即时切换" icon="🎨">
-        <div className="grid grid-cols-3 gap-2">
-          {info.presets.map((preset) => {
-            const active = preset.id === info.presetId;
-            return (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() =>
-                  void runAction(() => window.shorekeeper.appearance.setPreset(preset.id))
-                }
-                className={`rounded-xl border p-3 text-left transition ${
-                  active
-                    ? 'border-keeper-cyan/50 bg-keeper-cyan/10 shadow-cyanSm'
-                    : 'border-keeper-silver/15 bg-keeper-navyDeep/40 hover:border-keeper-cyan/25'
-                }`}
-              >
-                <div
-                  className="mb-2 h-8 rounded-lg"
-                  style={{
-                    background: `linear-gradient(135deg, ${info.presetId === preset.id ? info.colors.navyDeep : '#1a1a2e'}, ${info.presetId === preset.id ? info.colors.cyan : '#30bced'})`,
-                  }}
-                />
-                <p className="text-xs font-medium text-keeper-ice">{preset.name}</p>
-                {active && <SettingsBadge tone="cyan">当前</SettingsBadge>}
-              </button>
-            );
-          })}
-        </div>
+      <SettingsPanel title="主题预设" subtitle="下拉选择即时切换" icon="🎨">
+        <SettingsThemeSelect
+          presets={info.presets}
+          value={info.presetId}
+          onChange={(presetId) =>
+            void runAction(() => window.shorekeeper.appearance.setPreset(presetId))
+          }
+        />
       </SettingsPanel>
 
       <SettingsPanel title="背景" subtitle="聊天窗与状态面板" icon="🖼️">

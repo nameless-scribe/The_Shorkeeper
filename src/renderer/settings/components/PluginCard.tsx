@@ -12,7 +12,7 @@ export function PluginCard({ icon, title, description, control, footer }: Plugin
   return (
     <div className="keeper-glass-soft rounded-2xl border border-keeper-silver/12 px-4 py-3.5 transition hover:border-keeper-silver/20">
       <div className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-keeper-cyan/15 to-keeper-cyan/5 text-lg shadow-[inset_0_0_12px_rgba(0,212,255,0.06)]">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-keeper-cyan/15 to-keeper-cyan/5 text-lg shadow-inset-accent-soft">
           {icon}
         </span>
         <div className="min-w-0 flex-1">
@@ -34,7 +34,7 @@ export function PluginStatusDot({ active }: { active: boolean }) {
   return (
     <span
       className={`inline-block h-2.5 w-2.5 rounded-full ${
-        active ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-keeper-silver/30'
+        active ? 'bg-emerald-400 shadow-emerald-dot' : 'bg-keeper-silver/30'
       }`}
       title={active ? '已启用' : '已关闭'}
     />

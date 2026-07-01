@@ -323,6 +323,9 @@ export interface ThemePresetSummary {
   id: string;
   name: string;
   description?: string;
+  /** 预设色板预览（主题卡片用） */
+  swatchDeep: string;
+  swatchAccent: string;
 }
 
 export interface AppearanceAssetUrls {

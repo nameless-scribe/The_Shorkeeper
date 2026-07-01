@@ -7,7 +7,7 @@ import { ReminderPage } from './reminder/ReminderPage';
 import { DockPage } from './dock/DockPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RuntimeGate } from './components/RuntimeGate';
-import { AppearanceBootstrap } from './theme/AppearanceBootstrap';
+import { ThemeProvider } from './theme/ThemeProvider';
 import './styles/globals.css';
 
 function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' | 'dock' {
@@ -38,9 +38,9 @@ ReactDOM.createRoot(root).render(
   <React.StrictMode>
     <ErrorBoundary>
       <RuntimeGate>
-        <AppearanceBootstrap>
+        <ThemeProvider>
           <App />
-        </AppearanceBootstrap>
+        </ThemeProvider>
       </RuntimeGate>
     </ErrorBoundary>
   </React.StrictMode>,

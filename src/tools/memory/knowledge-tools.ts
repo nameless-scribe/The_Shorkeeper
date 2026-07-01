@@ -30,7 +30,7 @@ export const searchKnowledgeTool: ToolDefinition = {
     const documents = listDocuments();
 
     if (!documents.length) {
-      return { success: true, output: '知识库中暂无导入文档（设置 → 文档 → 导入 MD/TXT）。' };
+      return { success: true, output: '知识库中暂无导入文档（设置 → 泰提斯终端 → 导入 MD/TXT）。' };
     }
 
     if (!query?.trim()) {

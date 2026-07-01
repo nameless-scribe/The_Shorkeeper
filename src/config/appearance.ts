@@ -40,7 +40,12 @@ function getVeilOpacity(presetDefault: number, hasCustomBackground: boolean): nu
 
 export function setAppearancePreset(presetId: string): AppearanceSettingsInfo {
   const preset = getThemePreset(presetId);
+  const assetsBefore = getThemeAssetsRecord();
   setSetting(PRESET_KEY, preset.id);
+  const assetsAfter = getThemeAssetsRecord();
+  if (assetsBefore.background && !assetsAfter.background) {
+    throw new Error('setAppearancePreset must not clear custom background');
+  }
   return getAppearanceSettings();
 }
 
@@ -65,6 +70,8 @@ export function getAppearanceSettings(): AppearanceSettingsInfo {
     id: p.id,
     name: p.name,
     description: p.description,
+    swatchDeep: p.colors.navyDeep,
+    swatchAccent: p.colors.cyan,
   }));
 
   const customBg = resolveAppearanceAssetUrl(assetsRecord.background);

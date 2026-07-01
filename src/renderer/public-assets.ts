@@ -3,3 +3,4 @@ const base = import.meta.env.BASE_URL;
 
 export const KEEPER_AVATAR_URL = `${base}keeper-avatar.png`;
 export const USER_AVATAR_URL = `${base}user-avatar.png`;
+export const TETHYS_EMBLEM_URL = `${base}tethys-emblem.png`;

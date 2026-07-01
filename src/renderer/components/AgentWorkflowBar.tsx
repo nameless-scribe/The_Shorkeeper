@@ -14,7 +14,7 @@ function StepNode({ step }: { step: WorkflowStep }) {
       <span
         className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-all ${
           isActive
-            ? 'bg-keeper-cyan text-keeper-navyDeep shadow-[0_0_12px_rgba(48,188,237,0.65)]'
+            ? 'bg-keeper-cyan text-keeper-navyDeep shadow-accent'
             : isDone
               ? 'bg-emerald-500/30 text-emerald-200'
               : isSkipped

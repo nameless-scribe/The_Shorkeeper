@@ -55,13 +55,13 @@ function ProfileCard({
       onClick={onSelect}
       className={`group relative w-full overflow-hidden rounded-2xl border p-3 text-left transition-all duration-200 ${
         selected
-          ? 'border-keeper-cyan/50 bg-gradient-to-br from-keeper-cyan/15 via-keeper-navyDeep/60 to-keeper-navyDeep/40 shadow-[0_0_24px_rgba(0,212,255,0.08)]'
+          ? 'border-keeper-cyan/50 bg-gradient-to-br from-keeper-cyan/15 via-keeper-navyDeep/60 to-keeper-navyDeep/40 shadow-glow-lg'
           : 'border-keeper-silver/12 bg-keeper-navyDeep/35 hover:border-keeper-silver/25 hover:bg-keeper-navyDeep/50'
       }`}
     >
       {active && (
         <span className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-full bg-keeper-cyan/20 px-2 py-0.5 text-[10px] font-medium text-keeper-cyan">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-keeper-cyan shadow-[0_0_6px_rgba(0,212,255,0.9)]" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-keeper-cyan shadow-accent-sm" />
           使用中
         </span>
       )}
@@ -70,7 +70,7 @@ function ProfileCard({
         <span
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg transition ${
             selected
-              ? 'bg-keeper-cyan/20 shadow-[inset_0_0_12px_rgba(0,212,255,0.15)]'
+              ? 'bg-keeper-cyan/20 shadow-inset-accent-glow'
               : 'bg-keeper-silver/10 group-hover:bg-keeper-silver/15'
           }`}
         >

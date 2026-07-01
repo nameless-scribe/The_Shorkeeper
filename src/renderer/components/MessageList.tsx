@@ -89,7 +89,7 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
                   </div>
                 )}
                 {msg.content && (
-                  <div className="rounded-2xl rounded-tr-md bg-keeper-user px-4 py-2.5 text-sm leading-relaxed text-white shadow-cyanSm">
+                  <div className="keeper-user-bubble rounded-2xl rounded-tr-md px-4 py-2.5 text-sm leading-relaxed text-white shadow-cyanSm">
                     <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                   </div>
                 )}
@@ -124,7 +124,7 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
                 </div>
               )}
               {showTextBubble && (
-                <div className="keeper-glass-soft rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed text-keeper-ice shadow-sm">
+                <div className="keeper-assistant-bubble keeper-glass-soft rounded-2xl rounded-tl-md border border-keeper-cyan/20 px-4 py-2.5 text-sm leading-relaxed text-keeper-ice shadow-sm">
                   {msg.thinking && !msg.content ? (
                     <span className="inline-flex items-center gap-2 text-keeper-ice/60">
                       思考中
@@ -132,7 +132,7 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
                         {[0, 1, 2].map((i) => (
                           <span
                             key={i}
-                            className="h-1.5 w-1.5 animate-bounce rounded-full bg-keeper-cyan shadow-[0_0_6px_#30BCED]"
+                            className="h-1.5 w-1.5 animate-bounce rounded-full bg-keeper-cyan shadow-accent-sm"
                             style={{ animationDelay: `${i * 160}ms` }}
                           />
                         ))}
@@ -142,7 +142,7 @@ export function MessageList({ messages, loading = false }: MessageListProps) {
                     <p className="whitespace-pre-wrap break-words">
                       {msg.content}
                       {msg.streaming && (
-                        <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-keeper-cyan shadow-[0_0_8px_#30BCED]" />
+                        <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-keeper-cyan shadow-accent-sm" />
                       )}
                     </p>
                   )}
