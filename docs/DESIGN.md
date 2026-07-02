@@ -1,8 +1,8 @@
 # The Shorekeeper 设计文档
 
-> 版本：0.2.1  
-> 更新日期：2026-07-01  
-> 状态：**M1–M7 已完成**（含 RAG 优化、人设/外观/主题、插件与好感度）；**M8 桌宠**待做
+> 版本：0.3.0  
+> 更新日期：2026-07-02  
+> 状态：**M1–M7 已完成**（含 RAG 优化、人设/外观/主题、插件与好感度、自动更新）；**语音 V1 部分落地**（百炼 TTS 按需/自动朗读）；**M8 桌宠**待做
 
 ---
 
@@ -202,7 +202,7 @@ interface AgentRunRequest {
 
 **上下文组装顺序**（`context-builder.ts`）：
 
-1. **稳定前缀**（`stable-context.ts`）：人设 System Prompt + 工具说明 + 技能 fragment（利于 prompt cache）
+1. **稳定前缀**（`stable-context.ts`）：人设 System Prompt + **当前可用工具**摘要（`formatToolGuideForPrompt`）+ 技能 fragment（利于 prompt cache）
 2. **动态块**（随 query 变化）：
    - 好感度阶段指引（`affection`）
    - 用户画像摘要（`user_profile`）
@@ -247,6 +247,8 @@ interface AgentRunRequest {
 - 默认 `maxToolRounds = 10`，防止死循环
 - 同一会话通过 `session-run-lock` 串行运行，新消息需等待或中断当前 run
 - 用户可在设置中中断进行中的 run（`AbortController`）
+- 下一条消息前通过 `session-background` 等待同会话后台任务（记忆提取、摘要压缩）完成，避免竞态
+- 用户消息可触发 **定时提醒意图**（`scheduler/reminder-intent`）或 **对话归档知识库**（`rag/conversation-knowledge`），在 Agent loop 之前短路处理
 
 ### 5.3 工具系统 (Tool Registry)
 
@@ -275,7 +277,7 @@ interface ToolContext {
 |------|------|
 | 文件 | `read_file`, `write_file`, `list_dir` |
 | 网络 | `web_search`（博查）, `fetch_url`, `get_weather`, `translate` |
-| 文档 | `convert_to_markdown`, `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`, `read_xlsx` |
+| 文档 | `convert_to_markdown`, `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`, `read_xlsx`（工作区 Excel） |
 | 记忆 / 知识 | `recall_memory`, `save_memory`, `search_worldbook`, `search_knowledge` |
 | 生活 | `bookkeeping`, `travel_plan` |
 | 日程 | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task` |
@@ -406,11 +408,36 @@ interface Skill {
 - 启动时连接已启用 Server，发现工具并注册
 - 设置页支持添加/测试/禁用 Server
 
-### 5.9 TTS
+### 5.9 语音子系统（TTS）
 
-- 主进程调用 TTS 引擎，生成音频 buffer
-- 通过 `tts_chunk` 事件推送渲染进程播放
-- 联动 Live2D：`speak_start` / `speak_end` 控制口型参数（若模型支持）
+> 专项计划：[superpowers/plans/2026-07-01-voice.md](./superpowers/plans/2026-07-01-voice.md)  
+> **当前进度：V1 部分完成**（按需朗读 + 自动播放）；STT、声音复刻 UI、Orchestrator 侧 `tts_chunk` 广播、M8 口型联动待做。
+
+**引擎**：阿里云百炼 **CosyVoice**（`src/voice/bailian-tts.ts`），替代 M6 阶段移除的 edge-tts。
+
+**分层**：
+
+| 层级 | 模块 | 职责 |
+|------|------|------|
+| 配置 | `src/config/voice.ts` | 读写 `voice.settings` / `voice.profiles`（复刻列表类型已定义，UI 待 V1.5） |
+| 主进程 | `synthesize-chunk.ts`、`electron/ipc/voice.ts` | 合成单段音频；`voice:synthesize` 返回 speak/pause 步骤序列 |
+| 文本清洗 | `text-for-speech.ts` | 剥离 Markdown；解析 RP **动作**（`*…*`）与 **对白**，动作后插入 pause |
+| 渲染进程 | `useVoicePlayback.ts`、`MessageSpeechButton.tsx` | Web Audio 播放；消息 🔊 按需朗读 |
+| 自动播放 | `ChatPage.tsx` | `run_finished` 后在渲染进程调用 `voice.synthesize`（**非** Orchestrator 广播） |
+
+**配置要点**（设置 → **语音**）：
+
+- `ttsVoiceId`：百炼预设或复刻 `voice_id`（用户手动填写；复刻创建流程见 V1.5 计划）
+- `useChatApi`：复用 Chat API Key，或独立 `voiceApiKey` + `voiceTtsEndpoint`
+- `ttsAutoPlay`：Agent 回复结束后自动朗读（默认关）
+- `ttsPlaybackGain`：渲染端 Web Audio 增益（0.5–3）
+
+**与 AG-UI 的关系**：
+
+- 类型中保留 `tts_chunk`，但**当前实现走 IPC `voice:synthesize`**，不经 `agent:event` 流式推送
+- `tts_start` / `tts_end` / `speak_start` / `speak_end` 尚未实现；M8 口型联动时再接入 Orchestrator 侧 pipeline
+
+**待做（按计划）**：STT 语音输入（V3）、百炼声音复刻管理 UI（V1.5）、Orchestrator `tts-pipeline` 与事件广播（V2）、桌宠口型（V4）
 
 ### 5.10 权限控制
 
@@ -472,6 +499,26 @@ interface PermissionPolicy {
 
 **自用注意**：使用官方示例或明确允许个人使用的模型；模型目录加入 `.gitignore`。
 
+### 5.14 应用自动更新
+
+- 打包版集成 **electron-updater**（`electron/update/auto-updater.ts`）
+- 启动约 8s 后静默检查；设置 → **关于** 可手动检查与安装
+- IPC：`update:getVersion`、`update:check`、`update:install`；状态经 `update:status` 广播
+- 开发模式（`pnpm dev`）不支持更新检查
+
+### 5.15 Agent 工作流指示（UI）
+
+聊天窗顶栏下方 **AgentWorkflowStrip** 展示当前 run 阶段：
+
+| 步骤 | 含义 |
+|------|------|
+| 准备 | 会话就绪、等待模型 |
+| 思考 | 流式输出 / 推理中 |
+| 工具 | 工具调用或权限确认 |
+| 输出 | 生成最终回复 |
+
+由 `deriveAgentWorkflow`（`src/renderer/hooks/agent-workflow.ts`）根据消息流、`isRunning`、权限弹窗推导；权限等待时 headline 为「等待确认」。
+
 ---
 
 ## 6. AG-UI 事件协议
@@ -484,15 +531,15 @@ interface PermissionPolicy {
 type AgUiEvent =
   | { type: 'run_started'; runId: string; sessionId: string }
   | { type: 'run_finished'; runId: string }
-  | { type: 'run_error'; runId: string; message: string }
+  | { type: 'run_error'; runId: string; message: string; sessionId?: string }
   | { type: 'text_delta'; runId: string; delta: string }
   | { type: 'reasoning_delta'; runId: string; delta: string }
   | { type: 'tool_call_start'; runId: string; callId: string; name: string; args: unknown }
   | { type: 'tool_call_end'; runId: string; callId: string; result: ToolResult }
   | { type: 'state_update'; state: AgentPresenceState }
   | { type: 'live2d_motion'; motion: string; priority?: number }
-  | { type: 'tts_chunk'; runId: string; audio: ArrayBuffer }
-  | { type: 'usage'; promptTokens: number; completionTokens: number };
+  | { type: 'tts_chunk'; runId: string; audio: ArrayBuffer }  // 类型保留；TTS 当前走 voice IPC
+  | { type: 'usage'; runId: string; promptTokens: number; completionTokens: number; cachedTokens?: number };
 ```
 
 ### 6.2 传输方式
@@ -508,6 +555,7 @@ interface AgentPresenceState {
   online: boolean;
   mood: 'happy' | 'calm' | 'sleepy' | 'thinking';
   activity: 'idle' | 'accompanying' | 'feeding' | 'working';
+  affectionStage: string;   // 好感度阶段名（如「守望」）
   currentModel: string;
   tokenUsageToday: number;
 }
@@ -537,6 +585,8 @@ interface AgentPresenceState {
 |----|------|------|
 | id | TEXT PK | UUID |
 | title | TEXT | 会话标题（首条消息摘要） |
+| archived | INTEGER | 0/1，归档标记 |
+| compressed | INTEGER | 0/1，长会话已压缩 |
 | created_at | INTEGER | Unix ms |
 | updated_at | INTEGER | Unix ms |
 
@@ -569,6 +619,28 @@ interface AgentPresenceState {
 | importance | REAL | 0-1 |
 | source_session_id | TEXT | 来源会话 |
 | created_at | INTEGER | Unix ms（更新时刷新） |
+
+#### session_summaries
+
+| 列 | 类型 | 说明 |
+|----|------|------|
+| session_id | TEXT PK | 所属会话 |
+| summary | TEXT | 压缩后的早期对话摘要 |
+| compressed_up_to_message_id | TEXT | 已压缩到的最后一条 message id |
+| updated_at | INTEGER | Unix ms |
+
+#### bookkeeping_entries
+
+| 列 | 类型 | 说明 |
+|----|------|------|
+| id | TEXT PK | UUID |
+| session_id | TEXT | 可选，来源会话 |
+| category | TEXT | 分类 |
+| amount | REAL | 金额 |
+| currency | TEXT | 默认 CNY |
+| note | TEXT | 备注 |
+| entry_type | TEXT | income / expense 等 |
+| created_at | INTEGER | Unix ms |
 
 #### worldbook_entries
 
@@ -623,7 +695,7 @@ CREATE VIRTUAL TABLE document_chunks_fts USING fts5(
 | model | TEXT | |
 | prompt_tokens | INTEGER | |
 | completion_tokens | INTEGER | |
-| cached_tokens | INTEGER | 显式缓存命中（可选） |
+| cached_tokens | INTEGER | 显式缓存命中（prompt cache） |
 | created_at | INTEGER | Unix ms |
 
 #### scheduled_tasks
@@ -670,8 +742,10 @@ CREATE VIRTUAL TABLE worldbook_fts USING fts5(
 
 ```
 sessions 1───N messages
+sessions 1───0..1 session_summaries
 documents 1───N document_chunks
 sessions 1───N token_usage (optional)
+sessions 1───N bookkeeping_entries (optional)
 ```
 
 ---
@@ -690,11 +764,13 @@ sessions 1───N token_usage (optional)
 
 ### 8.2 聊天窗
 
+- 顶栏下方 **AgentWorkflowStrip**：运行中展示准备 → 思考 → 工具 → 输出四步进度
 - 左右气泡：Agent 左，用户右
 - Agent 头像：Live2D 截图或静态头像
 - 顶栏：模型名、连接状态、Style / Reasoning 下拉
 - 工具调用：折叠卡片展示名称、参数、结果
 - 推理过程：可折叠灰色区域
+- Assistant 消息 **🔊** 按钮：按需 TTS 朗读（设置 → 语音）
 
 ### 8.3 状态面板
 
@@ -735,6 +811,8 @@ sessions 1───N token_usage (optional)
 | 模型列表 | `app_settings` | 端点、模型 ID、协议类型 |
 | 人设 Prompt | `app_settings` | `persona.system_prompt`、`persona.version`（`custom` 不自动覆盖）、`persona.display_name` |
 | 外观主题 | `app_settings` + `appearance/` | `ui.theme.preset_id`、`ui.theme.assets`、`ui.theme.veil_opacity`；用户图片存 `D:\SQLlite\appearance\` |
+| 语音 | `app_settings` | `voice.settings`（TTS/STT 行为）、`voice.profiles`（复刻音色列表，类型已备） |
+| 性能 / RAG | `app_settings` 或 `.env` | `RAG_*`、`MAX_HISTORY_MESSAGES`、`memorySemanticInContext` 等 |
 | 权限策略 | `app_settings` | filesystem roots 等 |
 | 窗口位置 | `app_settings` | 各窗 last bounds（含 `window.bounds.dock`） |
 | Dock 偏好 | `app_settings` | alwaysOnTop、positionLocked |
@@ -759,56 +837,60 @@ TheShorekeeper/
 │   ├── MODELS.md                 # 模型与 API / Embedding 配置
 │   ├── UI-THEME.md               # 主题预设、壁纸、CSS 变量
 │   ├── PLAN.md                   # 里程碑实施计划（M1–M8）
-│   └── superpowers/              # 进行中的专项计划（RAG / 稳定性）
+│   └── superpowers/              # 进行中的专项计划（语音 / RAG 等）
 │       ├── README.md
 │       └── plans/
 ├── electron/
-│   ├── main.ts                   # 应用入口：env、DB、IPC、托盘、调度
+│   ├── main.ts                   # 应用入口：env、DB、IPC、托盘、调度、自动更新
 │   ├── preload.ts                # contextBridge API（window.shorekeeper）
 │   ├── tray.ts
 │   ├── paths.ts                  # 打包态资源路径
 │   ├── protocol/
 │   │   └── appearance-assets.ts  # sk-asset:// 本地外观文件
+│   ├── update/
+│   │   └── auto-updater.ts       # electron-updater 检查与安装
 │   ├── ipc/                      # 见下表「IPC 模块」
 │   ├── windows/                  # chat / status / schedule / dock / reminder / broadcast
 │   ├── dock/                     # Dock 显隐、偏好
 │   ├── scheduler/cron.ts         # 定时任务执行
-│   ├── state/presence.ts         # Agent 在线 / 心情 / 活动
+│   ├── state/presence.ts         # Agent 在线 / 心情 / 活动 / 好感阶段
 │   ├── tasks/events.ts           # 任务变更广播
 │   └── reminder/popup.ts
 ├── src/
-│   ├── agent/                    # orchestrator, loop, context-builder, session-run-lock
+│   ├── agent/                    # orchestrator, loop, context-builder, stable-context, session-background, session-run-lock
 │   ├── affection/
 │   ├── config/
 │   │   ├── paths.ts, bootstrap-data-layout.ts
-│   │   ├── persona.ts, appearance.ts, appearance-assets.ts
+│   │   ├── persona.ts, appearance.ts, voice.ts
 │   │   ├── performance.ts, plugins.ts, web-search-config.ts
 │   │   └── themes/               # ThemePreset 定义（9 套）
-│   ├── models/                   # openai-compatible, anthropic-like, embedding-config
+│   ├── models/                   # openai-compatible, anthropic-like, embedding-config, stream-chat
 │   ├── tools/                    # agent-registry + 分类子目录
-│   │   ├── file/                 # read / write / list_dir
+│   │   ├── file/                 # read / write / list_dir / artifact / workspace-hints
 │   │   ├── web/                  # web_search, fetch, weather + search-providers/
 │   │   ├── doc/                  # 文档生成、Markdown 转换
 │   │   ├── memory/               # recall / knowledge 工具
 │   │   ├── life/                 # 记账、旅行规划等
 │   │   └── schedule/             # 定时任务工具
-│   ├── memory/                   # 长期记忆、Worldbook、摘要、提取
+│   ├── memory/                   # 长期记忆、Worldbook、摘要、提取、session-context
 │   ├── rag/                      # 导入、分块、FTS+向量混合检索、缓存
+│   ├── voice/                    # 百炼 CosyVoice TTS、朗读文本清洗
 │   ├── mcp/client.ts
 │   ├── skills/                   # 技能加载（运行时读 skills/）
-│   ├── scheduler/                # reminder 意图解析
+│   ├── scheduler/                # reminder 意图解析与执行
 │   ├── session/                  # 活跃会话 id
 │   ├── workspace/                # 工作区导入、扩展名白名单
 │   ├── shared/                   # types, theme-styles, appearance-asset-url
-│   └── db/                       # sql.js、INIT_SQL、migrations、repositories、seeds
+│   └── db/                       # sql.js、migrations（0000–0011）、repositories、seeds
 ├── src/renderer/                 # React（main.tsx + ?panel= 路由）
 │   ├── ChatPage.tsx
-│   ├── components/               # MessageList, AppBackground, PermissionDialog, …
-│   ├── settings/                 # SettingsDrawer + 各设置子页
+│   ├── components/               # MessageList, AgentWorkflowStrip, MessageSpeechButton, PermissionDialog, …
+│   ├── hooks/                    # useAgentEvents, useVoicePlayback, agent-workflow
+│   ├── settings/                 # SettingsDrawer + 各设置子页（含 VoicePage、AboutPage）
 │   ├── theme/                    # ThemeProvider, apply-theme, useTheme
 │   ├── dock/ | status/ | schedule/ | reminder/
 │   └── styles/globals.css        # --sk-* CSS 变量与 keeper-* 工具类
-├── skills/                       # 仓库内技能包（SKILL.md，打入安装包）
+├── skills/                       # 技能包：example, excel, doc-to-markdown, workspace-doc-edit
 ├── scripts/                      # db:init / seed / cleanup / reset-keep-models
 ├── public/                       # keeper-bg.png、默认头像等静态资源
 ├── .env.example
@@ -833,6 +915,8 @@ TheShorekeeper/
 | `presence.ts` / `stats.ts` | 状态与 Token 统计 |
 | `workspace.ts` | 工作区文件、拖拽导入 |
 | `permission.ts` | 工具执行确认弹窗 |
+| `voice.ts` | TTS 合成与语音设置 |
+| `update.ts` | 应用版本与自动更新 |
 | `window.ts` / `dock.ts` | 多窗管理与 Dock |
 
 ### 打包产物（`pnpm dist`）
@@ -852,6 +936,7 @@ TheShorekeeper/
 | `shorekeeper.db` | 会话、消息、记忆、设置、RAG 元数据 |
 | `workspace/` | Agent 可读写文件、知识库副本 |
 | `appearance/` | 用户上传的背景与头像文件 |
+| `appearance/voice-samples/` | （计划）声音复刻样本备份 |
 
 ---
 
@@ -864,10 +949,11 @@ TheShorekeeper/
 | **M3** | 记忆 | ✅ memory_key upsert、Worldbook、设置页 |
 | **M4** | 多窗 UI | ✅ 多窗、托盘、Dock、Token/定时任务 |
 | **M5** | RAG | ✅ 文档导入、向量检索、语义记忆去重 |
-| **M5-RAG** | RAG 优化 | ✅ 混合检索、缓存、Markdown 分块、注入模式（见 plans/2026-07-01-rag-optimization.md） |
-| **M6** | 扩展 | ✅ MCP、技能、Anthropic 协议（TTS 延后） |
-| **M7** | 工具补齐 | ✅ 文档生成、记账、旅行规划；Token 优化与长会话压缩 |
+| **M5-RAG** | RAG 优化 | ✅ 混合检索、缓存、Markdown 分块、注入模式 |
+| **M6** | 扩展 | ✅ MCP、技能、Anthropic 协议 |
+| **M7** | 工具补齐 | ✅ 文档生成、记账、旅行规划；Token 优化与长会话压缩；Windows 打包 |
 | **M7+** | 人设 / 外观 / 主题 | ✅ 可编辑人设、9 套主题、自定义壁纸与头像（见 UI-THEME.md） |
+| **Voice V1** | TTS 按需/自动朗读 | 🔄 百炼 CosyVoice、语音设置页、🔊 按钮（见 voice 计划） |
 | **M8** | 桌宠 | ⏳ Live2D 或精灵图窗，动作与对话联动 |
 
 每个里程碑结束时应可独立运行、可测试。
@@ -883,7 +969,8 @@ TheShorekeeper/
 | 上下文超长 | 成本高、超限 | 摘要压缩 + RAG 检索代替全量历史 |
 | Live2D 模型版权 | 法律风险 | 自用官方示例/授权模型，gitignore |
 | MCP Server 不稳定 | 工具超时 | 超时、重试、禁用开关 |
-| 包体过大 | 下载/更新慢 | 模型可选下载，单角色起步 |
+| 百炼 TTS endpoint 与 Chat 不同 | 语音不可用 | 设置 → 语音独立 endpoint；或 `VOICE_TTS_ENDPOINT` |
+| 包体过大 | 下载/更新慢 | electron-updater 增量更新；Live2D 模型可选下载 |
 
 ---
 
@@ -915,6 +1002,7 @@ TheShorekeeper/
 | 0.1.1 | 2026-06-29 | M4 多窗/Dock/托盘模型；M5 更正为 RAG（非 Live2D）；向量实现为 BLOB+余弦 |
 | 0.2.0 | 2026-07-01 | 反映 M1–M7 实现：混合 RAG、好感度、博查搜索、插件系统、目录与表结构更新 |
 | 0.2.1 | 2026-07-01 | 目录结构扩充：IPC/主题/打包白名单；人设外观主题落地；文档与 superpowers 索引整理 |
+| 0.3.0 | 2026-07-02 | 语音 V1（百炼 TTS）、自动更新、Agent 工作流条；表结构补全（session_summaries、bookkeeping）；目录与 IPC 同步 |
 
 ---
 

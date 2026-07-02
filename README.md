@@ -127,7 +127,8 @@ TheShorekeeper/
 │   ├── preload.ts            # 渲染进程 IPC 桥（contextBridge）
 │   ├── tray.ts               # 系统托盘
 │   ├── protocol/             # 自定义协议（如 sk-asset:// 本地外观资源）
-│   ├── ipc/                  # IPC 处理器（agent / session / appearance / …）
+│   ├── ipc/                  # IPC 处理器（agent / session / voice / update / …）
+│   ├── update/               # electron-updater 自动更新
 │   ├── windows/              # 多窗：chat / status / schedule / dock / reminder
 │   ├── dock/                 # Dock 显隐与偏好
 │   ├── scheduler/            # node-cron 定时任务
@@ -146,6 +147,7 @@ TheShorekeeper/
 │   ├── db/                   # sql.js、schema、migrations、repositories
 │   ├── session/              # 活跃会话
 │   ├── scheduler/            # 提醒意图解析
+│   ├── voice/                # 百炼 CosyVoice TTS、朗读文本清洗
 │   ├── workspace/            # 工作区文件导入
 │   ├── shared/               # 主进程/渲染进程共用类型与主题工具
 │   └── renderer/             # React UI（Vite 单入口，?panel= 区分窗口）
@@ -170,10 +172,10 @@ TheShorekeeper/
 | 分组 | 页面 | 说明 |
 |------|------|------|
 | 能力 | 插件 / 技能 / MCP | 联网搜索、文档工具、外部 MCP |
-| 人格与记忆 | 人设 / 用户信息 / 记忆 | System Prompt、画像、性能与 RAG 调优 |
-| 个性化 | 外观 | 9 套主题预设、壁纸、头像、遮罩 |
+| 人格与记忆 | 人设 / 用户信息 / 记忆 / Worldbook | System Prompt、画像、性能与 RAG 调优 |
+| 个性化 | 外观 / 语音 | 9 套主题预设、壁纸、头像；百炼 CosyVoice TTS |
 | 数据与任务 | 泰提斯终端 / 定时任务 | 知识库导入、周期与一次性任务 |
-| 系统 | API 设置 / 免责声明 | 模型配置与协议 |
+| 系统 | API 设置 / 关于 / 免责声明 | 模型配置、自动更新、协议 |
 
 ### 多窗口
 
