@@ -34,8 +34,8 @@ export function CallStage() {
   const [displayName, setDisplayName] = useState('守岸人');
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
-  const [callMode, setCallMode] = useState<'push_to_talk' | 'vad_auto'>('push_to_talk');
-  const [callAllowBargeIn, setCallAllowBargeIn] = useState(false);
+  const [callMode, setCallMode] = useState<'push_to_talk' | 'vad_auto'>('vad_auto');
+  const [callAllowBargeIn, setCallAllowBargeIn] = useState(true);
   const [callSilenceMs, setCallSilenceMs] = useState(800);
 
   const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();

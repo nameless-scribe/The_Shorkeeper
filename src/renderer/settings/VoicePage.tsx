@@ -323,7 +323,7 @@ export function VoicePage() {
         <section className="rounded-2xl border border-keeper-cyan/15 bg-keeper-navy/30 p-4 space-y-3">
           <p className="text-sm font-medium text-keeper-ice">语音通话</p>
           <p className="text-xs text-keeper-ice/45">
-            半双工需按住说话；全双工连续聆听，可直接插话打断守岸人。
+            默认连续聆听、可直接插话打断；若环境嘈杂可在下方改回按住说话。
           </p>
           <SettingsSegmented
             value={settings.callMode}
