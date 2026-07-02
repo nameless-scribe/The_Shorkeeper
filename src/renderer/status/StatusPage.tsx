@@ -239,14 +239,22 @@ export function StatusPage() {
               </span>
             </button>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => window.shorekeeper.window.show('chat')}
                 className="no-drag flex items-center justify-center gap-1.5 rounded-xl border border-keeper-silver/18 bg-keeper-navyDeep/35 py-2.5 text-xs text-keeper-ice/85 backdrop-blur-sm transition hover:border-keeper-cyan/35 hover:bg-keeper-cyan/10 hover:text-keeper-cyan"
               >
                 <span className="text-[10px] opacity-70">💬</span>
-                打开聊天
+                聊天
+              </button>
+              <button
+                type="button"
+                onClick={() => void window.shorekeeper.window.show('call')}
+                className="no-drag flex items-center justify-center gap-1.5 rounded-xl border border-keeper-silver/18 bg-keeper-navyDeep/35 py-2.5 text-xs text-keeper-ice/85 backdrop-blur-sm transition hover:border-keeper-cyan/35 hover:bg-keeper-cyan/10 hover:text-keeper-cyan"
+              >
+                <span className="text-[10px] opacity-70">📞</span>
+                通话
               </button>
               <button
                 type="button"

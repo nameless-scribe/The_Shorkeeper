@@ -49,6 +49,12 @@ import type {
   VoiceSynthesizeResult,
   VoiceTranscribePayload,
   VoiceTranscribeResult,
+  VoiceCallStartPayload,
+  VoiceCallStartResult,
+  VoiceCallUserTextPayload,
+  VoiceCallSpeakingDonePayload,
+  VoiceCallEndPayload,
+  VoiceCallSimpleResult,
   UpdateInfo,
 } from '../src/shared/types';
 
@@ -227,9 +233,10 @@ const shorekeeperApi = {
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),
     close: () => ipcRenderer.send('window:close'),
-    show: (kind: 'chat' | 'status' | 'schedule') => ipcRenderer.invoke('window:show', kind),
-    hide: (kind: 'chat' | 'status' | 'schedule') => ipcRenderer.invoke('window:hide', kind),
+    show: (kind: 'chat' | 'status' | 'schedule' | 'call') => ipcRenderer.invoke('window:show', kind),
+    hide: (kind: 'chat' | 'status' | 'schedule' | 'call') => ipcRenderer.invoke('window:hide', kind),
     openSettings: () => ipcRenderer.invoke('window:openSettings'),
+    destroyCall: () => ipcRenderer.invoke('window:destroyCall'),
     onOpenSettings: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('chat:openSettings', listener);
@@ -320,6 +327,18 @@ const shorekeeperApi = {
       ipcRenderer.invoke('voice:synthesizeChunk', payload),
     transcribe: (payload: VoiceTranscribePayload): Promise<VoiceTranscribeResult> =>
       ipcRenderer.invoke('voice:transcribe', payload),
+    call: {
+      start: (payload: VoiceCallStartPayload): Promise<VoiceCallStartResult> =>
+        ipcRenderer.invoke('voice:call:start', payload),
+      userText: (payload: VoiceCallUserTextPayload): Promise<VoiceCallSimpleResult> =>
+        ipcRenderer.invoke('voice:call:userText', payload),
+      speakingDone: (payload: VoiceCallSpeakingDonePayload): Promise<VoiceCallSimpleResult> =>
+        ipcRenderer.invoke('voice:call:speakingDone', payload),
+      end: (payload: VoiceCallEndPayload): Promise<VoiceCallSimpleResult> =>
+        ipcRenderer.invoke('voice:call:end', payload),
+      isActive: (sessionId?: string): Promise<{ active: boolean }> =>
+        ipcRenderer.invoke('voice:call:isActive', sessionId),
+    },
   },
   permission: {
     respond: (requestId: string, approved: boolean) =>

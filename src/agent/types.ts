@@ -10,6 +10,8 @@ export interface AgentPresenceState {
   tokenUsageToday: number;
 }
 
+export type CallState = 'idle' | 'listening' | 'thinking' | 'speaking';
+
 export type AgUiEvent =
   | { type: 'run_started'; runId: string; sessionId: string }
   | { type: 'run_finished'; runId: string }
@@ -21,7 +23,16 @@ export type AgUiEvent =
   | { type: 'state_update'; state: AgentPresenceState }
   | { type: 'live2d_motion'; motion: string; priority?: number }
   | { type: 'tts_chunk'; runId: string; audio: ArrayBuffer }
-  | { type: 'usage'; runId: string; promptTokens: number; completionTokens: number; cachedTokens?: number };
+  | { type: 'usage'; runId: string; promptTokens: number; completionTokens: number; cachedTokens?: number }
+  | { type: 'call_state'; callId: string; state: CallState }
+  | {
+      type: 'call_transcript';
+      callId: string;
+      role: 'user' | 'assistant';
+      text: string;
+      final: boolean;
+    }
+  | { type: 'call_error'; callId: string; message: string };
 
 export interface OpenAIToolCall {
   id: string;

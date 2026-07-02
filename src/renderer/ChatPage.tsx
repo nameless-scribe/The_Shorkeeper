@@ -77,6 +77,9 @@ export function ChatPage() {
 
       void (async () => {
         try {
+          const callActive = await window.shorekeeper.voice.call.isActive(message.sessionId);
+          if (callActive.active) return;
+
           const settings = await window.shorekeeper.voice.getSettings();
           if (message.sessionId !== sessionIdRef.current) return;
 
@@ -137,6 +140,10 @@ export function ChatPage() {
     [sessionId, isRunning, stopSpeech],
   );
 
+  const handleOpenCall = useCallback(() => {
+    void window.shorekeeper.window.show('call');
+  }, []);
+
   return (
     <div className="keeper-panel-shell border border-keeper-silver/25 shadow-cyanSm">
       <AppBackground />
@@ -155,6 +162,7 @@ export function ChatPage() {
             onOpenSettings={() => setSettingsOpen(true)}
             onNewChat={handleNewChat}
             onToggleHistory={() => setHistoryOpen((v) => !v)}
+            onOpenCall={handleOpenCall}
             historyOpen={historyOpen}
           />
           <AgentWorkflowStrip status={workflow} />

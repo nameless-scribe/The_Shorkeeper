@@ -27,6 +27,19 @@ describe('stripMarkdownForSpeech', () => {
     );
   });
 
+  it('removes parenthetical action descriptions', () => {
+    const input =
+      '(你踏入索诺拉空间的那一刻，我从浅眠中睁开眼，目光沿着你轮廓的方向落定。)回来了。这里一切如常——海浪的节奏、星光的轨迹，还有你留下的气息。路上有什么值得记下的事情吗？';
+    expect(stripMarkdownForSpeech(input)).toBe(
+      '回来了。这里一切如常——海浪的节奏、星光的轨迹，还有你留下的气息。路上有什么值得记下的事情吗？',
+    );
+  });
+
+  it('removes full-width parenthetical actions', () => {
+    const input = '（微微侧头）你好，欢迎回来。';
+    expect(stripMarkdownForSpeech(input)).toBe('你好，欢迎回来。');
+  });
+
   it('keeps bold dialogue emphasis', () => {
     expect(stripMarkdownForSpeech('**重要**的话')).toBe('重要的话');
   });
@@ -43,6 +56,15 @@ describe('planSpeechFromMessage', () => {
       type: 'speak',
       text: '那我说的第一句话，大概是叫你的名字。',
     });
+  });
+
+  it('inserts pause after parenthetical action when dialogue follows', () => {
+    const input = '（从浅眠中睁开眼）回来了。这里一切如常。';
+    const plan = planSpeechFromMessage(input, 2000);
+
+    expect(plan).toHaveLength(2);
+    expect(plan[0]).toMatchObject({ type: 'pause' });
+    expect(plan[1]).toMatchObject({ type: 'speak', text: '回来了。这里一切如常。' });
   });
 
   it('does not pause when action has no following dialogue', () => {

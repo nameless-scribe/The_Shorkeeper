@@ -60,17 +60,21 @@ export function parseRoleplaySpeechSegments(text: string): RawSegment[] {
   prepared = prepared.replace(/\*\*([^*]+)\*\*/g, '$1');
 
   const segments: RawSegment[] = [];
-  const regex = /\*([^*]+)\*/g;
+  // *action* or (action) / （action） — RP stage directions, not spoken dialogue
+  const markerRegex = /\*([^*]+)\*|[(（]([^)）]+)[)）]/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = regex.exec(prepared)) !== null) {
+  while ((match = markerRegex.exec(prepared)) !== null) {
     const dialogueBefore = prepared.slice(lastIndex, match.index).trim();
     if (dialogueBefore) {
       segments.push({ type: 'dialogue', text: dialogueBefore });
     }
-    segments.push({ type: 'action', text: match[1].trim() });
-    lastIndex = regex.lastIndex;
+    const actionText = (match[1] ?? match[2]).trim();
+    if (actionText) {
+      segments.push({ type: 'action', text: actionText });
+    }
+    lastIndex = markerRegex.lastIndex;
   }
 
   const tail = prepared.slice(lastIndex).trim();

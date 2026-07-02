@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import type { AgentPresenceState, AgUiEvent } from './types';
+import type { AgentPresenceState, AgUiEvent, CallState } from './types';
 import type { ToolResult } from '../tools/types';
 
 export function createRunId(): string {
@@ -60,5 +60,22 @@ export const ev = {
 
   usage(runId: string, promptTokens: number, completionTokens: number, cachedTokens?: number): AgUiEvent {
     return { type: 'usage', runId, promptTokens, completionTokens, cachedTokens };
+  },
+
+  callState(callId: string, state: CallState): AgUiEvent {
+    return { type: 'call_state', callId, state };
+  },
+
+  callTranscript(
+    callId: string,
+    role: 'user' | 'assistant',
+    text: string,
+    final: boolean,
+  ): AgUiEvent {
+    return { type: 'call_transcript', callId, role, text, final };
+  },
+
+  callError(callId: string, message: string): AgUiEvent {
+    return { type: 'call_error', callId, message };
   },
 };

@@ -8,12 +8,25 @@ import {
 } from '../../src/config/voice';
 import { synthesizeVoiceChunk } from '../../src/voice/synthesize-chunk';
 import { getBailianSttEngine } from '../../src/voice/bailian-stt';
+import { getCallSessionManager } from '../../src/voice/call-session';
 import {
   hasSpeakableDialogue,
   planStreamingSpeechFromMessage,
 } from '../../src/voice/text-for-speech';
+import {
+  broadcastAgentEvent,
+  onRunError,
+  onRunFinished,
+  onRunStarted,
+} from '../state/presence';
 import type {
   SpeechPlaybackStep,
+  VoiceCallEndPayload,
+  VoiceCallSimpleResult,
+  VoiceCallSpeakingDonePayload,
+  VoiceCallStartPayload,
+  VoiceCallStartResult,
+  VoiceCallUserTextPayload,
   VoiceSettingsInfo,
   VoiceSettingsPatch,
   VoiceSynthesizeChunkPayload,
@@ -36,6 +49,13 @@ function toInfo(settings: ReturnType<typeof getVoiceSettings>): VoiceSettingsInf
 }
 
 export function registerVoiceIpc(): void {
+  getCallSessionManager({
+    broadcast: broadcastAgentEvent,
+    onRunStarted,
+    onRunFinished,
+    onRunError,
+  });
+
   ipcMain.handle('voice:getSettings', (): VoiceSettingsInfo => toInfo(getVoiceSettings()));
 
   ipcMain.handle(
@@ -146,4 +166,32 @@ export function registerVoiceIpc(): void {
       }
     },
   );
+
+  ipcMain.handle(
+    'voice:call:start',
+    (_event, payload: VoiceCallStartPayload): VoiceCallStartResult =>
+      getCallSessionManager().start(payload.sessionId),
+  );
+
+  ipcMain.handle(
+    'voice:call:userText',
+    async (_event, payload: VoiceCallUserTextPayload): Promise<VoiceCallSimpleResult> =>
+      getCallSessionManager().submitUserText(payload.callId, payload.text),
+  );
+
+  ipcMain.handle(
+    'voice:call:speakingDone',
+    (_event, payload: VoiceCallSpeakingDonePayload): VoiceCallSimpleResult =>
+      getCallSessionManager().speakingDone(payload.callId),
+  );
+
+  ipcMain.handle(
+    'voice:call:end',
+    (_event, payload: VoiceCallEndPayload): VoiceCallSimpleResult =>
+      getCallSessionManager().end(payload.callId),
+  );
+
+  ipcMain.handle('voice:call:isActive', (_event, sessionId?: string): { active: boolean } => ({
+    active: getCallSessionManager().isActive(sessionId),
+  }));
 }

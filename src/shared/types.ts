@@ -1,6 +1,6 @@
 import type { OpenAIToolCall } from '../agent/types';
 
-export type { AgUiEvent, AgentPresenceState } from '../agent/types';
+export type { AgUiEvent, AgentPresenceState, CallState } from '../agent/types';
 export type { ToolResult } from '../tools/types';
 
 export type ModelEvent =
@@ -441,6 +441,29 @@ export interface VoiceTranscribePayload {
 export type VoiceTranscribeResult =
   | { ok: true; text: string }
   | { ok: false; error: string };
+
+export interface VoiceCallStartPayload {
+  sessionId?: string;
+}
+
+export type VoiceCallStartResult =
+  | { ok: true; callId: string }
+  | { ok: false; error: string };
+
+export interface VoiceCallUserTextPayload {
+  callId: string;
+  text: string;
+}
+
+export interface VoiceCallSpeakingDonePayload {
+  callId: string;
+}
+
+export interface VoiceCallEndPayload {
+  callId: string;
+}
+
+export type VoiceCallSimpleResult = { ok: true } | { ok: false; error: string };
 
 export type VoiceSynthesizeChunkResult =
   | { ok: true; audio: ArrayBuffer; mime: string }

@@ -7,7 +7,7 @@ import { getPreloadPath, getRendererIndexPath } from '../paths';
 import { clampBoundsToWorkArea } from './bounds';
 import { hideWindowToTray, showWindowFromTray } from '../tray';
 
-export type WindowKind = 'chat' | 'status' | 'schedule';
+export type WindowKind = 'chat' | 'status' | 'schedule' | 'call';
 
 export interface CreateWindowOptions {
   /** 内容就绪后是否显示；默认 true */
@@ -18,12 +18,14 @@ const BOUNDS_KEYS: Record<WindowKind, string> = {
   chat: 'window.bounds.chat',
   status: 'window.bounds.status',
   schedule: 'window.bounds.schedule',
+  call: 'window.bounds.call',
 };
 
 const DEFAULT_BOUNDS: Record<WindowKind, WindowBounds> = {
   chat: { x: 80, y: 60, width: 420, height: 720 },
   status: { x: 520, y: 80, width: 300, height: 440 },
   schedule: { x: 840, y: 100, width: 360, height: 520 },
+  call: { x: 200, y: 100, width: 360, height: 580 },
 };
 
 function loadWindowContent(win: BrowserWindow, kind: WindowKind): void {
@@ -97,7 +99,9 @@ export class WindowManager {
           ? 'The Shorekeeper'
           : kind === 'status'
             ? '守岸人 · 状态'
-            : '守岸人 · 日程',
+            : kind === 'schedule'
+              ? '守岸人 · 日程'
+              : '守岸人 · 语音通话',
     };
 
     if (kind === 'chat') {
@@ -106,6 +110,9 @@ export class WindowManager {
     } else if (kind === 'status') {
       windowOptions.minWidth = 260;
       windowOptions.minHeight = 360;
+    } else if (kind === 'call') {
+      windowOptions.minWidth = 320;
+      windowOptions.minHeight = 480;
     } else {
       windowOptions.minWidth = 320;
       windowOptions.minHeight = 420;
@@ -224,6 +231,14 @@ export class WindowManager {
     syncDockVisibility();
   }
 
+  destroy(kind: WindowKind): void {
+    const win = this.get(kind);
+    if (!win) return;
+    this.panelShown.set(kind, false);
+    win.destroy();
+    syncDockVisibility();
+  }
+
   hide(kind: WindowKind): void {
     const win = this.get(kind);
     if (!win) return;
@@ -299,4 +314,8 @@ export function createStatusWindow(): BrowserWindow {
 
 export function createScheduleWindow(): BrowserWindow {
   return getWindowManager().create('schedule');
+}
+
+export function createCallWindow(): BrowserWindow {
+  return getWindowManager().create('call');
 }

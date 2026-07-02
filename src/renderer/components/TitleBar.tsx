@@ -5,6 +5,7 @@ interface TitleBarProps {
   onOpenSettings?: () => void;
   onNewChat?: () => void;
   onToggleHistory?: () => void;
+  onOpenCall?: () => void;
   historyOpen?: boolean;
 }
 
@@ -21,6 +22,7 @@ export function TitleBar({
   onOpenSettings,
   onNewChat,
   onToggleHistory,
+  onOpenCall,
   historyOpen,
 }: TitleBarProps) {
   return (
@@ -61,6 +63,14 @@ export function TitleBar({
           title="新对话"
         >
           ＋
+        </button>
+        <button
+          type="button"
+          onClick={onOpenCall}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-keeper-ice/50 hover:bg-keeper-cyan/10 hover:text-keeper-cyan"
+          title="语音通话"
+        >
+          📞
         </button>
         <button
           type="button"

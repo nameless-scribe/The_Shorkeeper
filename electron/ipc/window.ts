@@ -12,18 +12,23 @@ function isReminderWindow(win: BrowserWindow): boolean {
 export function registerWindowIpc() {
   const manager = getWindowManager();
 
-  ipcMain.handle('window:show', (_event, kind: 'chat' | 'status' | 'schedule') => {
+  ipcMain.handle('window:show', (_event, kind: 'chat' | 'status' | 'schedule' | 'call') => {
     manager.show(kind);
     return { ok: true };
   });
 
-  ipcMain.handle('window:hide', (_event, kind: 'chat' | 'status' | 'schedule') => {
+  ipcMain.handle('window:hide', (_event, kind: 'chat' | 'status' | 'schedule' | 'call') => {
     manager.hide(kind);
     return { ok: true };
   });
 
   ipcMain.handle('window:openSettings', () => {
     manager.openChatSettings();
+    return { ok: true };
+  });
+
+  ipcMain.handle('window:destroyCall', () => {
+    manager.destroy('call');
     return { ok: true };
   });
 

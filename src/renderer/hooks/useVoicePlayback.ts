@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { streamSpeechPlayback } from '../voice/stream-speech-playback';
+import {
+  claimSpeechPlayback,
+  releaseSpeechPlayback,
+  stopAllSpeechPlayback,
+} from '../voice/speech-playback-coordinator';
 
 function abortPlaybackAttempt(
   generation: number,
@@ -36,6 +41,9 @@ export function useVoicePlayback() {
   }, []);
 
   const stopPlaybackOnly = useCallback(() => {
+    if (playbackRef.current) {
+      releaseSpeechPlayback(playbackRef.current.stop);
+    }
     playbackRef.current?.stop();
     playbackRef.current = null;
   }, []);
@@ -69,16 +77,12 @@ export function useVoicePlayback() {
 
   const playText = useCallback(
     async (messageId: string, text: string) => {
-      if (playingIdRef.current === messageId || loadingIdRef.current === messageId) {
-        stop();
-        return;
-      }
-
       if (inFlightRef.current === messageId) {
         return;
       }
 
       inFlightRef.current = messageId;
+      stopAllSpeechPlayback();
       invalidatePlayback();
       const generation = generationRef.current;
 
@@ -113,6 +117,7 @@ export function useVoicePlayback() {
           },
           onFinished: () => {
             if (generation !== generationRef.current) return;
+            releaseSpeechPlayback(handle.stop);
             playbackRef.current = null;
             inFlightRef.current = null;
             resetUi();
@@ -131,6 +136,7 @@ export function useVoicePlayback() {
         }
 
         playbackRef.current = handle;
+        claimSpeechPlayback(handle.stop);
         inFlightRef.current = null;
       } catch (err) {
         if (generation !== generationRef.current) return;

@@ -6,19 +6,21 @@ import { SchedulePage } from './schedule/SchedulePage';
 import { ReminderPage } from './reminder/ReminderPage';
 import { DockPage } from './dock/DockPage';
 import { SplashPage } from './splash/SplashPage';
+import { CallStage } from './call/CallStage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RuntimeGate } from './components/RuntimeGate';
 import { ThemeProvider } from './theme/ThemeProvider';
 import './styles/globals.css';
 
-function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' | 'dock' | 'splash' {
+function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' | 'dock' | 'splash' | 'call' {
   const panel = new URLSearchParams(window.location.search).get('panel');
   if (
     panel === 'status' ||
     panel === 'schedule' ||
     panel === 'reminder' ||
     panel === 'dock' ||
-    panel === 'splash'
+    panel === 'splash' ||
+    panel === 'call'
   ) {
     return panel;
   }
@@ -39,6 +41,7 @@ function App() {
   if (panel === 'reminder') return <ReminderPage />;
   if (panel === 'dock') return <DockPage />;
   if (panel === 'splash') return <SplashPage />;
+  if (panel === 'call') return <CallStage />;
   return <ChatPage />;
 }
 
