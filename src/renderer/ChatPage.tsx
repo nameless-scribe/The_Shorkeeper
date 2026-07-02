@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppStatus } from '@/shared/types';
+import { hasSpeakableDialogue } from '@/voice/text-for-speech';
 import { useAgentEvents } from './hooks/useAgentEvents';
 import { deriveAgentWorkflow } from './hooks/agent-workflow';
 import { useVoicePlayback } from './hooks/useVoicePlayback';
@@ -20,11 +21,18 @@ export function ChatPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const voicePrefsRef = useRef({ enabled: false, autoPlay: false });
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
 
   const refreshVoiceSettings = useCallback(() => {
     window.shorekeeper?.voice
       .getSettings()
-      .then((s) => setVoiceEnabled(s.ttsEnabled && s.voiceConfigured))
+      .then((s) => {
+        const enabled = s.ttsEnabled && s.voiceConfigured;
+        setVoiceEnabled(enabled);
+        voicePrefsRef.current = { enabled, autoPlay: s.ttsAutoPlay };
+      })
       .catch(console.error);
   }, []);
 
@@ -55,12 +63,36 @@ export function ChatPage() {
     return session.id;
   }, [sessionId]);
 
+  const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
+  const { playText, stop: stopSpeech, remapPlayingId, playingId, loadingId, error: voiceError } =
+    useVoicePlayback();
+
+  const handleAssistantReplyFinished = useCallback(
+    (message: { id: string; content: string; sessionId: string }) => {
+      if (message.sessionId !== sessionIdRef.current) return;
+      const { enabled, autoPlay } = voicePrefsRef.current;
+      if (!enabled || !autoPlay) return;
+      if (!hasSpeakableDialogue(message.content)) return;
+      void playText(message.id, message.content);
+    },
+    [playText],
+  );
+
+  const handleAssistantMessagePersisted = useCallback(
+    (message: { streamId: string; persistedId: string; sessionId: string }) => {
+      if (message.sessionId !== sessionIdRef.current) return;
+      remapPlayingId(message.streamId, message.persistedId);
+    },
+    [remapPlayingId],
+  );
+
   const { messages, loadingMessages, isRunning, error, send } = useAgentEvents(sessionId, ensureSession, {
     onRunFinished: bumpHistory,
+    onRunStarted: stopSpeech,
+    onRunStopped: stopSpeech,
+    onAssistantReplyFinished: handleAssistantReplyFinished,
+    onAssistantMessagePersisted: handleAssistantMessagePersisted,
   });
-
-  const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
-  const { playText, playingId, loadingId, error: voiceError } = useVoicePlayback();
 
   const workflow = useMemo(
     () => deriveAgentWorkflow(messages, isRunning, permissionRequest),
@@ -68,24 +100,26 @@ export function ChatPage() {
   );
 
   const handleNewChat = useCallback(async () => {
+    stopSpeech();
     if (isRunning) {
       await window.shorekeeper.agent.abort();
     }
     const session = await window.shorekeeper.sessions.create();
     setSessionId(session.id);
     bumpHistory();
-  }, [bumpHistory, isRunning]);
+  }, [bumpHistory, isRunning, stopSpeech]);
 
   const handleSelectSession = useCallback(
     async (id: string) => {
       if (id === sessionId) return;
+      stopSpeech();
       if (isRunning) {
         await window.shorekeeper.agent.abort();
       }
       const session = await window.shorekeeper.sessions.switch(id);
       setSessionId(session.id);
     },
-    [sessionId, isRunning],
+    [sessionId, isRunning, stopSpeech],
   );
 
   return (

@@ -374,6 +374,8 @@ export interface VoiceSettingsInfo {
   ttsVoiceSource: import('../voice/types').VoiceSource;
   activeClonedProfileId: string | null;
   ttsRate: number;
+  ttsVolume: number;
+  ttsPlaybackGain: number;
   ttsMaxChars: number;
   sttEnabled: boolean;
   sttLanguage: import('../voice/types').SttLanguage;
@@ -402,6 +404,18 @@ export interface VoiceSynthesizePayload {
   text: string;
 }
 
-export type VoiceSynthesizeResult =
+export interface VoiceSynthesizeChunkPayload {
+  text: string;
+}
+
+export type VoiceSynthesizeChunkResult =
   | { ok: true; audio: ArrayBuffer; mime: string }
+  | { ok: false; error: string };
+
+export type SpeechPlaybackStep =
+  | { kind: 'pause'; durationMs: number }
+  | { kind: 'audio'; audio: ArrayBuffer; mime: string };
+
+export type VoiceSynthesizeResult =
+  | { ok: true; steps: SpeechPlaybackStep[] }
   | { ok: false; error: string };

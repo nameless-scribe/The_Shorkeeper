@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { stripMarkdownForSpeech, truncateForSpeech } from '../text-for-speech';
+import {
+  actionPauseDurationMs,
+  planSpeechFromMessage,
+  planStreamingSpeechFromMessage,
+  splitDialogueIntoChunks,
+  stripMarkdownForSpeech,
+  truncateForSpeech,
+} from '../text-for-speech';
 
 describe('stripMarkdownForSpeech', () => {
   it('removes code blocks and keeps plain text', () => {
@@ -21,6 +28,57 @@ describe('stripMarkdownForSpeech', () => {
 
   it('keeps bold dialogue emphasis', () => {
     expect(stripMarkdownForSpeech('**重要**的话')).toBe('重要的话');
+  });
+});
+
+describe('planSpeechFromMessage', () => {
+  it('inserts pause after action when dialogue follows', () => {
+    const input = '*指尖轻轻抵住胸口的位置* 那我说的第一句话，大概是叫你的名字。';
+    const plan = planSpeechFromMessage(input, 2000);
+
+    expect(plan).toHaveLength(2);
+    expect(plan[0]).toMatchObject({ type: 'pause' });
+    expect(plan[1]).toMatchObject({
+      type: 'speak',
+      text: '那我说的第一句话，大概是叫你的名字。',
+    });
+  });
+
+  it('does not pause when action has no following dialogue', () => {
+    const plan = planSpeechFromMessage('*只有动作描写*', 2000);
+    expect(plan).toHaveLength(0);
+  });
+
+  it('plans multiple dialogue chunks with pauses between', () => {
+    const input =
+      '*眸光凝住* ......语音。 *垂下眼* 你知道吗，我一直在想。';
+    const plan = planSpeechFromMessage(input, 2000);
+
+    expect(plan.map((step) => step.type)).toEqual(['pause', 'speak', 'pause', 'speak']);
+  });
+});
+
+describe('splitDialogueIntoChunks', () => {
+  it('splits on Chinese sentence boundaries', () => {
+    expect(splitDialogueIntoChunks('第一句。第二句！第三句？')).toEqual([
+      '第一句。',
+      '第二句！',
+      '第三句？',
+    ]);
+  });
+});
+
+describe('planStreamingSpeechFromMessage', () => {
+  it('splits dialogue blocks into sentence-sized speak steps', () => {
+    const plan = planStreamingSpeechFromMessage('你好。我在这里。', 2000);
+    expect(plan.filter((step) => step.type === 'speak')).toHaveLength(2);
+  });
+});
+
+describe('actionPauseDurationMs', () => {
+  it('scales with action length within bounds', () => {
+    expect(actionPauseDurationMs('短')).toBeGreaterThanOrEqual(1500);
+    expect(actionPauseDurationMs(''.padEnd(80, '描'))).toBeLessThanOrEqual(4500);
   });
 });
 

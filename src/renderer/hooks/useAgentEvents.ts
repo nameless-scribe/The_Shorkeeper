@@ -16,10 +16,28 @@ export interface UiMessage {
   createdAt?: number;
 }
 
+export interface AssistantReplyFinishedPayload {
+  id: string;
+  content: string;
+  sessionId: string;
+}
+
+export interface AssistantMessagePersistedPayload {
+  streamId: string;
+  persistedId: string;
+  sessionId: string;
+}
+
 export function useAgentEvents(
   sessionId: string | null,
   onSessionNeeded?: () => Promise<string>,
-  options?: { onRunFinished?: () => void },
+  options?: {
+    onRunFinished?: () => void;
+    onRunStarted?: () => void;
+    onRunStopped?: () => void;
+    onAssistantReplyFinished?: (message: AssistantReplyFinishedPayload) => void;
+    onAssistantMessagePersisted?: (message: AssistantMessagePersistedPayload) => void;
+  },
 ) {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -75,6 +93,7 @@ export function useAgentEvents(
 
       if (event.type === 'run_started') {
         if (event.sessionId !== activeSessionId) return;
+        options?.onRunStarted?.();
         runSessionIdRef.current = event.sessionId;
         currentRunId = event.runId;
         const streamId = `stream-${event.runId}`;
@@ -183,6 +202,19 @@ export function useAgentEvents(
           const hasToolCalls = Boolean(toolCalls?.length);
           const hasContent = Boolean(streamMsg?.content.trim());
 
+          if (
+            finishedSessionId &&
+            finishedSessionId === sessionIdRef.current &&
+            hasContent &&
+            options?.onAssistantReplyFinished
+          ) {
+            options.onAssistantReplyFinished({
+              id: streamId,
+              content: streamMsg!.content,
+              sessionId: finishedSessionId,
+            });
+          }
+
           const withoutEmpty = prev
             .map((m) =>
               m.id === streamId
@@ -231,6 +263,19 @@ export function useAgentEvents(
               if (dbMessages.length > 0 || (!hasContent && !hasToolCalls)) {
                 setMessages(dbMessages);
               }
+
+              if (finishedSessionId && options?.onAssistantMessagePersisted) {
+                for (let i = dbMessages.length - 1; i >= 0; i -= 1) {
+                  if (dbMessages[i].role === 'assistant' && dbMessages[i].content.trim()) {
+                    options.onAssistantMessagePersisted({
+                      streamId,
+                      persistedId: dbMessages[i].id,
+                      sessionId: finishedSessionId,
+                    });
+                    break;
+                  }
+                }
+              }
             });
           }
 
@@ -252,6 +297,7 @@ export function useAgentEvents(
           }
           return;
         }
+        options?.onRunStopped?.();
         setIsRunning(false);
         currentRunId = null;
         runSessionIdRef.current = null;
@@ -262,7 +308,13 @@ export function useAgentEvents(
     return () => {
       unsubscribe();
     };
-  }, [options?.onRunFinished]);
+  }, [
+    options?.onRunFinished,
+    options?.onRunStarted,
+    options?.onRunStopped,
+    options?.onAssistantReplyFinished,
+    options?.onAssistantMessagePersisted,
+  ]);
 
   const send = async (text: string, attachments: WorkspaceAttachment[] = []) => {
     const trimmed = text.trim();

@@ -51,6 +51,7 @@ export class BailianTtsEngine implements TtsEngine {
         voice: options.voiceId.trim(),
         format,
         sample_rate: 22050,
+        volume: options.volume ?? 100,
         rate: options.rate,
         ...(options.languageHint ? { language_hints: [options.languageHint] } : {}),
       },

@@ -1,26 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-function toArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  if (data instanceof ArrayBuffer) return data;
-  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
-}
+import { streamSpeechPlayback } from '../voice/stream-speech-playback';
 
 export function useVoicePlayback() {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const urlRef = useRef<string | null>(null);
+  const playbackRef = useRef<{ stop: () => void } | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const cleanup = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    if (urlRef.current) {
-      URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
-    }
+    playbackRef.current?.stop();
+    playbackRef.current = null;
   }, []);
 
   useEffect(() => () => cleanup(), [cleanup]);
@@ -30,6 +19,11 @@ export function useVoicePlayback() {
     setPlayingId(null);
     setLoadingId(null);
   }, [cleanup]);
+
+  const remapPlayingId = useCallback((from: string, to: string) => {
+    setPlayingId((id) => (id === from ? to : id));
+    setLoadingId((id) => (id === from ? to : id));
+  }, []);
 
   const playText = useCallback(
     async (messageId: string, text: string) => {
@@ -44,36 +38,33 @@ export function useVoicePlayback() {
       setPlayingId(null);
 
       try {
-        const result = await window.shorekeeper.voice.synthesize({ text });
-        if (!result.ok) {
-          setError(result.error);
-          return;
-        }
+        const settings = await window.shorekeeper.voice.getSettings();
+        const gain = settings.ttsPlaybackGain ?? 2;
 
-        const buffer = toArrayBuffer(result.audio);
-        const blob = new Blob([buffer], { type: result.mime || 'audio/mpeg' });
-        const url = URL.createObjectURL(blob);
-        urlRef.current = url;
+        const handle = await streamSpeechPlayback(text, settings.ttsMaxChars, gain, {
+          onLoading: () => {
+            setLoadingId(messageId);
+            setPlayingId(null);
+          },
+          onPlaying: () => {
+            setLoadingId(null);
+            setPlayingId(messageId);
+          },
+          onFinished: () => {
+            playbackRef.current = null;
+            setPlayingId(null);
+            setLoadingId(null);
+          },
+          onError: (message) => {
+            setError(message);
+            stop();
+          },
+        });
 
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.onended = () => {
-          cleanup();
-          setPlayingId(null);
-        };
-        audio.onerror = () => {
-          setError('音频播放失败');
-          stop();
-        };
-
-        setLoadingId(null);
-        setPlayingId(messageId);
-        await audio.play();
+        playbackRef.current = handle;
       } catch (err) {
         setError(err instanceof Error ? err.message : '朗读失败');
         stop();
-      } finally {
-        setLoadingId((id) => (id === messageId ? null : id));
       }
     },
     [cleanup, loadingId, playingId, stop],
@@ -82,6 +73,7 @@ export function useVoicePlayback() {
   return {
     playText,
     stop,
+    remapPlayingId,
     playingId,
     loadingId,
     error,

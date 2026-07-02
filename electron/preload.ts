@@ -44,6 +44,8 @@ import type {
   VoiceSettingsInfo,
   VoiceSettingsPatch,
   VoiceSynthesizePayload,
+  VoiceSynthesizeChunkPayload,
+  VoiceSynthesizeChunkResult,
   VoiceSynthesizeResult,
 } from '../src/shared/types';
 
@@ -311,6 +313,8 @@ const shorekeeperApi = {
       ipcRenderer.invoke('voice:saveSettings', patch),
     synthesize: (payload: VoiceSynthesizePayload): Promise<VoiceSynthesizeResult> =>
       ipcRenderer.invoke('voice:synthesize', payload),
+    synthesizeChunk: (payload: VoiceSynthesizeChunkPayload): Promise<VoiceSynthesizeChunkResult> =>
+      ipcRenderer.invoke('voice:synthesizeChunk', payload),
   },
   permission: {
     respond: (requestId: string, approved: boolean) =>

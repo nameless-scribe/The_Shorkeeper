@@ -18,6 +18,10 @@ export interface VoiceSettings {
   ttsVoiceSource: VoiceSource;
   activeClonedProfileId: string | null;
   ttsRate: number;
+  /** CosyVoice synthesis volume, 0–100 (API default is 50). */
+  ttsVolume: number;
+  /** Renderer playback gain via Web Audio, 0.5–3. */
+  ttsPlaybackGain: number;
   ttsMaxChars: number;
   sttEnabled: boolean;
   sttLanguage: SttLanguage;
@@ -48,6 +52,7 @@ export interface TtsOptions {
   model: CosyVoiceModel;
   voiceId: string;
   rate: number;
+  volume?: number;
   format?: 'mp3' | 'wav';
   languageHint?: 'zh' | 'en';
 }
@@ -65,6 +70,8 @@ export const VOICE_DEFAULTS: VoiceSettings = {
   ttsVoiceSource: 'cloned',
   activeClonedProfileId: null,
   ttsRate: 1.0,
+  ttsVolume: 100,
+  ttsPlaybackGain: 2.0,
   ttsMaxChars: 2000,
   sttEnabled: true,
   sttLanguage: 'zh',

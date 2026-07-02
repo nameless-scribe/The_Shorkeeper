@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CosyVoiceModel, VoiceSettingsInfo } from '@/shared/types';
 import { COSYVOICE_MODELS } from '@/voice/types';
 import { SettingsIntro, SettingsLoading, SettingsPageShell, SettingsField } from './components/settings-ui';
 import { SettingsToggle } from './components/SettingsToggle';
 import { SettingsSegmented } from './components/SettingsSegmented';
+import { streamSpeechPlayback } from '../voice/stream-speech-playback';
 
 const PREVIEW_TEXT = '调律者，我在这里。';
 
@@ -58,31 +59,40 @@ export function VoicePage() {
     });
   };
 
+  const previewAudioRef = useRef<{ stop: () => void } | null>(null);
+
+  useEffect(
+    () => () => {
+      previewAudioRef.current?.stop();
+    },
+    [],
+  );
+
   const preview = async () => {
     if (!settings) return;
+    previewAudioRef.current?.stop();
     setPreviewState('loading');
     setError(null);
     try {
-      const result = await window.shorekeeper.voice.synthesize({ text: PREVIEW_TEXT });
-      if (!result.ok) {
-        setError(result.error);
-        setPreviewState('idle');
-        return;
-      }
-      const blob = new Blob([result.audio], { type: result.mime || 'audio/mpeg' });
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audio.onended = () => {
-        URL.revokeObjectURL(url);
-        setPreviewState('idle');
-      };
-      audio.onerror = () => {
-        URL.revokeObjectURL(url);
-        setError('试听播放失败');
-        setPreviewState('idle');
-      };
-      setPreviewState('playing');
-      await audio.play();
+      const handle = await streamSpeechPlayback(
+        PREVIEW_TEXT,
+        settings.ttsMaxChars,
+        settings.ttsPlaybackGain,
+        {
+          onLoading: () => setPreviewState('loading'),
+          onPlaying: () => setPreviewState('playing'),
+          onFinished: () => {
+            previewAudioRef.current = null;
+            setPreviewState('idle');
+          },
+          onError: (message) => {
+            setError(message);
+            previewAudioRef.current = null;
+            setPreviewState('idle');
+          },
+        },
+      );
+      previewAudioRef.current = handle;
     } catch (err) {
       setError(err instanceof Error ? err.message : '试听失败');
       setPreviewState('idle');
@@ -248,7 +258,9 @@ export function VoicePage() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-keeper-ice">自动朗读</p>
-              <p className="mt-1 text-xs text-keeper-ice/45">每轮 Agent 回复结束后自动播放（V2 启用）</p>
+              <p className="mt-1 text-xs text-keeper-ice/45">
+                每轮 Agent 回复结束后自动播放；发送新消息或取消时会中断
+              </p>
             </div>
             <SettingsToggle
               checked={settings.ttsAutoPlay}
@@ -269,6 +281,42 @@ export function VoicePage() {
               onChange={(e) => void save({ ttsRate: Number(e.target.value) })}
               className="mt-2 w-full accent-keeper-cyan"
             />
+          </div>
+
+          <div>
+            <label className="text-xs text-keeper-ice/50">
+              合成音量 {settings.ttsVolume}
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={settings.ttsVolume}
+              onChange={(e) => void save({ ttsVolume: Number(e.target.value) })}
+              className="mt-2 w-full accent-keeper-cyan"
+            />
+            <p className="mt-1 text-[11px] text-keeper-ice/40">
+              百炼 CosyVoice 默认仅 50；若偏小请拉到 100
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs text-keeper-ice/50">
+              播放增益 {settings.ttsPlaybackGain.toFixed(1)}×
+            </label>
+            <input
+              type="range"
+              min={0.5}
+              max={3}
+              step={0.1}
+              value={settings.ttsPlaybackGain}
+              onChange={(e) => void save({ ttsPlaybackGain: Number(e.target.value) })}
+              className="mt-2 w-full accent-keeper-cyan"
+            />
+            <p className="mt-1 text-[11px] text-keeper-ice/40">
+              在系统音量之外再放大播放（默认 2×）；过大可能失真
+            </p>
           </div>
         </section>
       </div>

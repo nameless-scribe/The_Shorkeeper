@@ -14,4 +14,9 @@ describe('voice settings defaults', () => {
     expect(VOICE_DEFAULTS.ttsVoiceId).toBe('');
     expect(VOICE_DEFAULTS.ttsVoiceSource).toBe('cloned');
   });
+
+  it('defaults synthesis volume to full and playback gain to 2x', () => {
+    expect(VOICE_DEFAULTS.ttsVolume).toBe(100);
+    expect(VOICE_DEFAULTS.ttsPlaybackGain).toBe(2);
+  });
 });

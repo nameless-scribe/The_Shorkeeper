@@ -21,6 +21,8 @@ function mergeVoiceSettings(raw: Partial<VoiceSettings> | null | undefined): Voi
     ttsVoiceSource: raw.ttsVoiceSource ?? VOICE_DEFAULTS.ttsVoiceSource,
     activeClonedProfileId: raw.activeClonedProfileId ?? VOICE_DEFAULTS.activeClonedProfileId,
     ttsRate: clampRate(raw.ttsRate ?? VOICE_DEFAULTS.ttsRate),
+    ttsVolume: clampVolume(raw.ttsVolume ?? VOICE_DEFAULTS.ttsVolume),
+    ttsPlaybackGain: clampPlaybackGain(raw.ttsPlaybackGain ?? VOICE_DEFAULTS.ttsPlaybackGain),
     ttsMaxChars: raw.ttsMaxChars ?? VOICE_DEFAULTS.ttsMaxChars,
     sttEnabled: raw.sttEnabled ?? VOICE_DEFAULTS.sttEnabled,
     sttLanguage: raw.sttLanguage ?? VOICE_DEFAULTS.sttLanguage,
@@ -38,6 +40,16 @@ function mergeVoiceSettings(raw: Partial<VoiceSettings> | null | undefined): Voi
 function clampRate(rate: number): number {
   if (!Number.isFinite(rate)) return VOICE_DEFAULTS.ttsRate;
   return Math.min(2, Math.max(0.5, rate));
+}
+
+function clampVolume(volume: number): number {
+  if (!Number.isFinite(volume)) return VOICE_DEFAULTS.ttsVolume;
+  return Math.min(100, Math.max(0, Math.round(volume)));
+}
+
+function clampPlaybackGain(gain: number): number {
+  if (!Number.isFinite(gain)) return VOICE_DEFAULTS.ttsPlaybackGain;
+  return Math.min(3, Math.max(0.5, Math.round(gain * 10) / 10));
 }
 
 export function getVoiceSettings(): VoiceSettings {

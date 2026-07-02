@@ -24,11 +24,12 @@ describe('BailianTtsEngine', () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          output: {
-            audio: { url: 'https://example.com/out.mp3' },
-          },
-        }),
+        text: async () =>
+          JSON.stringify({
+            output: {
+              audio: { url: 'https://example.com/out.mp3' },
+            },
+          }),
       })
       .mockResolvedValueOnce({
         ok: true,

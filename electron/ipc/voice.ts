@@ -6,11 +6,17 @@ import {
   resolveTtsEndpoint,
   saveVoiceSettings,
 } from '../../src/config/voice';
-import { getBailianTtsEngine } from '../../src/voice/bailian-tts';
-import { stripMarkdownForSpeech, truncateForSpeech } from '../../src/voice/text-for-speech';
+import { synthesizeVoiceChunk } from '../../src/voice/synthesize-chunk';
+import {
+  hasSpeakableDialogue,
+  planStreamingSpeechFromMessage,
+} from '../../src/voice/text-for-speech';
 import type {
+  SpeechPlaybackStep,
   VoiceSettingsInfo,
   VoiceSettingsPatch,
+  VoiceSynthesizeChunkPayload,
+  VoiceSynthesizeChunkResult,
   VoiceSynthesizePayload,
   VoiceSynthesizeResult,
 } from '../../src/shared/types';
@@ -50,32 +56,57 @@ export function registerVoiceIpc(): void {
         return { ok: false, error: '朗读文本为空' };
       }
 
-      const cleaned = truncateForSpeech(
-        stripMarkdownForSpeech(raw),
-        settings.ttsMaxChars,
-      );
-      if (!cleaned) {
+      if (!hasSpeakableDialogue(raw)) {
+        return { ok: false, error: '清理后无可用朗读文本' };
+      }
+
+      const plan = planStreamingSpeechFromMessage(raw, settings.ttsMaxChars);
+      const speakSteps = plan.filter((step) => step.type === 'speak');
+      if (speakSteps.length === 0) {
         return { ok: false, error: '清理后无可用朗读文本' };
       }
 
       try {
-        const engine = getBailianTtsEngine();
-        const result = await engine.synthesize(cleaned, {
-          model: settings.ttsModel,
-          voiceId: settings.ttsVoiceId,
-          rate: settings.ttsRate,
-          format: 'mp3',
-          languageHint: settings.sttLanguage === 'en' ? 'en' : 'zh',
-        });
-        const audioBuffer = Buffer.from(result.audio);
-        return {
-          ok: true,
-          audio: audioBuffer.buffer.slice(
-            audioBuffer.byteOffset,
-            audioBuffer.byteOffset + audioBuffer.byteLength,
-          ),
-          mime: result.mime,
-        };
+        const steps: SpeechPlaybackStep[] = [];
+
+        for (const step of plan) {
+          if (step.type === 'pause') {
+            steps.push({ kind: 'pause', durationMs: step.ms });
+            continue;
+          }
+
+          const result = await synthesizeVoiceChunk(step.text);
+          steps.push({
+            kind: 'audio',
+            mime: result.mime,
+            audio: result.audio,
+          });
+        }
+
+        return { ok: true, steps };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: message };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'voice:synthesizeChunk',
+    async (_event, payload: VoiceSynthesizeChunkPayload): Promise<VoiceSynthesizeChunkResult> => {
+      const settings = getVoiceSettings();
+      if (!settings.ttsEnabled) {
+        return { ok: false, error: '语音朗读已关闭' };
+      }
+
+      const raw = payload.text?.trim() ?? '';
+      if (!raw) {
+        return { ok: false, error: '朗读文本为空' };
+      }
+
+      try {
+        const result = await synthesizeVoiceChunk(raw);
+        return { ok: true, audio: result.audio, mime: result.mime };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return { ok: false, error: message };
