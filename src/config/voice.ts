@@ -170,6 +170,15 @@ export function resolveSttWsEndpoint(): string {
   return DEFAULT_STT_WS_ENDPOINT;
 }
 
+/** Resolve the CosyVoice streaming WebSocket endpoint (same inference WS as STT by default). */
+export function resolveTtsWsEndpoint(): string {
+  const fromEnv =
+    process.env.VOICE_TTS_WS_ENDPOINT?.trim().replace(/\/$/, '') ||
+    process.env.VOICE_STT_ENDPOINT?.trim().replace(/\/$/, '');
+  if (fromEnv) return fromEnv;
+  return DEFAULT_STT_WS_ENDPOINT;
+}
+
 export function getVoiceApiKeyMasked(): string {
   const settings = getVoiceSettings();
   if (!settings.useChatApi && settings.voiceApiKey) {

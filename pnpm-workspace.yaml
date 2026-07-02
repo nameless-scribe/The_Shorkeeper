@@ -2,3 +2,5 @@ allowBuilds:
   electron: true
   esbuild: true
   electron-winstaller: true
+  # Transitive dep (onnxruntime-web); prebuilt artifacts work without postinstall.
+  protobufjs: false

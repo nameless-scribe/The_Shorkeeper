@@ -7,8 +7,9 @@ import {
   saveVoiceSettings,
 } from '../../src/config/voice';
 import { synthesizeVoiceChunk } from '../../src/voice/synthesize-chunk';
-import { getBailianSttEngine } from '../../src/voice/bailian-stt';
+import { getBailianSttEngine, createSttStreamSession, type SttStreamSession } from '../../src/voice/bailian-stt';
 import { getCallSessionManager } from '../../src/voice/call-session';
+import { ev } from '../../src/agent/events';
 import {
   hasSpeakableDialogue,
   planStreamingSpeechFromMessage,
@@ -22,6 +23,7 @@ import {
 import type {
   SpeechPlaybackStep,
   VoiceCallEndPayload,
+  VoiceCallInterruptPayload,
   VoiceCallSimpleResult,
   VoiceCallSpeakingDonePayload,
   VoiceCallStartPayload,
@@ -35,6 +37,12 @@ import type {
   VoiceSynthesizeResult,
   VoiceTranscribePayload,
   VoiceTranscribeResult,
+  VoiceSttCallStreamStartPayload,
+  VoiceSttCallStreamStartResult,
+  VoiceSttCallStreamPushPayload,
+  VoiceSttCallStreamFinishPayload,
+  VoiceSttCallStreamFinishResult,
+  VoiceSttCallStreamAbortPayload,
 } from '../../src/shared/types';
 
 function toInfo(settings: ReturnType<typeof getVoiceSettings>): VoiceSettingsInfo {
@@ -45,6 +53,26 @@ function toInfo(settings: ReturnType<typeof getVoiceSettings>): VoiceSettingsInf
     voiceApiKeyMasked: getVoiceApiKeyMasked(),
     voiceConfigured: Boolean(settings.ttsVoiceId.trim()),
     ttsEndpoint: resolveTtsEndpoint(),
+  };
+}
+
+const callSttStreams = new Map<string, SttStreamSession>();
+
+function abortCallSttStream(callId: string): void {
+  const session = callSttStreams.get(callId);
+  if (session) {
+    session.abort();
+    callSttStreams.delete(callId);
+  }
+}
+
+function buildSttOptions(settings: ReturnType<typeof getVoiceSettings>, sampleRate = 16000) {
+  const lang = settings.sttLanguage;
+  const languageHints = lang === 'auto' ? undefined : [lang];
+  return {
+    model: settings.sttModel,
+    sampleRate,
+    languageHints,
   };
 }
 
@@ -168,6 +196,80 @@ export function registerVoiceIpc(): void {
   );
 
   ipcMain.handle(
+    'voice:stt:startCallStream',
+    async (_event, payload: VoiceSttCallStreamStartPayload): Promise<VoiceSttCallStreamStartResult> => {
+      const settings = getVoiceSettings();
+      if (!settings.sttEnabled) {
+        return { ok: false, error: '语音输入已关闭' };
+      }
+
+      const record = getCallSessionManager().get(payload.callId);
+      if (!record || record.state === 'idle') {
+        return { ok: false, error: '通话不存在' };
+      }
+
+      abortCallSttStream(payload.callId);
+
+      try {
+        const session = await createSttStreamSession(buildSttOptions(settings), {
+          onPartial: (text) => {
+            broadcastAgentEvent(ev.callTranscript(payload.callId, 'user', text, false));
+          },
+        });
+        callSttStreams.set(payload.callId, session);
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: message };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'voice:stt:pushChunk',
+    (_event, payload: VoiceSttCallStreamPushPayload): VoiceSttCallStreamStartResult => {
+      const session = callSttStreams.get(payload.callId);
+      if (!session) {
+        return { ok: false, error: '流式识别未开始' };
+      }
+      if (!payload.chunk || payload.chunk.byteLength === 0) {
+        return { ok: true };
+      }
+      if (payload.chunk.byteLength > 512 * 1024) {
+        return { ok: false, error: '音频块过大' };
+      }
+      session.pushPcm(payload.chunk);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    'voice:stt:finishCallStream',
+    async (_event, payload: VoiceSttCallStreamFinishPayload): Promise<VoiceSttCallStreamFinishResult> => {
+      const session = callSttStreams.get(payload.callId);
+      if (!session) {
+        return { ok: false, error: '流式识别未开始' };
+      }
+      callSttStreams.delete(payload.callId);
+      try {
+        const result = await session.finish();
+        return { ok: true, text: result.text };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: message };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'voice:stt:abortCallStream',
+    (_event, payload: VoiceSttCallStreamAbortPayload): VoiceSttCallStreamStartResult => {
+      abortCallSttStream(payload.callId);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
     'voice:call:start',
     (_event, payload: VoiceCallStartPayload): VoiceCallStartResult =>
       getCallSessionManager().start(payload.sessionId),
@@ -186,9 +288,19 @@ export function registerVoiceIpc(): void {
   );
 
   ipcMain.handle(
+    'voice:call:interrupt',
+    (_event, payload: VoiceCallInterruptPayload): VoiceCallSimpleResult => {
+      abortCallSttStream(payload.callId);
+      return getCallSessionManager().interrupt(payload.callId);
+    },
+  );
+
+  ipcMain.handle(
     'voice:call:end',
-    (_event, payload: VoiceCallEndPayload): VoiceCallSimpleResult =>
-      getCallSessionManager().end(payload.callId),
+    (_event, payload: VoiceCallEndPayload): VoiceCallSimpleResult => {
+      abortCallSttStream(payload.callId);
+      return getCallSessionManager().end(payload.callId);
+    },
   );
 
   ipcMain.handle('voice:call:isActive', (_event, sessionId?: string): { active: boolean } => ({

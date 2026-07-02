@@ -8,8 +8,14 @@ import {
   setSessionRunId,
 } from '../agent/session-run-lock';
 import type { AgUiEvent, CallState } from '../agent/types';
+import { getVoiceSettings } from '../config/voice';
 import { getModelConfigSafe } from '../models/config';
 import { recordTokenUsage } from '../db/token-usage';
+import { createTtsStreamSession, type TtsStreamSession } from './tts-engine';
+import { DeltaSentenceBuffer } from './delta-sentence-buffer';
+import { synthesizeVoiceChunk } from './synthesize-chunk';
+import { hasSpeakableDialogue } from './text-for-speech';
+import type { TtsOptions } from './types';
 
 export interface CallSessionRecord {
   callId: string;
@@ -29,10 +35,38 @@ export interface CallSessionHost {
   onRunError(): void;
 }
 
+type StreamMode = 'ws' | 'rest-fallback';
+
+interface CallTurnContext {
+  sentenceBuffer: DeltaSentenceBuffer;
+  ttsStream: TtsStreamSession | null;
+  audioSeq: number;
+  speakingStarted: boolean;
+  streamMode: StreamMode;
+  assistantText: string;
+}
+
+function buildTtsOptions(): TtsOptions | null {
+  const settings = getVoiceSettings();
+  if (!settings.ttsEnabled || !settings.ttsVoiceId.trim()) {
+    return null;
+  }
+  return {
+    model: settings.ttsModel,
+    voiceId: settings.ttsVoiceId,
+    rate: settings.ttsRate,
+    volume: settings.ttsVolume,
+    format: 'mp3',
+    languageHint:
+      settings.sttLanguage === 'en' ? 'en' : settings.sttLanguage === 'zh' ? 'zh' : undefined,
+  };
+}
+
 class CallSessionManager {
   constructor(private readonly host: CallSessionHost) {}
 
   private readonly sessions = new Map<string, CallSessionRecord>();
+  private readonly turnContexts = new Map<string, CallTurnContext>();
 
   get(callId: string): CallSessionRecord | undefined {
     return this.sessions.get(callId);
@@ -63,6 +97,137 @@ class CallSessionManager {
     return { ok: true, callId };
   }
 
+  private createTurnContext(): CallTurnContext {
+    return {
+      sentenceBuffer: new DeltaSentenceBuffer(),
+      ttsStream: null,
+      audioSeq: 0,
+      speakingStarted: false,
+      streamMode: 'ws',
+      assistantText: '',
+    };
+  }
+
+  private clearTurnContext(callId: string): void {
+    const ctx = this.turnContexts.get(callId);
+    if (ctx?.ttsStream) {
+      ctx.ttsStream.abort();
+    }
+    this.turnContexts.delete(callId);
+  }
+
+  private emitAudioChunk(
+    record: CallSessionRecord,
+    ctx: CallTurnContext,
+    audio: ArrayBuffer,
+    mime: string,
+  ): void {
+    const seq = ctx.audioSeq;
+    ctx.audioSeq += 1;
+    if (!ctx.speakingStarted) {
+      ctx.speakingStarted = true;
+      record.state = 'speaking';
+      this.host.broadcast(ev.callState(record.callId, 'speaking'));
+    }
+    this.host.broadcast(ev.callAudioChunk(record.callId, audio, seq, mime));
+  }
+
+  private async ensureTtsStream(
+    record: CallSessionRecord,
+    ctx: CallTurnContext,
+    options: TtsOptions,
+  ): Promise<void> {
+    if (ctx.streamMode !== 'ws' || ctx.ttsStream) return;
+
+    try {
+      ctx.ttsStream = await createTtsStreamSession(options, {
+        onAudioChunk: (audio) => {
+          this.emitAudioChunk(record, ctx, audio, 'audio/mpeg');
+        },
+        onError: () => {
+          ctx.ttsStream?.abort();
+          ctx.ttsStream = null;
+          if (!ctx.speakingStarted) {
+            ctx.streamMode = 'rest-fallback';
+          }
+        },
+      });
+    } catch {
+      ctx.streamMode = 'rest-fallback';
+    }
+  }
+
+  private async pushSentences(
+    record: CallSessionRecord,
+    ctx: CallTurnContext,
+    sentences: string[],
+    options: TtsOptions | null,
+  ): Promise<void> {
+    if (sentences.length === 0) return;
+    if (ctx.streamMode === 'rest-fallback' || !options) return;
+
+    await this.ensureTtsStream(record, ctx, options);
+    if (!ctx.ttsStream) return;
+
+    for (const sentence of sentences) {
+      await ctx.ttsStream.pushText(sentence);
+    }
+  }
+
+  private async finalizeAssistantSpeech(
+    record: CallSessionRecord,
+    ctx: CallTurnContext,
+    options: TtsOptions | null,
+  ): Promise<void> {
+    const finalText = ctx.assistantText.trim();
+    if (!finalText || !hasSpeakableDialogue(finalText)) {
+      record.state = 'listening';
+      this.host.broadcast(ev.callState(record.callId, 'listening'));
+      return;
+    }
+
+    this.host.broadcast(ev.callTranscript(record.callId, 'assistant', finalText, true));
+
+    if (ctx.streamMode === 'rest-fallback' || !options) {
+      try {
+        const result = await synthesizeVoiceChunk(finalText);
+        this.emitAudioChunk(record, ctx, result.audio, result.mime);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        record.state = 'listening';
+        this.host.broadcast(ev.callState(record.callId, 'listening'));
+        this.host.broadcast(ev.callError(record.callId, message));
+        return;
+      }
+      this.host.broadcast(ev.callSpeechEnd(record.callId));
+      return;
+    }
+
+    const tail = ctx.sentenceBuffer.flush();
+    await this.pushSentences(record, ctx, tail, options);
+
+    if (ctx.ttsStream) {
+      try {
+        await ctx.ttsStream.finish();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!ctx.speakingStarted) {
+          record.state = 'listening';
+          this.host.broadcast(ev.callState(record.callId, 'listening'));
+          this.host.broadcast(ev.callError(record.callId, message));
+          return;
+        }
+      }
+    }
+
+    if (!ctx.speakingStarted) {
+      record.state = 'listening';
+      this.host.broadcast(ev.callState(record.callId, 'listening'));
+    }
+
+    this.host.broadcast(ev.callSpeechEnd(record.callId));
+  }
+
   async submitUserText(callId: string, text: string): Promise<CallSessionResult> {
     const record = this.sessions.get(callId);
     if (!record) {
@@ -90,8 +255,10 @@ class CallSessionManager {
 
     this.host.onRunStarted();
     let runId: string | null = null;
-    let assistantText = '';
     let terminalError: string | null = null;
+    const turn = this.createTurnContext();
+    this.turnContexts.set(callId, turn);
+    const ttsOptions = buildTtsOptions();
 
     try {
       for await (const agEvent of runOrchestrator(trimmed, record.sessionId, controller.signal)) {
@@ -103,7 +270,9 @@ class CallSessionManager {
         }
 
         if (agEvent.type === 'text_delta') {
-          assistantText += agEvent.delta;
+          turn.assistantText += agEvent.delta;
+          const sentences = turn.sentenceBuffer.append(agEvent.delta);
+          await this.pushSentences(record, turn, sentences, ttsOptions);
         }
 
         if (agEvent.type === 'usage') {
@@ -120,6 +289,7 @@ class CallSessionManager {
         }
 
         if (agEvent.type === 'run_finished') {
+          await this.finalizeAssistantSpeech(record, turn, ttsOptions);
           this.host.onRunFinished();
         } else if (agEvent.type === 'run_error') {
           this.host.onRunError();
@@ -142,17 +312,6 @@ class CallSessionManager {
         return { ok: false, error: terminalError };
       }
 
-      const finalText = assistantText.trim();
-      if (finalText) {
-        record.state = 'speaking';
-        // Transcript must arrive before speaking state so CallStage has text when playback starts.
-        this.host.broadcast(ev.callTranscript(callId, 'assistant', finalText, true));
-        this.host.broadcast(ev.callState(callId, 'speaking'));
-      } else {
-        record.state = 'listening';
-        this.host.broadcast(ev.callState(callId, 'listening'));
-      }
-
       return { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -165,6 +324,7 @@ class CallSessionManager {
       this.host.broadcast(ev.callError(callId, message));
       return { ok: false, error: message };
     } finally {
+      this.clearTurnContext(callId);
       releaseSessionRun(record.sessionId);
     }
   }
@@ -182,11 +342,35 @@ class CallSessionManager {
     return { ok: true };
   }
 
+  interrupt(callId: string): CallSessionResult {
+    const record = this.sessions.get(callId);
+    if (!record) {
+      return { ok: false, error: '通话不存在' };
+    }
+    if (record.state === 'idle') {
+      return { ok: false, error: '通话已结束' };
+    }
+
+    const activeRun = getSessionRun(record.sessionId);
+    if (activeRun) {
+      activeRun.controller.abort();
+      this.host.onRunError();
+      releaseSessionRun(record.sessionId);
+    }
+
+    this.clearTurnContext(callId);
+    record.state = 'listening';
+    this.host.broadcast(ev.callState(callId, 'listening'));
+    return { ok: true };
+  }
+
   end(callId: string): CallSessionResult {
     const record = this.sessions.get(callId);
     if (!record) {
       return { ok: false, error: '通话不存在' };
     }
+
+    this.clearTurnContext(callId);
 
     const activeRun = getSessionRun(record.sessionId);
     if (activeRun) {

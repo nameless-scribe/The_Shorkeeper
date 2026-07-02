@@ -319,6 +319,57 @@ export function VoicePage() {
             </p>
           </div>
         </section>
+
+        <section className="rounded-2xl border border-keeper-cyan/15 bg-keeper-navy/30 p-4 space-y-3">
+          <p className="text-sm font-medium text-keeper-ice">语音通话</p>
+          <p className="text-xs text-keeper-ice/45">
+            半双工需按住说话；全双工连续聆听，可直接插话打断守岸人。
+          </p>
+          <SettingsSegmented
+            value={settings.callMode}
+            options={[
+              { value: 'push_to_talk', label: '按住说话（半双工）' },
+              { value: 'vad_auto', label: '连续聆听（全双工）' },
+            ]}
+            onChange={(value) =>
+              void save({
+                callMode: value as 'push_to_talk' | 'vad_auto',
+                callAllowBargeIn: value === 'vad_auto' ? true : settings.callAllowBargeIn,
+              })
+            }
+          />
+          {settings.callMode === 'vad_auto' && (
+            <div>
+              <label className="text-xs text-keeper-ice/50">
+                静音判句 {settings.callSilenceMs} ms
+              </label>
+              <input
+                type="range"
+                min={300}
+                max={2000}
+                step={100}
+                value={settings.callSilenceMs}
+                onChange={(e) => void save({ callSilenceMs: Number(e.target.value) })}
+                className="mt-2 w-full accent-keeper-cyan"
+              />
+              <p className="mt-1 text-[11px] text-keeper-ice/40">
+                说话后停顿多久视为一句结束（默认 800ms）
+              </p>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-keeper-ice">允许插话打断</p>
+              <p className="mt-1 text-xs text-keeper-ice/45">
+                守岸人说话或思考时，检测到您开口即停止播放并转为聆听
+              </p>
+            </div>
+            <SettingsToggle
+              checked={settings.callAllowBargeIn}
+              onChange={(callAllowBargeIn) => void save({ callAllowBargeIn })}
+            />
+          </div>
+        </section>
       </div>
     </SettingsPageShell>
   );

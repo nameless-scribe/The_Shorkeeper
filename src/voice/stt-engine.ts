@@ -7,3 +7,6 @@ export interface SttEngine {
    */
   transcribe(pcm: ArrayBuffer, options: SttOptions): Promise<SttResult>;
 }
+
+export type { SttStreamSession, SttStreamHandlers } from './bailian-stt';
+export { createSttStreamSession } from './bailian-stt';

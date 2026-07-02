@@ -78,4 +78,17 @@ export const ev = {
   callError(callId: string, message: string): AgUiEvent {
     return { type: 'call_error', callId, message };
   },
+
+  callAudioChunk(
+    callId: string,
+    audio: ArrayBuffer,
+    seq: number,
+    mime: string,
+  ): AgUiEvent {
+    return { type: 'call_audio_chunk', callId, audio, seq, mime };
+  },
+
+  callSpeechEnd(callId: string): AgUiEvent {
+    return { type: 'call_speech_end', callId };
+  },
 };

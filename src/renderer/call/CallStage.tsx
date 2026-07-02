@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgUiEvent, CallState } from '@/shared/types';
-import { hasSpeakableDialogue } from '@/voice/text-for-speech';
 import { AppBackground } from '../components/AppBackground';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { PermissionDialog } from '../components/PermissionDialog';
 import { useVoiceInput } from '../hooks/useVoiceInput';
-import { useVoicePlayback } from '../hooks/useVoicePlayback';
+import { useCallVad } from '../hooks/useCallVad';
+import { useCallStreamPlayback } from '../hooks/useCallStreamPlayback';
 import { usePermissionRequests } from '../hooks/usePermissionRequests';
-
-const CALL_PLAYBACK_ID_PREFIX = 'call-assistant';
 
 const STATE_LABELS: Record<Exclude<CallState, 'idle'>, string> = {
   listening: '聆听中',
@@ -24,48 +22,146 @@ const STATE_RING: Record<Exclude<CallState, 'idle'>, string> = {
 
 export function CallStage() {
   const callIdRef = useRef<string | null>(null);
-  const assistantPendingRef = useRef<string | null>(null);
-  const playbackStartedRef = useRef(false);
-  const playbackRoundRef = useRef(0);
-  const lastPlayedTextRef = useRef<string | null>(null);
   const callStateRef = useRef<CallState>('idle');
-  const [playbackTrigger, setPlaybackTrigger] = useState(0);
+  const inputStatusRef = useRef<'idle' | 'recording' | 'transcribing'>('idle');
+  const streamEndPendingRef = useRef(false);
+  const interruptInFlightRef = useRef(false);
+  const submittingRef = useRef(false);
+
+  const [callId, setCallId] = useState<string | null>(null);
+
   const [callState, setCallState] = useState<CallState>('idle');
   const [displayName, setDisplayName] = useState('守岸人');
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
+  const [callMode, setCallMode] = useState<'push_to_talk' | 'vad_auto'>('push_to_talk');
+  const [callAllowBargeIn, setCallAllowBargeIn] = useState(false);
+  const [callSilenceMs, setCallSilenceMs] = useState(800);
 
   const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
   const { status: inputStatus, error: inputError, level, start, stopAndTranscribe, cancel } =
     useVoiceInput();
-  const { playText, stop: stopSpeech, playingId, loadingId, error: playbackError } =
-    useVoicePlayback();
+  const {
+    playing: streamPlaying,
+    loading: streamLoading,
+    error: playbackError,
+    reset: resetStreamPlayback,
+    startRound,
+    enqueue,
+    markStreamEnd,
+    stop: stopStreamPlayback,
+  } = useCallStreamPlayback();
+
+  callStateRef.current = callState;
+  inputStatusRef.current = inputStatus;
 
   const canSpeak =
     !starting &&
     callState === 'listening' &&
     inputStatus === 'idle' &&
-    !playingId &&
-    !loadingId;
+    !streamPlaying &&
+    !streamLoading &&
+    !submittingRef.current;
 
-  callStateRef.current = callState;
+  const submitUserText = useCallback(async (text: string) => {
+    const callId = callIdRef.current;
+    if (!callId || !text.trim() || submittingRef.current) return;
+
+    submittingRef.current = true;
+    try {
+      const result = await window.shorekeeper.voice.call.userText({ callId, text });
+      if (!result.ok) {
+        setError(result.error);
+      }
+    } finally {
+      submittingRef.current = false;
+    }
+  }, []);
+
+  const performInterrupt = useCallback(async () => {
+    const callId = callIdRef.current;
+    if (!callId || interruptInFlightRef.current) return;
+
+    interruptInFlightRef.current = true;
+    streamEndPendingRef.current = false;
+    stopStreamPlayback();
+    resetStreamPlayback();
+
+    try {
+      const result = await window.shorekeeper.voice.call.interrupt({ callId });
+      if (!result.ok) {
+        setError(result.error);
+      }
+    } finally {
+      interruptInFlightRef.current = false;
+    }
+  }, [resetStreamPlayback, stopStreamPlayback]);
+
+  const handleVadSpeechStart = useCallback(async () => {
+    const activeCallId = callIdRef.current;
+    if (!activeCallId) return;
+
+    const state = callStateRef.current;
+    let allowRecording = false;
+
+    if (callAllowBargeIn && (state === 'speaking' || state === 'thinking')) {
+      await performInterrupt();
+      allowRecording = true;
+    } else if (callMode === 'vad_auto' && state === 'listening') {
+      allowRecording = true;
+    }
+
+    if (!allowRecording || inputStatusRef.current === 'recording') return;
+
+    setError(null);
+    await start(activeCallId);
+  }, [callAllowBargeIn, callMode, performInterrupt, start]);
+
+  const handleVadSpeechEnd = useCallback(async () => {
+    if (inputStatusRef.current !== 'recording') return;
+
+    const text = await stopAndTranscribe();
+    if (!text.trim()) return;
+    await submitUserText(text);
+  }, [stopAndTranscribe, submitUserText]);
+
+  useCallVad({
+    enabled: !starting && Boolean(callId),
+    callMode,
+    callAllowBargeIn,
+    callSilenceMs,
+    callState,
+    onSpeechStart: handleVadSpeechStart,
+    onSpeechEnd: handleVadSpeechEnd,
+    onError: (message) => setError(message),
+  });
 
   const endCall = useCallback(async () => {
     const callId = callIdRef.current;
     if (callId) {
       callIdRef.current = null;
+      setCallId(null);
       await window.shorekeeper.voice.call.end({ callId }).catch(console.error);
     }
-    stopSpeech();
+    stopStreamPlayback();
     cancel();
-  }, [cancel, stopSpeech]);
+  }, [cancel, stopStreamPlayback]);
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
       try {
-        const session = await window.shorekeeper.sessions.current();
+        const [session, voiceSettings] = await Promise.all([
+          window.shorekeeper.sessions.current(),
+          window.shorekeeper.voice.getSettings(),
+        ]);
+        if (cancelled) return;
+
+        setCallMode(voiceSettings.callMode);
+        setCallAllowBargeIn(voiceSettings.callAllowBargeIn);
+        setCallSilenceMs(voiceSettings.callSilenceMs);
+
         const result = await window.shorekeeper.voice.call.start({ sessionId: session.id });
         if (cancelled) return;
         if (!result.ok) {
@@ -74,6 +170,7 @@ export function CallStage() {
           return;
         }
         callIdRef.current = result.callId;
+        setCallId(result.callId);
         setCallState('listening');
         setStarting(false);
       } catch (err) {
@@ -100,19 +197,31 @@ export function CallStage() {
 
       if (event.type === 'call_state' && event.callId === callId) {
         if (event.state === 'thinking') {
-          lastPlayedTextRef.current = null;
+          streamEndPendingRef.current = false;
+          resetStreamPlayback();
+          void startRound();
         }
         setCallState(event.state);
         return;
       }
 
-      if (event.type === 'call_transcript' && event.callId === callId && event.final) {
-        if (event.role === 'assistant') {
-          assistantPendingRef.current = event.text;
-          if (callStateRef.current === 'speaking') {
-            setPlaybackTrigger((v) => v + 1);
+      if (event.type === 'call_audio_chunk' && event.callId === callId) {
+        enqueue(event.seq, event.audio);
+        return;
+      }
+
+      if (event.type === 'call_speech_end' && event.callId === callId) {
+        if (interruptInFlightRef.current) return;
+        streamEndPendingRef.current = true;
+        void (async () => {
+          const played = await markStreamEnd();
+          streamEndPendingRef.current = false;
+          if (interruptInFlightRef.current) return;
+          const activeCallId = callIdRef.current;
+          if (activeCallId && callStateRef.current === 'speaking') {
+            await window.shorekeeper.voice.call.speakingDone({ callId: activeCallId });
           }
-        }
+        })();
         return;
       }
 
@@ -124,83 +233,44 @@ export function CallStage() {
     return () => {
       off();
     };
-  }, []);
-
-  useEffect(() => {
-    if (callState !== 'speaking') {
-      playbackStartedRef.current = false;
-      return;
-    }
-
-    const text = assistantPendingRef.current;
-    if (!text) {
-      return;
-    }
-    if (!hasSpeakableDialogue(text)) {
-      assistantPendingRef.current = null;
-      const callId = callIdRef.current;
-      if (callId) {
-        void window.shorekeeper.voice.call.speakingDone({ callId });
-      }
-      return;
-    }
-
-    if (lastPlayedTextRef.current === text) return;
-
-    lastPlayedTextRef.current = text;
-    assistantPendingRef.current = null;
-    playbackStartedRef.current = true;
-    playbackRoundRef.current += 1;
-    void playText(`${CALL_PLAYBACK_ID_PREFIX}-${playbackRoundRef.current}`, text);
-  }, [callState, playText, playbackTrigger]);
-
-  // Only end speaking after playback actually started and then finished (avoids racing playText startup).
-  const wasPlayingRef = useRef(false);
-  useEffect(() => {
-    const active = Boolean(playingId || loadingId);
-    if (
-      wasPlayingRef.current &&
-      !active &&
-      callState === 'speaking' &&
-      playbackStartedRef.current
-    ) {
-      playbackStartedRef.current = false;
-      const callId = callIdRef.current;
-      if (callId) {
-        void window.shorekeeper.voice.call.speakingDone({ callId });
-      }
-    }
-    wasPlayingRef.current = active;
-  }, [playingId, loadingId, callState]);
+  }, [enqueue, markStreamEnd, resetStreamPlayback, startRound]);
 
   const handlePushStart = useCallback(() => {
-    if (!canSpeak) return;
+    if (callMode !== 'push_to_talk' || !canSpeak) return;
     setError(null);
-    void start();
-  }, [canSpeak, start]);
+    void start(callIdRef.current ?? undefined);
+  }, [callMode, canSpeak, start]);
 
   const handlePushEnd = useCallback(async () => {
-    if (inputStatus !== 'recording') return;
-    const callId = callIdRef.current;
-    if (!callId) return;
-
+    if (callMode !== 'push_to_talk' || inputStatus !== 'recording') return;
     const text = await stopAndTranscribe();
     if (!text.trim()) return;
-
-    const result = await window.shorekeeper.voice.call.userText({ callId, text });
-    if (!result.ok) {
-      setError(result.error);
-    }
-  }, [inputStatus, stopAndTranscribe]);
+    await submitUserText(text);
+  }, [callMode, inputStatus, stopAndTranscribe, submitUserText]);
 
   const handleHangUp = useCallback(async () => {
     await endCall();
     await window.shorekeeper.window.destroyCall();
   }, [endCall]);
 
+  const toggleCallMode = useCallback(async () => {
+    const next = callMode === 'push_to_talk' ? 'vad_auto' : 'push_to_talk';
+    try {
+      const saved = await window.shorekeeper.voice.saveSettings({
+        callMode: next,
+        callAllowBargeIn: next === 'vad_auto' ? true : callAllowBargeIn,
+      });
+      setCallMode(saved.callMode);
+      setCallAllowBargeIn(saved.callAllowBargeIn);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '无法切换通话模式');
+    }
+  }, [callAllowBargeIn, callMode]);
+
   const visibleState = callState === 'idle' ? 'listening' : callState;
   const stateLabel = starting ? '连接中…' : STATE_LABELS[visibleState];
   const combinedError = error ?? inputError ?? playbackError;
+  const isVadAuto = callMode === 'vad_auto';
 
   return (
     <div className="keeper-panel-shell border border-keeper-silver/25 shadow-cyanSm">
@@ -210,9 +280,17 @@ export function CallStage() {
         <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3">
           <div>
             <h1 className="text-sm font-semibold tracking-wide text-keeper-ice">{displayName}</h1>
-            <p className="text-xs text-keeper-ice/60">语音通话</p>
+            <p className="text-xs text-keeper-ice/60">语音通话 · {isVadAuto ? '全双工' : '半双工'}</p>
           </div>
-          <div className="no-drag flex gap-1">
+          <div className="no-drag flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => void toggleCallMode()}
+              className="rounded-lg border border-keeper-cyan/25 px-2 py-1 text-[10px] text-keeper-cyan/80 transition hover:bg-keeper-cyan/10"
+              title={isVadAuto ? '切换为按住说话' : '切换为连续聆听'}
+            >
+              {isVadAuto ? '全双工' : '半双工'}
+            </button>
             <button
               type="button"
               onClick={() => window.shorekeeper.window.minimize()}
@@ -241,15 +319,19 @@ export function CallStage() {
               <AgentAvatar size="lg" className="relative !h-28 !w-28" />
             </div>
             <p className="text-base font-medium tracking-wide text-keeper-ice">{stateLabel}</p>
-            {inputStatus === 'recording' && (
+            {(inputStatus === 'recording' || (isVadAuto && callState === 'listening')) && (
               <div className="flex w-44 items-center gap-2">
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-keeper-ice/10">
                   <div
                     className="h-full rounded-full bg-keeper-cyan transition-all duration-100"
-                    style={{ width: `${Math.round(level * 100)}%` }}
+                    style={{
+                      width: `${Math.round((inputStatus === 'recording' ? level : 0.15) * 100)}%`,
+                    }}
                   />
                 </div>
-                <span className="text-[10px] text-keeper-ice/50">录音中</span>
+                <span className="text-[10px] text-keeper-ice/50">
+                  {inputStatus === 'recording' ? '录音中' : '正在聆听…'}
+                </span>
               </div>
             )}
           </div>
@@ -262,44 +344,59 @@ export function CallStage() {
         )}
 
         <div className="no-drag flex flex-col items-center gap-3 px-4 pb-5">
-          <button
-            type="button"
-            disabled={!canSpeak && inputStatus !== 'recording'}
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              handlePushStart();
-            }}
-            onPointerUp={(e) => {
-              if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                e.currentTarget.releasePointerCapture(e.pointerId);
-              }
-              void handlePushEnd();
-            }}
-            onPointerCancel={(e) => {
-              if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                e.currentTarget.releasePointerCapture(e.pointerId);
-              }
-              cancel();
-            }}
-            className={`flex h-16 w-16 items-center justify-center rounded-full border-2 text-2xl transition ${
-              inputStatus === 'recording'
-                ? 'border-keeper-cyan bg-keeper-cyan/20 text-keeper-cyan shadow-cyanSm'
-                : canSpeak
-                  ? 'border-keeper-cyan/40 bg-white/[0.05] text-keeper-ice hover:border-keeper-cyan/70 hover:bg-keeper-cyan/10'
-                  : 'cursor-not-allowed border-keeper-ice/15 bg-white/[0.02] text-keeper-ice/30'
-            }`}
-            title="按住说话"
-          >
-            🎙
-          </button>
+          {!isVadAuto && (
+            <button
+              type="button"
+              disabled={!canSpeak && inputStatus !== 'recording'}
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                handlePushStart();
+              }}
+              onPointerUp={(e) => {
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+                void handlePushEnd();
+              }}
+              onPointerCancel={(e) => {
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+                cancel();
+              }}
+              className={`flex h-16 w-16 items-center justify-center rounded-full border-2 text-2xl transition ${
+                inputStatus === 'recording'
+                  ? 'border-keeper-cyan bg-keeper-cyan/20 text-keeper-cyan shadow-cyanSm'
+                  : canSpeak
+                    ? 'border-keeper-cyan/40 bg-white/[0.05] text-keeper-ice hover:border-keeper-cyan/70 hover:bg-keeper-cyan/10'
+                    : 'cursor-not-allowed border-keeper-ice/15 bg-white/[0.02] text-keeper-ice/30'
+              }`}
+              title="按住说话"
+            >
+              🎙
+            </button>
+          )}
+
+          {isVadAuto && (
+            <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-keeper-cyan/50 bg-keeper-cyan/10 text-2xl text-keeper-cyan shadow-cyanSm">
+              🎙
+            </div>
+          )}
+
           <p className="text-[11px] text-keeper-ice/45">
             {inputStatus === 'transcribing'
               ? '识别中…'
               : callState === 'thinking'
-                ? '守岸人正在思考'
+                ? callAllowBargeIn
+                  ? '思考中，可直接说话打断'
+                  : '守岸人正在思考'
                 : callState === 'speaking'
-                  ? '播放中，请稍候'
-                  : '按住说话'}
+                  ? callAllowBargeIn
+                    ? '播放中，说话即可打断'
+                    : '播放中，请稍候'
+                  : isVadAuto
+                    ? '正在聆听，直接说话即可'
+                    : '按住说话'}
           </p>
 
           <button

@@ -23,6 +23,9 @@ assets/live2d/
 # 可选：若立绘仅自用不想提交，取消下行注释
 # public/keeper-bg.png
 
+# VAD / ONNX 静态资源（由 scripts/copy-vad-assets.mjs 从 node_modules 同步）
+public/vad/
+
 # 日志与系统文件
 *.log
 .DS_Store

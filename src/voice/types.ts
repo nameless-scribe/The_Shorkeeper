@@ -10,6 +10,9 @@ export type SttLanguage = 'zh' | 'en' | 'auto';
 
 export type SttModel = 'paraformer-realtime-v2' | 'paraformer-realtime-v1';
 
+/** Paraformer streaming frame size: 100ms @ 16kHz 16-bit mono. */
+export const STT_FRAME_BYTES = 3200;
+
 export type PlaybackTarget = 'chat' | 'pet' | 'both';
 
 export interface VoiceSettings {

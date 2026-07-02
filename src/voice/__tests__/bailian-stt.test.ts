@@ -97,6 +97,10 @@ describe('BailianSttEngine', () => {
 
     socket.fire('message', evt('task-started'));
 
+    await vi.waitFor(() => {
+      expect(socket.binaryFrames.length).toBe(3);
+    });
+
     // audio frames + finish-task sent after task-started
     expect(socket.binaryFrames).toHaveLength(3);
     const finishTask = JSON.parse(socket.strings[socket.strings.length - 1]) as any;

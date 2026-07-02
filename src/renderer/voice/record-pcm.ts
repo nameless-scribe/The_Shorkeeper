@@ -21,6 +21,11 @@ class PcmCollector extends AudioWorkletProcessor {
 registerProcessor('pcm-collector', PcmCollector);
 `;
 
+export interface PcmRecordingOptions {
+  /** Called with Int16 PCM for each captured frame (after Float32→Int16). */
+  onPcmFrame?: (pcm: ArrayBuffer) => void;
+}
+
 export interface PcmRecorder {
   /** Stop capture and return the collected PCM. Safe to call once. */
   stop(): Promise<{ pcm: ArrayBuffer; sampleRate: number }>;
@@ -70,7 +75,7 @@ function floatToInt16(samples: Float32Array): ArrayBuffer {
  * Begin microphone capture. Resolves once the pipeline is live; reject means
  * nothing was started (permission denied, no device, etc.).
  */
-export async function startPcmRecording(): Promise<PcmRecorder> {
+export async function startPcmRecording(options: PcmRecordingOptions = {}): Promise<PcmRecorder> {
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -116,6 +121,8 @@ export async function startPcmRecording(): Promise<PcmRecorder> {
     let sumSquares = 0;
     for (let i = 0; i < frame.length; i += 1) sumSquares += frame[i] * frame[i];
     level = Math.sqrt(sumSquares / frame.length);
+
+    options.onPcmFrame?.(floatToInt16(frame));
   };
 
   source.connect(worklet);

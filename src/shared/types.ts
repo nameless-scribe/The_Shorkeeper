@@ -463,7 +463,34 @@ export interface VoiceCallEndPayload {
   callId: string;
 }
 
+export interface VoiceCallInterruptPayload {
+  callId: string;
+}
+
 export type VoiceCallSimpleResult = { ok: true } | { ok: false; error: string };
+
+export interface VoiceSttCallStreamStartPayload {
+  callId: string;
+}
+
+export type VoiceSttCallStreamStartResult = { ok: true } | { ok: false; error: string };
+
+export interface VoiceSttCallStreamPushPayload {
+  callId: string;
+  chunk: ArrayBuffer;
+}
+
+export interface VoiceSttCallStreamFinishPayload {
+  callId: string;
+}
+
+export type VoiceSttCallStreamFinishResult =
+  | { ok: true; text: string }
+  | { ok: false; error: string };
+
+export interface VoiceSttCallStreamAbortPayload {
+  callId: string;
+}
 
 export type VoiceSynthesizeChunkResult =
   | { ok: true; audio: ArrayBuffer; mime: string }

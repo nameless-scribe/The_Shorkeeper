@@ -54,7 +54,14 @@ import type {
   VoiceCallUserTextPayload,
   VoiceCallSpeakingDonePayload,
   VoiceCallEndPayload,
+  VoiceCallInterruptPayload,
   VoiceCallSimpleResult,
+  VoiceSttCallStreamStartPayload,
+  VoiceSttCallStreamStartResult,
+  VoiceSttCallStreamPushPayload,
+  VoiceSttCallStreamFinishPayload,
+  VoiceSttCallStreamFinishResult,
+  VoiceSttCallStreamAbortPayload,
   UpdateInfo,
 } from '../src/shared/types';
 
@@ -327,6 +334,22 @@ const shorekeeperApi = {
       ipcRenderer.invoke('voice:synthesizeChunk', payload),
     transcribe: (payload: VoiceTranscribePayload): Promise<VoiceTranscribeResult> =>
       ipcRenderer.invoke('voice:transcribe', payload),
+    stt: {
+      startCallStream: (
+        payload: VoiceSttCallStreamStartPayload,
+      ): Promise<VoiceSttCallStreamStartResult> =>
+        ipcRenderer.invoke('voice:stt:startCallStream', payload),
+      pushChunk: (payload: VoiceSttCallStreamPushPayload): Promise<VoiceSttCallStreamStartResult> =>
+        ipcRenderer.invoke('voice:stt:pushChunk', payload),
+      finishCallStream: (
+        payload: VoiceSttCallStreamFinishPayload,
+      ): Promise<VoiceSttCallStreamFinishResult> =>
+        ipcRenderer.invoke('voice:stt:finishCallStream', payload),
+      abortCallStream: (
+        payload: VoiceSttCallStreamAbortPayload,
+      ): Promise<VoiceSttCallStreamStartResult> =>
+        ipcRenderer.invoke('voice:stt:abortCallStream', payload),
+    },
     call: {
       start: (payload: VoiceCallStartPayload): Promise<VoiceCallStartResult> =>
         ipcRenderer.invoke('voice:call:start', payload),
@@ -334,6 +357,8 @@ const shorekeeperApi = {
         ipcRenderer.invoke('voice:call:userText', payload),
       speakingDone: (payload: VoiceCallSpeakingDonePayload): Promise<VoiceCallSimpleResult> =>
         ipcRenderer.invoke('voice:call:speakingDone', payload),
+      interrupt: (payload: VoiceCallInterruptPayload): Promise<VoiceCallSimpleResult> =>
+        ipcRenderer.invoke('voice:call:interrupt', payload),
       end: (payload: VoiceCallEndPayload): Promise<VoiceCallSimpleResult> =>
         ipcRenderer.invoke('voice:call:end', payload),
       isActive: (sessionId?: string): Promise<{ active: boolean }> =>

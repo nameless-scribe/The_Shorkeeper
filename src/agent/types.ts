@@ -32,7 +32,15 @@ export type AgUiEvent =
       text: string;
       final: boolean;
     }
-  | { type: 'call_error'; callId: string; message: string };
+  | { type: 'call_error'; callId: string; message: string }
+  | {
+      type: 'call_audio_chunk';
+      callId: string;
+      audio: ArrayBuffer;
+      seq: number;
+      mime: string;
+    }
+  | { type: 'call_speech_end'; callId: string };
 
 export interface OpenAIToolCall {
   id: string;
