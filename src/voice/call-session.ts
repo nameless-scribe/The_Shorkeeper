@@ -31,7 +31,7 @@ export type CallSessionStartResult =
 export interface CallSessionHost {
   broadcast(event: AgUiEvent): void;
   onRunStarted(): void;
-  onRunFinished(): void;
+  onRunFinished(options?: { recordAffection?: boolean }): void;
   onRunError(): void;
 }
 
@@ -67,6 +67,9 @@ class CallSessionManager {
 
   private readonly sessions = new Map<string, CallSessionRecord>();
   private readonly turnContexts = new Map<string, CallTurnContext>();
+  private readonly streamFailureCounts = new Map<string, number>();
+
+  private static readonly STREAM_FAILURE_DEGRADE_THRESHOLD = 2;
 
   get(callId: string): CallSessionRecord | undefined {
     return this.sessions.get(callId);
@@ -95,6 +98,24 @@ class CallSessionManager {
     this.sessions.set(callId, record);
     this.host.broadcast(ev.callState(callId, 'listening'));
     return { ok: true, callId };
+  }
+
+  private noteStreamFailure(callId: string): void {
+    const count = (this.streamFailureCounts.get(callId) ?? 0) + 1;
+    this.streamFailureCounts.set(callId, count);
+    if (count >= CallSessionManager.STREAM_FAILURE_DEGRADE_THRESHOLD) {
+      this.host.broadcast(
+        ev.callDegraded(
+          callId,
+          'stream_failures',
+          '语音服务连接不稳定，建议切换半双工或稍后重试',
+        ),
+      );
+    }
+  }
+
+  private resetStreamFailures(callId: string): void {
+    this.streamFailureCounts.delete(callId);
   }
 
   private createTurnContext(): CallTurnContext {
@@ -149,11 +170,13 @@ class CallSessionManager {
           ctx.ttsStream = null;
           if (!ctx.speakingStarted) {
             ctx.streamMode = 'rest-fallback';
+            this.noteStreamFailure(record.callId);
           }
         },
       });
     } catch {
       ctx.streamMode = 'rest-fallback';
+      this.noteStreamFailure(record.callId);
     }
   }
 
@@ -260,8 +283,12 @@ class CallSessionManager {
     this.turnContexts.set(callId, turn);
     const ttsOptions = buildTtsOptions();
 
+    const persistTranscript = getVoiceSettings().callPersistTranscript;
+
     try {
-      for await (const agEvent of runOrchestrator(trimmed, record.sessionId, controller.signal)) {
+      for await (const agEvent of runOrchestrator(trimmed, record.sessionId, controller.signal, {
+        persistMessages: persistTranscript,
+      })) {
         if (controller.signal.aborted) break;
 
         if (agEvent.type === 'run_started') {
@@ -271,6 +298,9 @@ class CallSessionManager {
 
         if (agEvent.type === 'text_delta') {
           turn.assistantText += agEvent.delta;
+          this.host.broadcast(
+            ev.callTranscript(callId, 'assistant', turn.assistantText, false),
+          );
           const sentences = turn.sentenceBuffer.append(agEvent.delta);
           await this.pushSentences(record, turn, sentences, ttsOptions);
         }
@@ -290,7 +320,8 @@ class CallSessionManager {
 
         if (agEvent.type === 'run_finished') {
           await this.finalizeAssistantSpeech(record, turn, ttsOptions);
-          this.host.onRunFinished();
+          this.resetStreamFailures(callId);
+          this.host.onRunFinished({ recordAffection: persistTranscript });
         } else if (agEvent.type === 'run_error') {
           this.host.onRunError();
           terminalError = agEvent.message;
@@ -386,6 +417,7 @@ class CallSessionManager {
 
     record.state = 'idle';
     this.host.broadcast(ev.callState(callId, 'idle'));
+    this.streamFailureCounts.delete(callId);
     this.sessions.delete(callId);
     return { ok: true };
   }

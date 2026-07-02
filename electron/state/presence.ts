@@ -58,11 +58,13 @@ export function onRunStarted(): void {
   setPresencePatch({ online: true, mood: 'thinking', activity: 'working' });
 }
 
-export function onRunFinished(): void {
+export function onRunFinished(options?: { recordAffection?: boolean }): void {
   activeRunCount = Math.max(0, activeRunCount - 1);
   if (activeRunCount > 0) return;
 
-  recordChatAffection();
+  if (options?.recordAffection !== false) {
+    recordChatAffection();
+  }
   setPresencePatch({
     online: true,
     mood: 'happy',

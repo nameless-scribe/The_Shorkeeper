@@ -33,6 +33,7 @@ export type AgUiEvent =
       final: boolean;
     }
   | { type: 'call_error'; callId: string; message: string }
+  | { type: 'call_degraded'; callId: string; reason: 'stream_failures'; message: string }
   | {
       type: 'call_audio_chunk';
       callId: string;

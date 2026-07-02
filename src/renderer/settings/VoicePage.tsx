@@ -369,6 +369,18 @@ export function VoicePage() {
               onChange={(callAllowBargeIn) => void save({ callAllowBargeIn })}
             />
           </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-keeper-ice">通话写入会话</p>
+              <p className="mt-1 text-xs text-keeper-ice/45">
+                关闭后通话内容不进入聊天历史，也不触发记忆提取与好感度
+              </p>
+            </div>
+            <SettingsToggle
+              checked={settings.callPersistTranscript}
+              onChange={(callPersistTranscript) => void save({ callPersistTranscript })}
+            />
+          </div>
         </section>
       </div>
     </SettingsPageShell>

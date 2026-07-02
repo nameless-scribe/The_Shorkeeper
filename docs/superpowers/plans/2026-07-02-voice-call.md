@@ -1,8 +1,8 @@
 # 语音通话（微信式实时对话）实施计划
 
-> **版本：** 0.3.0-draft
-> **日期：** 2026-07-02（C4 落地同步：2026-07-02）
-> **状态：** C1–C4 已落地 · C5 待实施
+> **版本：** 0.4.0-draft
+> **日期：** 2026-07-02（C5 落地同步：2026-07-02）
+> **状态：** C1–C5 已落地 · 实机验收与文档同步待办
 > **设计依据：** [DESIGN.md](../../DESIGN.md) §5.9 TTS、§3.3 多窗模型、§6 AG-UI 事件
 > **关联计划：** 承接 [语音能力计划](./2026-07-01-voice.md) V3（STT）+ V5（全双工）；本计划将两者收敛为「通话」这一完整体验
 > **前置：** 已落地 Voice V1（CosyVoice TTS 按需/自动朗读）；**假设已配置一个可用的复刻 `voice_id`**
@@ -49,9 +49,9 @@
 | **C4** | 全双工 + 打断 | 3–4 天 | VAD 连续聆听、barge-in 打断、连续循环 | C3 |
 | **C5** | 打磨与集成 | 1–2 天 | 用量显示、记忆/好感度接入、错误恢复 | C4 |
 
-**当前进度：** C1 ✅ · C2 ✅ · C3 ✅ · C4 ✅ · C5 ⏳
+**当前进度：** C1 ✅ · C2 ✅ · C3 ✅ · C4 ✅ · C5 ✅（WS 自动重连仍为后续项）
 
-**推荐实施顺序：** C1 → C2（此时已有可用的半双工通话）→ C3 → C4 → C5。C2 结束即可作为里程碑独立体验。**现默认已是 C4 全双工形态**；C5 为打磨项。
+**推荐实施顺序：** C1 → C2（此时已有可用的半双工通话）→ C3 → C4 → C5。C1–C5 代码已落地；剩余为实机验收、DESIGN 同步与 git commit。
 
 ---
 
@@ -308,7 +308,7 @@ VOICE_STT_MODEL=paraformer-realtime-v2
 - [x] **Step 1** 头像 + 状态灯 + 挂断；全双工/半双工 UI 分支
 - [x] **Step 2** 流式 STT + `voice:call:userText`；订阅 `call_state` / `call_error`
 - [x] **Step 3** `useCallStreamPlayback` 流式播放（非 `useVoicePlayback`）
-- [ ] **Step 4** 顶部滚动转写 UI（事件已广播，UI 未做 → C5）
+- [x] **Step 4** 顶部滚动转写 UI（`CallTranscriptPanel` + `call_transcript` / `text_delta`）
 - [ ] **Step 5** Commit `feat(call): half-duplex call ui`
 
 ---
@@ -319,7 +319,7 @@ VOICE_STT_MODEL=paraformer-realtime-v2
 - [x] 回复走 CosyVoice 复刻 voice_id
 - [x] 半双工模式下播放期间不误采（`canSpeak` 门控）
 - [x] 挂断 abort 进行中 run
-- [ ] `callPersistTranscript` 写入会话历史（配置存在，逻辑未接 → C5）
+- [x] `callPersistTranscript` 写入会话历史（orchestrator `persistMessages` + 好感度 `recordAffection` 门控）
 
 ---
 
@@ -366,7 +366,7 @@ VOICE_STT_MODEL=paraformer-realtime-v2
 - Modify: `electron/ipc/voice.ts` — `voice:stt:pushChunk`、partial 广播
 
 - [x] **Step 1** `createSttStreamSession` + `voice:stt:*` IPC
-- [x] **Step 2** partial → `call_transcript`（final: false）；UI 未展示 → C5
+- [x] **Step 2** partial → `call_transcript`（final: false）；`CallTranscriptPanel` 展示
 - [ ] **Step 3** Commit `feat(voice): streaming stt`
 
 ---
@@ -375,7 +375,7 @@ VOICE_STT_MODEL=paraformer-realtime-v2
 
 - [ ] 首音字延迟较 REST 明显下降（需主观实机）
 - [x] 长回复边说边播（流式管线已通）
-- [x] WS TTS 失败 early → REST fallback；**无 WS 自动重连**（→ C5）
+- [x] WS TTS 失败 early → REST fallback；连续 WS 失败 → `call_degraded` 降级半双工（**无 WS 自动重连**，仍为后续项）
 
 ---
 
@@ -430,12 +430,14 @@ VOICE_STT_MODEL=paraformer-realtime-v2
 # C5：打磨与集成
 
 **Files:**
-- Modify: `src/renderer/call/CallStage.tsx`、`src/voice/call-session.ts`
+- Modify: `src/renderer/call/CallStage.tsx`、`CallTranscriptPanel.tsx`、`useCallTokenUsage.ts`
+- Modify: `src/voice/call-session.ts`、`src/agent/orchestrator.ts`、`electron/state/presence.ts`
+- Modify: `src/renderer/settings/VoicePage.tsx`、`src/shared/token-budget.ts`
 
-- [ ] **Step 1** 通话窗顶部实时 Token / 用量显示 + 明显「挂断」硬开关（成本可见）
-- [ ] **Step 2** 通话转写按 `callPersistTranscript` 接入现有记忆提取 / 好感度加分（复用 orchestrator 副作用，自然继承）
-- [ ] **Step 3** 错误恢复：STT/TTS 失败 → 通话窗内联提示 + 可重试，不中断整通
-- [ ] **Step 4** 网络抖动：WS 断线重连；连续失败降级半双工
+- [x] **Step 1** 通话窗顶部实时 Token / 用量显示（仅参考，不拦截）+ 明显「挂断」硬开关
+- [x] **Step 2** 通话转写按 `callPersistTranscript` 接入记忆提取 / 好感度（orchestrator 跳过副作用；`onRunFinished({ recordAffection })`）
+- [x] **Step 3** 错误恢复：`call_error` 内联提示 + 用户文本提交失败可重试
+- [x] **Step 4** 连续 TTS WS 失败 → `call_degraded` 自动切半双工（**WS 断线自动重连未做**）
 - [ ] **Step 5** Commit `feat(call): usage display, persistence, error recovery`
 
 ---
@@ -464,7 +466,7 @@ pnpm dev               # 会先执行 copy-vad-assets.mjs
 | 回声：Agent 声音被自己麦克风采集 | 自触发打断 / 循环 | `echoCancellation:true`；播放期间提高 VAD 阈值；必要时半双工兜底 |
 | IPC 传大 ArrayBuffer | 卡顿 | 单音频块 ≤512KB；或 temp 文件 + `sk-asset://`（见 voice 计划风险表） |
 | WebSocket 国内网络抖动 | 通话中断 | 重连 + 降级 REST/半双工；参考 edge-tts 被移除教训 |
-| 连续通话计费快 | 成本失控 | 通话窗实时用量 + 硬挂断（C5）；默认已全双工，STT 调用更频 |
+| 连续通话计费快 | 成本失控 | 通话窗实时用量参考（C5）；是否继续由用户自行判断 |
 | VAD/ONNX 安装包体积 | 安装包 +~80MB | `public/vad/` 多 ORT 变体；后续 copy 脚本瘦身 |
 | pnpm 构建脚本审批 | `pnpm dev` 失败 | `pnpm-workspace.yaml` `allowBuilds.protobufjs: false` |
 | STT 识别错 → Agent 答非所问 | 体验差 | partial 回显让用户可见；错误可挂断重说；`sttLanguage` 可锁中文 |
@@ -493,6 +495,7 @@ pnpm dev               # 会先执行 copy-vad-assets.mjs
 | 0.1.1-draft | 2026-07-02 | 确认默认触发 `push_to_talk`；确认流式协议待用户供文档 |
 | 0.2.0-draft | 2026-07-02 | 百炼 WebSocket STT/TTS 协议与服务端事件已确认，落入附录 A；Step 0 收敛为账号侧取值（Workspace ID / 开通计费） |
 | 0.3.0-draft | 2026-07-02 | **C1–C4 落地同步**：勾选已完成 Task；记录实现偏差（流式主路径、vad 路径、public/vad 资源）；默认改为 `vad_auto` + barge-in；C5 待办保留 |
+| 0.4.0-draft | 2026-07-02 | **C5 落地同步**：Token 条、转写面板、`callPersistTranscript` 门控、错误重试、`call_degraded` 降级半双工；WS 自动重连仍待办 |
 
 ---
 
@@ -505,7 +508,8 @@ pnpm dev               # 会先执行 copy-vad-assets.mjs
 | VAD 静态资源 | vite-plugin-static-copy | `scripts/copy-vad-assets.mjs` → `public/vad/`（`pnpm dev`/`build` 前执行） |
 | 默认通话模式 | `push_to_talk` | **`vad_auto` + `callAllowBargeIn: true`** |
 | 老用户设置 | — | 已存 `push_to_talk` 的不会被默认覆盖；新装/未存字段者用新默认 |
-| 转写 UI / 持久化 | C2/C5 | 事件已广播；UI 与 `callPersistTranscript` 入库未做 |
+| 转写 UI / 持久化 | C2/C5 | **`CallTranscriptPanel` + `callPersistTranscript` 门控已落地** |
+| C5 WS 重连 | Step 4 | 连续失败 → `call_degraded` 半双工；STT/TTS WS 断线自动重连未做 |
 | Git commit | 各 Phase 拆分 commit | 代码已落地，commit 待用户确认后执行 |
 
 ---
@@ -593,4 +597,4 @@ Header:   Authorization: bearer <DASHSCOPE_API_KEY>
 
 ---
 
-*执行时按 C1 → C2 → C3 → C4 → **C5（当前）** 顺序勾选 Task checkbox。C1–C4 代码已落地；剩余主要为 C5 打磨、实机验收、DESIGN 同步与 git commit。坚持自定义复刻音色是本计划的核心约束。*
+*C1–C5 代码已落地。剩余：实机验收（C2/C4 清单）、WS 自动重连、DESIGN 同步与 git commit。坚持自定义复刻音色是本计划的核心约束。*

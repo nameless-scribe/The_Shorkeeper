@@ -79,6 +79,10 @@ export const ev = {
     return { type: 'call_error', callId, message };
   },
 
+  callDegraded(callId: string, reason: 'stream_failures', message: string): AgUiEvent {
+    return { type: 'call_degraded', callId, reason, message };
+  },
+
   callAudioChunk(
     callId: string,
     audio: ArrayBuffer,

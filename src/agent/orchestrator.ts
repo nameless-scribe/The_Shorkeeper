@@ -41,7 +41,9 @@ export async function* runOrchestrator(
   userMessage: string,
   sessionId?: string,
   signal?: AbortSignal,
+  options?: { persistMessages?: boolean },
 ): AsyncGenerator<AgUiEvent> {
+  const persistMessages = options?.persistMessages !== false;
   const runId = createRunId();
   const session = sessionId
     ? getSession(sessionId)
@@ -57,7 +59,9 @@ export async function* runOrchestrator(
   try {
     loadModelConfig();
     await awaitPendingSessionWork(session.id);
-    insertMessage(session.id, 'user', userMessage);
+    if (persistMessages) {
+      insertMessage(session.id, 'user', userMessage);
+    }
 
     const archiveIntent = parseKnowledgeArchiveIntent(userMessage);
     if (archiveIntent.triggered) {
@@ -67,7 +71,9 @@ export async function* runOrchestrator(
         signal,
       );
       const reply = buildArchiveConfirmation(result);
-      insertMessage(session.id, 'assistant', reply);
+      if (persistMessages) {
+        insertMessage(session.id, 'assistant', reply);
+      }
       yield* streamText(runId, reply);
       yield ev.runFinished(runId);
       return;
@@ -76,7 +82,9 @@ export async function* runOrchestrator(
     const scheduleIntent = parseScheduleReminderIntent(userMessage);
     if (scheduleIntent.triggered) {
       const reply = await executeScheduleReminderIntent(scheduleIntent);
-      insertMessage(session.id, 'assistant', reply);
+      if (persistMessages) {
+        insertMessage(session.id, 'assistant', reply);
+      }
       yield* streamText(runId, reply);
       yield ev.runFinished(runId);
       return;
@@ -137,24 +145,28 @@ export async function* runOrchestrator(
       return;
     }
 
-    insertMessage(session.id, 'assistant', assistantText);
+    if (persistMessages) {
+      insertMessage(session.id, 'assistant', assistantText);
+    }
 
     yield ev.runFinished(runId);
 
-    void scheduleSessionCompress(session.id, () =>
-      maybeCompressSession(session.id).catch((err) => {
-        console.error('[session] 压缩失败:', err);
-        return false;
-      }),
-    );
-
-    if (shouldAutoExtractMemories(session.id, userMessage)) {
-      scheduleMemoryExtract(session.id, () =>
-        extractMemoriesFromSession(session.id).catch((err) => {
-          console.error('[memory] 提取失败:', err);
-          return 0;
+    if (persistMessages) {
+      void scheduleSessionCompress(session.id, () =>
+        maybeCompressSession(session.id).catch((err) => {
+          console.error('[session] 压缩失败:', err);
+          return false;
         }),
       );
+
+      if (shouldAutoExtractMemories(session.id, userMessage)) {
+        scheduleMemoryExtract(session.id, () =>
+          extractMemoriesFromSession(session.id).catch((err) => {
+            console.error('[memory] 提取失败:', err);
+            return 0;
+          }),
+        );
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

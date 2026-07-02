@@ -31,6 +31,7 @@ vi.mock('../../config/voice', () => ({
     ttsRate: 1,
     ttsVolume: 100,
     sttLanguage: 'zh',
+    callPersistTranscript: true,
   }),
 }));
 

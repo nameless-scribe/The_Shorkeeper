@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgUiEvent, CallState } from '@/shared/types';
+import { DAILY_TOKEN_BUDGET } from '@/shared/token-budget';
 import { AppBackground } from '../components/AppBackground';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { PermissionDialog } from '../components/PermissionDialog';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { useCallVad } from '../hooks/useCallVad';
 import { useCallStreamPlayback } from '../hooks/useCallStreamPlayback';
+import { useCallTokenUsage } from '../hooks/useCallTokenUsage';
 import { usePermissionRequests } from '../hooks/usePermissionRequests';
+import {
+  applyTranscriptEvent,
+  CallTranscriptPanel,
+  type TranscriptLine,
+} from './CallTranscriptPanel';
 
 const STATE_LABELS: Record<Exclude<CallState, 'idle'>, string> = {
   listening: '聆听中',
@@ -27,18 +34,23 @@ export function CallStage() {
   const streamEndPendingRef = useRef(false);
   const interruptInFlightRef = useRef(false);
   const submittingRef = useRef(false);
+  const lastFailedTextRef = useRef<string | null>(null);
 
   const [callId, setCallId] = useState<string | null>(null);
+  const [retryText, setRetryText] = useState<string | null>(null);
 
   const [callState, setCallState] = useState<CallState>('idle');
   const [displayName, setDisplayName] = useState('守岸人');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
   const [callMode, setCallMode] = useState<'push_to_talk' | 'vad_auto'>('vad_auto');
   const [callAllowBargeIn, setCallAllowBargeIn] = useState(true);
   const [callSilenceMs, setCallSilenceMs] = useState(800);
+  const [transcriptLines, setTranscriptLines] = useState<TranscriptLine[]>([]);
 
   const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
+  const { today, progress, overBudget } = useCallTokenUsage();
   const { status: inputStatus, error: inputError, level, start, stopAndTranscribe, cancel } =
     useVoiceInput();
   const {
@@ -64,14 +76,20 @@ export function CallStage() {
     !submittingRef.current;
 
   const submitUserText = useCallback(async (text: string) => {
-    const callId = callIdRef.current;
-    if (!callId || !text.trim() || submittingRef.current) return;
+    const activeCallId = callIdRef.current;
+    if (!activeCallId || !text.trim() || submittingRef.current) return;
 
     submittingRef.current = true;
+    lastFailedTextRef.current = text;
+    setError(null);
     try {
-      const result = await window.shorekeeper.voice.call.userText({ callId, text });
+      const result = await window.shorekeeper.voice.call.userText({ callId: activeCallId, text });
       if (!result.ok) {
         setError(result.error);
+        setRetryText(text);
+      } else {
+        lastFailedTextRef.current = null;
+        setRetryText(null);
       }
     } finally {
       submittingRef.current = false;
@@ -79,8 +97,8 @@ export function CallStage() {
   }, []);
 
   const performInterrupt = useCallback(async () => {
-    const callId = callIdRef.current;
-    if (!callId || interruptInFlightRef.current) return;
+    const activeCallId = callIdRef.current;
+    if (!activeCallId || interruptInFlightRef.current) return;
 
     interruptInFlightRef.current = true;
     streamEndPendingRef.current = false;
@@ -88,7 +106,7 @@ export function CallStage() {
     resetStreamPlayback();
 
     try {
-      const result = await window.shorekeeper.voice.call.interrupt({ callId });
+      const result = await window.shorekeeper.voice.call.interrupt({ callId: activeCallId });
       if (!result.ok) {
         setError(result.error);
       }
@@ -137,15 +155,37 @@ export function CallStage() {
   });
 
   const endCall = useCallback(async () => {
-    const callId = callIdRef.current;
-    if (callId) {
+    const activeCallId = callIdRef.current;
+    if (activeCallId) {
       callIdRef.current = null;
       setCallId(null);
-      await window.shorekeeper.voice.call.end({ callId }).catch(console.error);
+      await window.shorekeeper.voice.call.end({ callId: activeCallId }).catch(console.error);
     }
     stopStreamPlayback();
     cancel();
   }, [cancel, stopStreamPlayback]);
+
+  const endCallRef = useRef(endCall);
+  endCallRef.current = endCall;
+
+  const handleHangUp = useCallback(async () => {
+    await endCall();
+    await window.shorekeeper.window.destroyCall();
+  }, [endCall]);
+
+  const degradeToHalfDuplex = useCallback(async () => {
+    try {
+      const saved = await window.shorekeeper.voice.saveSettings({
+        callMode: 'push_to_talk',
+        callAllowBargeIn: false,
+      });
+      setCallMode(saved.callMode);
+      setCallAllowBargeIn(saved.callAllowBargeIn);
+      setNotice('已切换为半双工模式，请按住说话');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '无法切换半双工');
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,17 +225,19 @@ export function CallStage() {
 
     return () => {
       cancelled = true;
-      void endCall();
+      void endCallRef.current();
     };
-  }, [endCall]);
+    // Mount-only: avoid re-running start/end when hook callbacks change identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const off = window.shorekeeper.agent.onEvent((raw) => {
       const event = raw as AgUiEvent;
-      const callId = callIdRef.current;
-      if (!callId) return;
+      const activeCallId = callIdRef.current;
+      if (!activeCallId) return;
 
-      if (event.type === 'call_state' && event.callId === callId) {
+      if (event.type === 'call_state' && event.callId === activeCallId) {
         if (event.state === 'thinking') {
           streamEndPendingRef.current = false;
           resetStreamPlayback();
@@ -205,27 +247,40 @@ export function CallStage() {
         return;
       }
 
-      if (event.type === 'call_audio_chunk' && event.callId === callId) {
+      if (event.type === 'call_transcript' && event.callId === activeCallId) {
+        setTranscriptLines((prev) =>
+          applyTranscriptEvent(prev, event.role, event.text, event.final),
+        );
+        return;
+      }
+
+      if (event.type === 'call_audio_chunk' && event.callId === activeCallId) {
         enqueue(event.seq, event.audio);
         return;
       }
 
-      if (event.type === 'call_speech_end' && event.callId === callId) {
+      if (event.type === 'call_speech_end' && event.callId === activeCallId) {
         if (interruptInFlightRef.current) return;
         streamEndPendingRef.current = true;
         void (async () => {
-          const played = await markStreamEnd();
+          await markStreamEnd();
           streamEndPendingRef.current = false;
           if (interruptInFlightRef.current) return;
-          const activeCallId = callIdRef.current;
-          if (activeCallId && callStateRef.current === 'speaking') {
-            await window.shorekeeper.voice.call.speakingDone({ callId: activeCallId });
+          const currentCallId = callIdRef.current;
+          if (currentCallId && callStateRef.current === 'speaking') {
+            await window.shorekeeper.voice.call.speakingDone({ callId: currentCallId });
           }
         })();
         return;
       }
 
-      if (event.type === 'call_error' && event.callId === callId) {
+      if (event.type === 'call_degraded' && event.callId === activeCallId) {
+        setNotice(event.message);
+        void degradeToHalfDuplex();
+        return;
+      }
+
+      if (event.type === 'call_error' && event.callId === activeCallId) {
         setError(event.message);
       }
     });
@@ -233,7 +288,7 @@ export function CallStage() {
     return () => {
       off();
     };
-  }, [enqueue, markStreamEnd, resetStreamPlayback, startRound]);
+  }, [degradeToHalfDuplex, enqueue, markStreamEnd, resetStreamPlayback, startRound]);
 
   const handlePushStart = useCallback(() => {
     if (callMode !== 'push_to_talk' || !canSpeak) return;
@@ -248,10 +303,13 @@ export function CallStage() {
     await submitUserText(text);
   }, [callMode, inputStatus, stopAndTranscribe, submitUserText]);
 
-  const handleHangUp = useCallback(async () => {
-    await endCall();
-    await window.shorekeeper.window.destroyCall();
-  }, [endCall]);
+  const handleRetry = useCallback(() => {
+    if (!retryText) {
+      setError(null);
+      return;
+    }
+    void submitUserText(retryText);
+  }, [retryText, submitUserText]);
 
   const toggleCallMode = useCallback(async () => {
     const next = callMode === 'push_to_talk' ? 'vad_auto' : 'push_to_talk';
@@ -262,6 +320,7 @@ export function CallStage() {
       });
       setCallMode(saved.callMode);
       setCallAllowBargeIn(saved.callAllowBargeIn);
+      setNotice(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : '无法切换通话模式');
     }
@@ -271,75 +330,117 @@ export function CallStage() {
   const stateLabel = starting ? '连接中…' : STATE_LABELS[visibleState];
   const combinedError = error ?? inputError ?? playbackError;
   const isVadAuto = callMode === 'vad_auto';
+  const canRetry = Boolean(retryText && combinedError);
 
   return (
     <div className="keeper-panel-shell border border-keeper-silver/25 shadow-cyanSm">
-      <AppBackground variant="status" />
+      <AppBackground variant="chat" />
 
       <div className="relative z-10 flex h-full min-h-0 flex-col">
-        <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3">
-          <div>
-            <h1 className="text-sm font-semibold tracking-wide text-keeper-ice">{displayName}</h1>
-            <p className="text-xs text-keeper-ice/60">语音通话 · {isVadAuto ? '全双工' : '半双工'}</p>
+        <header className="drag-region keeper-glass-panel flex shrink-0 flex-col gap-2 rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-sm font-semibold tracking-wide text-keeper-ice">{displayName}</h1>
+              <p className="text-xs text-keeper-ice/60">语音通话 · {isVadAuto ? '全双工' : '半双工'}</p>
+            </div>
+            <div className="no-drag flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => void toggleCallMode()}
+                className="rounded-lg border border-keeper-cyan/25 px-2 py-1 text-[10px] text-keeper-cyan/80 transition hover:bg-keeper-cyan/10"
+                title={isVadAuto ? '切换为按住说话' : '切换为连续聆听'}
+              >
+                {isVadAuto ? '全双工' : '半双工'}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.shorekeeper.window.minimize()}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-keeper-ice/50 hover:bg-keeper-cyan/10 hover:text-keeper-cyan"
+                title="最小化"
+              >
+                ─
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleHangUp()}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-400/40 bg-red-950/40 text-red-300 hover:bg-red-900/50"
+                title="挂断并关闭"
+              >
+                ✕
+              </button>
+            </div>
           </div>
-          <div className="no-drag flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => void toggleCallMode()}
-              className="rounded-lg border border-keeper-cyan/25 px-2 py-1 text-[10px] text-keeper-cyan/80 transition hover:bg-keeper-cyan/10"
-              title={isVadAuto ? '切换为按住说话' : '切换为连续聆听'}
-            >
-              {isVadAuto ? '全双工' : '半双工'}
-            </button>
-            <button
-              type="button"
-              onClick={() => window.shorekeeper.window.minimize()}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-keeper-ice/50 hover:bg-keeper-cyan/10 hover:text-keeper-cyan"
-              title="最小化"
-            >
-              ─
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleHangUp()}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-keeper-ice/50 hover:bg-red-500/20 hover:text-red-300"
-              title="挂断并关闭"
-            >
-              ✕
-            </button>
+          <div className="no-drag flex items-center gap-2">
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-keeper-navyDeep/80">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  overBudget
+                    ? 'bg-gradient-to-r from-red-700 to-red-400'
+                    : 'bg-gradient-to-r from-keeper-navy to-keeper-cyan'
+                }`}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <span className={`shrink-0 text-[10px] ${overBudget ? 'text-red-300' : 'text-keeper-cyan/80'}`}>
+              {today.toLocaleString()} / {DAILY_TOKEN_BUDGET.toLocaleString()} 参考
+            </span>
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-4 py-5">
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative">
-              <div
-                className={`absolute -inset-3 rounded-full bg-gradient-to-br ${STATE_RING[visibleState]} opacity-60 blur-md ${callState === 'speaking' ? 'animate-pulse-glow' : ''}`}
-              />
-              <AgentAvatar size="lg" className="relative !h-28 !w-28" />
-            </div>
-            <p className="text-base font-medium tracking-wide text-keeper-ice">{stateLabel}</p>
-            {(inputStatus === 'recording' || (isVadAuto && callState === 'listening')) && (
-              <div className="flex w-44 items-center gap-2">
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-keeper-ice/10">
-                  <div
-                    className="h-full rounded-full bg-keeper-cyan transition-all duration-100"
-                    style={{
-                      width: `${Math.round((inputStatus === 'recording' ? level : 0.15) * 100)}%`,
-                    }}
-                  />
-                </div>
-                <span className="text-[10px] text-keeper-ice/50">
-                  {inputStatus === 'recording' ? '录音中' : '正在聆听…'}
-                </span>
-              </div>
-            )}
+        <CallTranscriptPanel lines={transcriptLines} />
+
+        <div className="flex shrink-0 flex-col items-center gap-3 px-4 py-4">
+          <div className="relative">
+            <div
+              className={`absolute -inset-3 rounded-full bg-gradient-to-br ${STATE_RING[visibleState]} opacity-60 ${callState === 'speaking' ? 'animate-pulse-glow' : ''}`}
+            />
+            <AgentAvatar size="md" className="relative !h-20 !w-20" />
           </div>
+          <p className="text-sm font-medium tracking-wide text-keeper-ice">{stateLabel}</p>
+          {(inputStatus === 'recording' || (isVadAuto && callState === 'listening')) && (
+            <div className="flex w-44 items-center gap-2">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-keeper-ice/10">
+                <div
+                  className="h-full rounded-full bg-keeper-cyan transition-all duration-100"
+                  style={{
+                    width: `${Math.round((inputStatus === 'recording' ? level : 0.15) * 100)}%`,
+                  }}
+                />
+              </div>
+              <span className="text-[10px] text-keeper-ice/50">
+                {inputStatus === 'recording' ? '录音中' : '正在聆听…'}
+              </span>
+            </div>
+          )}
         </div>
+
+        {notice && !combinedError && (
+          <div className="mx-4 mb-2 rounded-xl border border-amber-400/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-100 no-drag">
+            {notice}
+          </div>
+        )}
 
         {combinedError && (
           <div className="mx-4 mb-2 rounded-xl border border-red-400/30 bg-red-950/40 px-3 py-2 text-xs text-red-200 no-drag">
-            {combinedError}
+            <p>{combinedError}</p>
+            <div className="mt-2 flex gap-2">
+              {canRetry && (
+                <button
+                  type="button"
+                  onClick={() => void handleRetry()}
+                  className="rounded-lg border border-red-300/40 px-2 py-0.5 text-[11px] hover:bg-red-900/40"
+                >
+                  重试上一条
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="rounded-lg border border-red-300/25 px-2 py-0.5 text-[11px] hover:bg-red-900/30"
+              >
+                关闭
+              </button>
+            </div>
           </div>
         )}
 
@@ -402,9 +503,9 @@ export function CallStage() {
           <button
             type="button"
             onClick={() => void handleHangUp()}
-            className="mt-1 rounded-full border border-red-400/35 bg-red-950/30 px-6 py-2 text-sm text-red-200 transition hover:bg-red-900/40"
+            className="mt-1 rounded-full border-2 border-red-400/50 bg-red-950/40 px-8 py-2.5 text-sm font-medium text-red-200 transition hover:bg-red-900/50"
           >
-            挂断
+            挂断通话
           </button>
         </div>
       </div>

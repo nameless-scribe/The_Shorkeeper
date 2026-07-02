@@ -140,8 +140,12 @@ export function ChatPage() {
     [sessionId, isRunning, stopSpeech],
   );
 
-  const handleOpenCall = useCallback(() => {
-    void window.shorekeeper.window.show('call');
+  const handleOpenCall = useCallback(async () => {
+    try {
+      await window.shorekeeper.window.show('call');
+    } catch (err) {
+      console.error('打开通话窗失败:', err);
+    }
   }, []);
 
   return (
