@@ -37,7 +37,21 @@ function cleanDialogueSegment(text: string): string {
   s = s.replace(/\|/g, ' ');
   s = s.replace(/\s+/g, ' ').trim();
 
+  return prepareChunkForTts(s);
+}
+
+/** Normalize a single TTS chunk before sending to CosyVoice. */
+export function prepareChunkForTts(text: string): string {
+  let s = text.replace(/\u200b|\ufeff|\0/g, '').trim();
+  if (!s) return '';
+
+  // RP dialogue often starts with ASCII / CJK ellipsis; CosyVoice may reject punctuation-only prefixes.
+  s = s.replace(/^[\s.·…,，、:：;；!！?？]+/, '').trim();
   return s;
+}
+
+export function hasSpeakableCharacters(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text);
 }
 
 export function parseRoleplaySpeechSegments(text: string): RawSegment[] {
@@ -144,7 +158,10 @@ export function expandPlanForStreaming(plan: SpeechPlanStep[]): SpeechPlanStep[]
       continue;
     }
     for (const chunk of splitDialogueIntoChunks(step.text)) {
-      expanded.push({ type: 'speak', text: chunk });
+      const prepared = prepareChunkForTts(chunk);
+      if (prepared && hasSpeakableCharacters(prepared)) {
+        expanded.push({ type: 'speak', text: prepared });
+      }
     }
   }
   return expanded;

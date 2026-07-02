@@ -1,6 +1,15 @@
 import type { SpeechPlanStep } from '@/voice/text-for-speech';
-import { planStreamingSpeechFromMessage } from '@/voice/text-for-speech';
+import {
+  hasSpeakableCharacters,
+  planStreamingSpeechFromMessage,
+  prepareChunkForTts,
+} from '@/voice/text-for-speech';
 import { playAudioWithGain } from './play-audio';
+
+type PrefetchState = {
+  text: string;
+  promise: Promise<ArrayBuffer>;
+};
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -41,7 +50,12 @@ function playAudioAndWait(
 }
 
 async function fetchChunk(text: string): Promise<ArrayBuffer> {
-  const result = await window.shorekeeper.voice.synthesizeChunk({ text });
+  const prepared = prepareChunkForTts(text);
+  if (!prepared || !hasSpeakableCharacters(prepared)) {
+    throw new Error('朗读文本为空');
+  }
+
+  const result = await window.shorekeeper.voice.synthesizeChunk({ text: prepared });
   if (!result.ok) {
     throw new Error(result.error);
   }
@@ -83,7 +97,7 @@ export async function streamSpeechPlayback(
 
   void (async () => {
     try {
-      let prefetch: Promise<ArrayBuffer> | null = null;
+      let prefetch: PrefetchState | null = null;
       let startedPlayback = false;
 
       for (let i = 0; i < plan.length; i += 1) {
@@ -96,12 +110,23 @@ export async function streamSpeechPlayback(
           continue;
         }
 
-        const audio = prefetch ? await prefetch : await fetchChunk(step.text);
+        const preparedText = prepareChunkForTts(step.text);
+        if (!preparedText || !hasSpeakableCharacters(preparedText)) {
+          continue;
+        }
+
+        const audio =
+          prefetch?.text === preparedText
+            ? await prefetch.promise
+            : await fetchChunk(preparedText);
         prefetch = null;
 
         const nextSpeak = findNextSpeakStep(plan, i);
         if (nextSpeak) {
-          prefetch = fetchChunk(nextSpeak);
+          const nextPrepared = prepareChunkForTts(nextSpeak);
+          if (nextPrepared && hasSpeakableCharacters(nextPrepared)) {
+            prefetch = { text: nextPrepared, promise: fetchChunk(nextPrepared) };
+          }
         }
 
         if (!startedPlayback) {

@@ -47,7 +47,10 @@ export function useAgentEvents(
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
   const runSessionIdRef = useRef<string | null>(null);
+  const currentRunIdRef = useRef<string | null>(null);
   const loadGenerationRef = useRef(0);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
     if (!sessionId) {
@@ -85,17 +88,18 @@ export function useAgentEvents(
   }, [sessionId]);
 
   useEffect(() => {
-    let currentRunId: string | null = null;
+    currentRunIdRef.current = null;
 
     const unsubscribe = window.shorekeeper.agent.onEvent((raw) => {
       const event = raw as AgUiEvent;
       const activeSessionId = sessionIdRef.current;
+      const options = optionsRef.current;
 
       if (event.type === 'run_started') {
         if (event.sessionId !== activeSessionId) return;
         options?.onRunStarted?.();
         runSessionIdRef.current = event.sessionId;
-        currentRunId = event.runId;
+        currentRunIdRef.current = event.runId;
         const streamId = `stream-${event.runId}`;
         setIsRunning(true);
         setError(null);
@@ -113,6 +117,7 @@ export function useAgentEvents(
         return;
       }
 
+      const currentRunId = currentRunIdRef.current;
       if (!currentRunId || runSessionIdRef.current !== activeSessionId) return;
       const streamId = `stream-${currentRunId}`;
 
@@ -192,9 +197,12 @@ export function useAgentEvents(
       if (event.type === 'run_finished') {
         const finishedSessionId = runSessionIdRef.current;
         setIsRunning(false);
-        currentRunId = null;
+        currentRunIdRef.current = null;
         runSessionIdRef.current = null;
         options?.onRunFinished?.();
+
+        let assistantReplyFinished: AssistantReplyFinishedPayload | null = null;
+
         setMessages((prev) => {
           const streamMsg = prev.find((m) => m.id === streamId);
           const toolCalls = streamMsg?.toolCalls;
@@ -205,14 +213,13 @@ export function useAgentEvents(
           if (
             finishedSessionId &&
             finishedSessionId === sessionIdRef.current &&
-            hasContent &&
-            options?.onAssistantReplyFinished
+            hasContent
           ) {
-            options.onAssistantReplyFinished({
+            assistantReplyFinished = {
               id: streamId,
               content: streamMsg!.content,
               sessionId: finishedSessionId,
-            });
+            };
           }
 
           const withoutEmpty = prev
@@ -281,6 +288,10 @@ export function useAgentEvents(
 
           return withoutEmpty;
         });
+
+        if (assistantReplyFinished) {
+          optionsRef.current?.onAssistantReplyFinished?.(assistantReplyFinished);
+        }
       }
 
       if (event.type === 'run_error') {
@@ -291,7 +302,7 @@ export function useAgentEvents(
             !runSessionIdRef.current
           ) {
             setIsRunning(false);
-            currentRunId = null;
+            currentRunIdRef.current = null;
             setError(event.message);
             setMessages((prev) => prev.filter((m) => !m.streaming));
           }
@@ -299,7 +310,7 @@ export function useAgentEvents(
         }
         options?.onRunStopped?.();
         setIsRunning(false);
-        currentRunId = null;
+        currentRunIdRef.current = null;
         runSessionIdRef.current = null;
         setError(event.message);
         setMessages((prev) => prev.filter((m) => !m.streaming));
@@ -308,13 +319,7 @@ export function useAgentEvents(
     return () => {
       unsubscribe();
     };
-  }, [
-    options?.onRunFinished,
-    options?.onRunStarted,
-    options?.onRunStopped,
-    options?.onAssistantReplyFinished,
-    options?.onAssistantMessagePersisted,
-  ]);
+  }, [sessionId]);
 
   const send = async (text: string, attachments: WorkspaceAttachment[] = []) => {
     const trimmed = text.trim();

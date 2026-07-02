@@ -83,6 +83,9 @@ export class BailianTtsEngine implements TtsEngine {
 
     if (!res.ok || json.code) {
       const msg = json.message ?? `语音合成失败（HTTP ${res.status}）`;
+      if (/input text is valid/i.test(msg)) {
+        throw new Error('朗读文本无效或为空，请确认消息中有可朗读的对话内容');
+      }
       if (/invalid api[- ]?key/i.test(msg) || json.code === 'InvalidApiKey') {
         throw new Error(
           '语音 API Key 无效或与接入地址不匹配。请确认 设置 → API 设置 中的百炼 Key 与 Base URL 同属北京地域；或单独设置 VOICE_API_KEY / VOICE_TTS_ENDPOINT',

@@ -1,13 +1,42 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { streamSpeechPlayback } from '../voice/stream-speech-playback';
+
+function abortPlaybackAttempt(
+  generation: number,
+  generationRef: MutableRefObject<number>,
+  inFlightRef: MutableRefObject<string | null>,
+  messageId: string,
+  resetUi: () => void,
+) {
+  if (generation !== generationRef.current) return;
+  if (inFlightRef.current === messageId) {
+    inFlightRef.current = null;
+  }
+  resetUi();
+}
 
 export function useVoicePlayback() {
   const playbackRef = useRef<{ stop: () => void } | null>(null);
+  const inFlightRef = useRef<string | null>(null);
+  const generationRef = useRef(0);
+  const playingIdRef = useRef<string | null>(null);
+  const loadingIdRef = useRef<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const syncPlayingId = useCallback((next: string | null) => {
+    playingIdRef.current = next;
+    setPlayingId(next);
+  }, []);
+
+  const syncLoadingId = useCallback((next: string | null) => {
+    loadingIdRef.current = next;
+    setLoadingId(next);
+  }, []);
+
   const cleanup = useCallback(() => {
+    generationRef.current += 1;
     playbackRef.current?.stop();
     playbackRef.current = null;
   }, []);
@@ -16,58 +45,91 @@ export function useVoicePlayback() {
 
   const stop = useCallback(() => {
     cleanup();
-    setPlayingId(null);
-    setLoadingId(null);
-  }, [cleanup]);
+    inFlightRef.current = null;
+    syncPlayingId(null);
+    syncLoadingId(null);
+  }, [cleanup, syncLoadingId, syncPlayingId]);
 
-  const remapPlayingId = useCallback((from: string, to: string) => {
-    setPlayingId((id) => (id === from ? to : id));
-    setLoadingId((id) => (id === from ? to : id));
-  }, []);
+  const remapPlayingId = useCallback(
+    (from: string, to: string) => {
+      syncPlayingId(playingIdRef.current === from ? to : playingIdRef.current);
+      syncLoadingId(loadingIdRef.current === from ? to : loadingIdRef.current);
+    },
+    [syncLoadingId, syncPlayingId],
+  );
 
   const playText = useCallback(
     async (messageId: string, text: string) => {
-      if (playingId === messageId || loadingId === messageId) {
+      if (playingIdRef.current === messageId || loadingIdRef.current === messageId) {
         stop();
         return;
       }
 
+      if (inFlightRef.current === messageId) {
+        return;
+      }
+
+      inFlightRef.current = messageId;
       cleanup();
+      const generation = generationRef.current;
+
       setError(null);
-      setLoadingId(messageId);
-      setPlayingId(null);
+      syncLoadingId(messageId);
+      syncPlayingId(null);
+
+      const resetUi = () => {
+        syncPlayingId(null);
+        syncLoadingId(null);
+      };
 
       try {
         const settings = await window.shorekeeper.voice.getSettings();
+        if (generation !== generationRef.current) {
+          abortPlaybackAttempt(generation, generationRef, inFlightRef, messageId, resetUi);
+          return;
+        }
+
         const gain = settings.ttsPlaybackGain ?? 2;
 
         const handle = await streamSpeechPlayback(text, settings.ttsMaxChars, gain, {
           onLoading: () => {
-            setLoadingId(messageId);
-            setPlayingId(null);
+            if (generation !== generationRef.current) return;
+            syncLoadingId(messageId);
+            syncPlayingId(null);
           },
           onPlaying: () => {
-            setLoadingId(null);
-            setPlayingId(messageId);
+            if (generation !== generationRef.current) return;
+            syncLoadingId(null);
+            syncPlayingId(messageId);
           },
           onFinished: () => {
+            if (generation !== generationRef.current) return;
             playbackRef.current = null;
-            setPlayingId(null);
-            setLoadingId(null);
+            inFlightRef.current = null;
+            resetUi();
           },
           onError: (message) => {
+            if (generation !== generationRef.current) return;
             setError(message);
             stop();
           },
         });
 
+        if (generation !== generationRef.current) {
+          handle.stop();
+          abortPlaybackAttempt(generation, generationRef, inFlightRef, messageId, resetUi);
+          return;
+        }
+
         playbackRef.current = handle;
+        inFlightRef.current = null;
       } catch (err) {
+        if (generation !== generationRef.current) return;
         setError(err instanceof Error ? err.message : '朗读失败');
         stop();
       }
     },
-    [cleanup, loadingId, playingId, stop],
+    [cleanup, stop, syncLoadingId, syncPlayingId],
   );
 
   return {

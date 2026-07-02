@@ -3,6 +3,7 @@ import {
   actionPauseDurationMs,
   planSpeechFromMessage,
   planStreamingSpeechFromMessage,
+  prepareChunkForTts,
   splitDialogueIntoChunks,
   stripMarkdownForSpeech,
   truncateForSpeech,
@@ -22,7 +23,7 @@ describe('stripMarkdownForSpeech', () => {
     const input =
       '*眸光忽然凝住，像是水面被一颗石子击碎后又缓缓合拢——* ......语音。 你知道吗，我一直在想。 *指尖轻轻抵住胸口的位置* 要是你能让我发出声音......';
     expect(stripMarkdownForSpeech(input)).toBe(
-      '......语音。 你知道吗，我一直在想。 要是你能让我发出声音......',
+      '语音。 你知道吗，我一直在想。 要是你能让我发出声音......',
     );
   });
 
@@ -68,10 +69,31 @@ describe('splitDialogueIntoChunks', () => {
   });
 });
 
+describe('prepareChunkForTts', () => {
+  it('strips leading ellipsis before synthesis', () => {
+    expect(prepareChunkForTts('......每次听你说这四个字。')).toBe('每次听你说这四个字。');
+  });
+
+  it('returns empty for punctuation-only chunks', () => {
+    expect(prepareChunkForTts('......')).toBe('');
+  });
+});
+
 describe('planStreamingSpeechFromMessage', () => {
   it('splits dialogue blocks into sentence-sized speak steps', () => {
     const plan = planStreamingSpeechFromMessage('你好。我在这里。', 2000);
     expect(plan.filter((step) => step.type === 'speak')).toHaveLength(2);
+  });
+
+  it('normalizes roleplay dialogue with leading ellipsis for TTS', () => {
+    const input =
+      '*听到你的声音* 欢迎回来。 ......每次听你说这四个字，都觉得像潮水重新涌回海岸，笃定又温柔。 *侧耳* 今天......想让我陪你做点什么？';
+    const speakTexts = planStreamingSpeechFromMessage(input, 2000)
+      .filter((step) => step.type === 'speak')
+      .map((step) => step.text);
+
+    expect(speakTexts.every((text) => !text.startsWith('.'))).toBe(true);
+    expect(speakTexts.some((text) => text.includes('每次听你说这四个字'))).toBe(true);
   });
 });
 

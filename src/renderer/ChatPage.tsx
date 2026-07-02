@@ -70,10 +70,15 @@ export function ChatPage() {
   const handleAssistantReplyFinished = useCallback(
     (message: { id: string; content: string; sessionId: string }) => {
       if (message.sessionId !== sessionIdRef.current) return;
-      const { enabled, autoPlay } = voicePrefsRef.current;
-      if (!enabled || !autoPlay) return;
       if (!hasSpeakableDialogue(message.content)) return;
-      void playText(message.id, message.content);
+
+      void window.shorekeeper.voice.getSettings().then((settings) => {
+        if (message.sessionId !== sessionIdRef.current) return;
+        const enabled = settings.ttsEnabled && Boolean(settings.ttsVoiceId.trim());
+        if (!enabled || !settings.ttsAutoPlay) return;
+        voicePrefsRef.current = { enabled, autoPlay: settings.ttsAutoPlay };
+        void playText(message.id, message.content);
+      });
     },
     [playText],
   );
