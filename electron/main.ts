@@ -45,6 +45,10 @@ import { registerPluginsIpc } from './ipc/plugins';
 import { registerWebSearchIpc } from './ipc/web-search';
 import { registerVoiceIpc } from './ipc/voice';
 import { registerPermissionIpc, requestPermissionConfirm } from './ipc/permission';
+import { registerUpdateIpc } from './ipc/update';
+import { initAutoUpdater } from './update/auto-updater';
+import { configureAppIdentity } from './app-icon';
+import { showSplashWindow, closeSplashWindow } from './windows/splash';
 import { setPermissionConfirmer } from '../src/agent/permissions';
 import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron';
 import { broadcastTasksUpdated } from './tasks/events';
@@ -76,6 +80,10 @@ configureDbRuntime({
 
 registerAppearanceAssetScheme();
 
+configureAppIdentity();
+
+const SPLASH_MIN_MS = 2200;
+
 function attachTrayCloseBehavior(win: BrowserWindow): void {
   win.on('close', (event) => {
     if (isAppQuitting()) return;
@@ -87,6 +95,9 @@ function attachTrayCloseBehavior(win: BrowserWindow): void {
 }
 
 app.whenReady().then(async () => {
+  showSplashWindow();
+  const splashStartedAt = Date.now();
+
   loadEnvFiles();
   registerAppearanceAssetProtocol();
   const layout = bootstrapDataLayout(app.getPath('userData'));
@@ -123,6 +134,7 @@ app.whenReady().then(async () => {
 
   registerWindowIpc();
   registerPresenceIpc();
+  registerUpdateIpc();
 
   if (databaseOk) {
     registerAgentIpc();
@@ -162,7 +174,49 @@ app.whenReady().then(async () => {
   createTray();
 
   const manager = getWindowManager();
-  attachTrayCloseBehavior(manager.create('chat'));
+  const chatWin = manager.create('chat', { showOnReady: false });
+  attachTrayCloseBehavior(chatWin);
+
+  let splashFinished = false;
+  const finishStartupSplash = async () => {
+    if (splashFinished) return;
+    splashFinished = true;
+
+    const elapsed = Date.now() - splashStartedAt;
+    const waitMs = Math.max(0, SPLASH_MIN_MS - elapsed);
+    if (waitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+    await closeSplashWindow();
+    manager.show('chat');
+  };
+
+  const scheduleStartupSplashFinish = () => {
+    if (chatWin.isDestroyed()) {
+      void finishStartupSplash();
+      return;
+    }
+
+    chatWin.once('ready-to-show', () => {
+      void finishStartupSplash();
+    });
+
+    if (!chatWin.webContents.isLoading()) {
+      void finishStartupSplash();
+    } else {
+      chatWin.webContents.once('did-finish-load', () => {
+        void finishStartupSplash();
+      });
+    }
+
+    // 兜底：避免 ready-to-show 未触发时 Splash 一直停留
+    setTimeout(() => {
+      void finishStartupSplash();
+    }, 10_000);
+  };
+
+  scheduleStartupSplashFinish();
+
   for (const kind of ['status', 'schedule'] as const) {
     attachTrayCloseBehavior(manager.create(kind, { showOnReady: false }));
   }
@@ -176,6 +230,7 @@ app.whenReady().then(async () => {
   }, 1500);
 
   emitInitialState();
+  initAutoUpdater();
 });
 
 app.on('window-all-closed', () => {

@@ -1,4 +1,5 @@
-import { TETHYS_EMBLEM_URL } from '../public-assets';
+import { useEffect, useState } from 'react';
+import { TethysEmblem } from '../components/TethysEmblem';
 
 export type SettingsTab =
   | 'plugins'
@@ -13,6 +14,7 @@ export type SettingsTab =
   | 'skills'
   | 'mcp'
   | 'model'
+  | 'about'
   | 'disclaimer';
 
 interface NavItem {
@@ -63,6 +65,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: '系统',
     items: [
       { id: 'model', label: 'API 设置', icon: '🔑' },
+      { id: 'about', label: '关于与更新', icon: 'ℹ️' },
       { id: 'disclaimer', label: '免责声明', icon: '⚠️' },
     ],
   },
@@ -76,18 +79,17 @@ interface SettingsSidebarProps {
 }
 
 export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
+  const [version, setVersion] = useState('');
+
+  useEffect(() => {
+    void window.shorekeeper?.update?.getVersion().then(setVersion).catch(() => undefined);
+  }, []);
+
   return (
     <aside className="flex w-48 shrink-0 flex-col border-r border-keeper-cyan/10 bg-gradient-to-b from-keeper-navyDeep/80 to-keeper-navyDeep/95">
       <div className="shrink-0 border-b border-keeper-cyan/10 px-4 py-4">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-white/90 p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.15)]">
-            <img
-              src={TETHYS_EMBLEM_URL}
-              alt=""
-              className="h-full w-full object-contain"
-              draggable={false}
-            />
-          </span>
+          <TethysEmblem size="sm" />
           <div>
             <p className="text-sm font-semibold text-keeper-ice">守岸人</p>
             <p className="text-[10px] text-keeper-ice/45">设置中心</p>
@@ -135,7 +137,7 @@ export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
 
       <div className="shrink-0 border-t border-keeper-cyan/10 px-4 py-3">
         <p className="text-[10px] text-keeper-ice/30">The Shorekeeper</p>
-        <p className="text-[10px] text-keeper-ice/20">v0.1.0</p>
+        <p className="text-[10px] text-keeper-ice/20">{version ? `v${version}` : 'v…'}</p>
       </div>
     </aside>
   );
@@ -154,5 +156,6 @@ export const SETTINGS_TAB_TITLES: Record<SettingsTab, { title: string; subtitle:
   skills: { title: '技能', subtitle: 'Agent Skills 包', icon: '✨' },
   mcp: { title: 'MCP', subtitle: 'Model Context Protocol 服务器', icon: '🔌' },
   model: { title: 'API 设置', subtitle: '模型协议与接入配置', icon: '🔑' },
+  about: { title: '关于与更新', subtitle: '版本信息与联网更新', icon: 'ℹ️' },
   disclaimer: { title: '免责声明', subtitle: '使用须知', icon: '⚠️' },
 };

@@ -50,6 +50,7 @@ export function SettingsPanel({
   title,
   subtitle,
   icon,
+  imageIcon,
   badge,
   children,
   footer,
@@ -57,6 +58,7 @@ export function SettingsPanel({
   title: string;
   subtitle?: string;
   icon?: string;
+  imageIcon?: string;
   badge?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
@@ -65,11 +67,20 @@ export function SettingsPanel({
     <div className="keeper-glass-soft overflow-hidden rounded-2xl border border-keeper-silver/15">
       <div className="border-b border-keeper-ice/8 bg-keeper-navyDeep/40 px-4 py-3">
         <div className="flex items-center gap-3">
-          {icon && (
+          {imageIcon ? (
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/90 p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.15)]">
+              <img
+                src={imageIcon}
+                alt=""
+                className="h-full w-full object-contain"
+                draggable={false}
+              />
+            </span>
+          ) : icon ? (
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-keeper-cyan/15 text-base">
               {icon}
             </span>
-          )}
+          ) : null}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-keeper-ice">{title}</p>
             {subtitle && <p className="text-[11px] text-keeper-ice/45">{subtitle}</p>}

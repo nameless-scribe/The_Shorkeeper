@@ -115,7 +115,7 @@ async function connectServer(server: McpServerInfo): Promise<ConnectedServer | n
     stderr: 'pipe',
   });
 
-  const client = new Client({ name: 'the-shorekeeper', version: '0.1.0' });
+  const client = new Client({ name: 'the-shorekeeper', version: '1.0.0' });
   await client.connect(transport);
   return { server, client, transport };
 }

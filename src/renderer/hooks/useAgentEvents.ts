@@ -48,6 +48,7 @@ export function useAgentEvents(
   sessionIdRef.current = sessionId;
   const runSessionIdRef = useRef<string | null>(null);
   const currentRunIdRef = useRef<string | null>(null);
+  const streamRunsRef = useRef(new Map<string, { sessionId: string; content: string }>());
   const loadGenerationRef = useRef(0);
   const optionsRef = useRef(options);
   optionsRef.current = options;
@@ -89,17 +90,127 @@ export function useAgentEvents(
 
   useEffect(() => {
     currentRunIdRef.current = null;
+    runSessionIdRef.current = null;
+    streamRunsRef.current.clear();
 
     const unsubscribe = window.shorekeeper.agent.onEvent((raw) => {
       const event = raw as AgUiEvent;
       const activeSessionId = sessionIdRef.current;
       const options = optionsRef.current;
 
+      if (event.type === 'run_finished') {
+        const runId = event.runId;
+        const streamId = `stream-${runId}`;
+        const streamEntry = streamRunsRef.current.get(runId);
+        const finishedSessionId =
+          runSessionIdRef.current ?? streamEntry?.sessionId ?? null;
+        streamRunsRef.current.delete(runId);
+        const content = streamEntry?.content ?? '';
+        const hasContent = Boolean(content.trim());
+
+        setIsRunning(false);
+        currentRunIdRef.current = null;
+        runSessionIdRef.current = null;
+        options?.onRunFinished?.();
+
+        let toolCalls: UiMessage['toolCalls'];
+        let relatedFiles: UiMessage['relatedFiles'];
+        const hasToolCallsFromState = { value: false };
+
+        setMessages((prev) => {
+          const streamMsg = prev.find((m) => m.id === streamId);
+          toolCalls = streamMsg?.toolCalls;
+          relatedFiles = streamMsg?.relatedFiles;
+          const hasToolCalls = Boolean(toolCalls?.length);
+          hasToolCallsFromState.value = hasToolCalls;
+
+          const withoutEmpty = prev
+            .map((m) =>
+              m.id === streamId
+                ? { ...m, streaming: false, thinking: false, content: content || m.content }
+                : m,
+            )
+            .filter(
+              (m) =>
+                !(m.id === streamId && !content.trim() && !hasToolCalls),
+            );
+
+          if (
+            finishedSessionId &&
+            finishedSessionId === sessionIdRef.current
+          ) {
+            const generation = loadGenerationRef.current;
+            window.shorekeeper.messages.list(finishedSessionId).then((list) => {
+              if (
+                sessionIdRef.current !== finishedSessionId ||
+                loadGenerationRef.current !== generation
+              ) {
+                return;
+              }
+              const dbMessages: UiMessage[] = list
+                .filter((m) => m.role === 'user' || m.role === 'assistant')
+                .map((m) => ({
+                  id: m.id,
+                  role: m.role as 'user' | 'assistant',
+                  content: m.content,
+                  createdAt: m.createdAt,
+                }));
+
+              if (toolCalls?.length || relatedFiles?.length) {
+                for (let i = dbMessages.length - 1; i >= 0; i -= 1) {
+                  if (dbMessages[i].role === 'assistant') {
+                    dbMessages[i] = {
+                      ...dbMessages[i],
+                      ...(toolCalls?.length ? { toolCalls } : {}),
+                      ...(relatedFiles?.length ? { relatedFiles } : {}),
+                    };
+                    break;
+                  }
+                }
+              }
+
+              if (dbMessages.length > 0 || (!hasContent && !hasToolCallsFromState.value)) {
+                setMessages(dbMessages);
+              }
+
+              if (finishedSessionId && optionsRef.current?.onAssistantMessagePersisted) {
+                for (let i = dbMessages.length - 1; i >= 0; i -= 1) {
+                  if (dbMessages[i].role === 'assistant' && dbMessages[i].content.trim()) {
+                    optionsRef.current.onAssistantMessagePersisted({
+                      streamId,
+                      persistedId: dbMessages[i].id,
+                      sessionId: finishedSessionId,
+                    });
+                    break;
+                  }
+                }
+              }
+            });
+          }
+
+          return withoutEmpty;
+        });
+
+        if (
+          finishedSessionId &&
+          finishedSessionId === sessionIdRef.current &&
+          hasContent
+        ) {
+          optionsRef.current?.onAssistantReplyFinished?.({
+            id: streamId,
+            content,
+            sessionId: finishedSessionId,
+          });
+        }
+        return;
+      }
+
       if (event.type === 'run_started') {
         if (event.sessionId !== activeSessionId) return;
         options?.onRunStarted?.();
         runSessionIdRef.current = event.sessionId;
         currentRunIdRef.current = event.runId;
+        streamRunsRef.current.set(event.runId, { sessionId: event.sessionId, content: '' });
         const streamId = `stream-${event.runId}`;
         setIsRunning(true);
         setError(null);
@@ -130,6 +241,14 @@ export function useAgentEvents(
       }
 
       if (event.type === 'text_delta') {
+        let entry = streamRunsRef.current.get(event.runId);
+        if (!entry && activeSessionId) {
+          entry = { sessionId: activeSessionId, content: '' };
+          streamRunsRef.current.set(event.runId, entry);
+        }
+        if (entry) {
+          entry.content += event.delta;
+        }
         setMessages((prev) =>
           prev.map((m) =>
             m.id === streamId
@@ -194,107 +313,8 @@ export function useAgentEvents(
         );
       }
 
-      if (event.type === 'run_finished') {
-        const finishedSessionId = runSessionIdRef.current;
-        setIsRunning(false);
-        currentRunIdRef.current = null;
-        runSessionIdRef.current = null;
-        options?.onRunFinished?.();
-
-        let assistantReplyFinished: AssistantReplyFinishedPayload | null = null;
-
-        setMessages((prev) => {
-          const streamMsg = prev.find((m) => m.id === streamId);
-          const toolCalls = streamMsg?.toolCalls;
-          const relatedFiles = streamMsg?.relatedFiles;
-          const hasToolCalls = Boolean(toolCalls?.length);
-          const hasContent = Boolean(streamMsg?.content.trim());
-
-          if (
-            finishedSessionId &&
-            finishedSessionId === sessionIdRef.current &&
-            hasContent
-          ) {
-            assistantReplyFinished = {
-              id: streamId,
-              content: streamMsg!.content,
-              sessionId: finishedSessionId,
-            };
-          }
-
-          const withoutEmpty = prev
-            .map((m) =>
-              m.id === streamId
-                ? { ...m, streaming: false, thinking: false }
-                : m,
-            )
-            .filter(
-              (m) =>
-                !(m.id === streamId && !m.content.trim() && !hasToolCalls),
-            );
-
-          if (
-            finishedSessionId &&
-            finishedSessionId === sessionIdRef.current
-          ) {
-            const generation = loadGenerationRef.current;
-            window.shorekeeper.messages.list(finishedSessionId).then((list) => {
-              if (
-                sessionIdRef.current !== finishedSessionId ||
-                loadGenerationRef.current !== generation
-              ) {
-                return;
-              }
-              const dbMessages: UiMessage[] = list
-                .filter((m) => m.role === 'user' || m.role === 'assistant')
-                .map((m) => ({
-                  id: m.id,
-                  role: m.role as 'user' | 'assistant',
-                  content: m.content,
-                  createdAt: m.createdAt,
-                }));
-
-              if (toolCalls?.length || relatedFiles?.length) {
-                for (let i = dbMessages.length - 1; i >= 0; i -= 1) {
-                  if (dbMessages[i].role === 'assistant') {
-                    dbMessages[i] = {
-                      ...dbMessages[i],
-                      ...(toolCalls?.length ? { toolCalls } : {}),
-                      ...(relatedFiles?.length ? { relatedFiles } : {}),
-                    };
-                    break;
-                  }
-                }
-              }
-
-              if (dbMessages.length > 0 || (!hasContent && !hasToolCalls)) {
-                setMessages(dbMessages);
-              }
-
-              if (finishedSessionId && options?.onAssistantMessagePersisted) {
-                for (let i = dbMessages.length - 1; i >= 0; i -= 1) {
-                  if (dbMessages[i].role === 'assistant' && dbMessages[i].content.trim()) {
-                    options.onAssistantMessagePersisted({
-                      streamId,
-                      persistedId: dbMessages[i].id,
-                      sessionId: finishedSessionId,
-                    });
-                    break;
-                  }
-                }
-              }
-            });
-          }
-
-          return withoutEmpty;
-        });
-
-        if (assistantReplyFinished) {
-          optionsRef.current?.onAssistantReplyFinished?.(assistantReplyFinished);
-        }
-      }
-
       if (event.type === 'run_error') {
+        streamRunsRef.current.delete(event.runId);
         if (runSessionIdRef.current !== activeSessionId) {
           if (
             event.sessionId &&
@@ -330,6 +350,7 @@ export function useAgentEvents(
       activeSessionId = await onSessionNeeded();
     }
     if (!activeSessionId) return;
+    sessionIdRef.current = activeSessionId;
 
     const displayContent =
       attachments.length > 0 && trimmed

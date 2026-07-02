@@ -1,6 +1,7 @@
 import { BrowserWindow, screen } from 'electron';
 import { getJsonSetting, setJsonSetting } from '../../src/db/app-settings';
 import type { WindowBounds } from '../../src/db/schema';
+import { resolveAppIconPath } from '../app-icon';
 import { getPreloadPath, getRendererIndexPath } from '../paths';
 import { clampBoundsToWorkArea } from './bounds';
 import { getWindowManager } from './manager';
@@ -70,6 +71,7 @@ export function createDockWindow(): BrowserWindow {
     setJsonSetting(BOUNDS_KEY, { x: bounds.x, y: bounds.y, width: DOCK_WIDTH, height: DOCK_HEIGHT });
   }
 
+  const iconPath = resolveAppIconPath();
   const win = new BrowserWindow({
     x: bounds.x,
     y: bounds.y,
@@ -85,6 +87,7 @@ export function createDockWindow(): BrowserWindow {
     hasShadow: false,
     focusable: true,
     backgroundColor: '#00000000',
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,

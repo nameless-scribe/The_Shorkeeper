@@ -1,6 +1,6 @@
 {
   "name": "the-shorekeeper",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "pnpm": {
@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "predist": "node scripts/prepare-dist-assets.mjs",
     "dist": "pnpm build && electron-builder --win",
     "db:init": "tsx scripts/init-db.ts",
     "db:migrate": "tsx scripts/init-db.ts",
@@ -26,6 +27,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "docx": "^9.7.1",
     "dotenv": "^16.4.7",
+    "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
     "mammoth": "^1.12.0",
     "node-cron": "^4.5.0",
@@ -70,11 +72,31 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*",
+      "dist-electron/main.js",
+      "dist-electron/preload.mjs",
       "skills/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/electron-updater/**/*",
+      "node_modules/builder-util-runtime/**/*",
+      "node_modules/lazy-val/**/*",
+      "node_modules/semver/**/*",
+      "node_modules/js-yaml/**/*",
+      "node_modules/argparse/**/*",
+      "node_modules/sax/**/*",
+      "node_modules/sql.js/**/*"
     ],
     "asar": true,
+    "asarUnpack": [
+      "**/node_modules/electron-updater/**",
+      "**/node_modules/sql.js/**",
+      "**/dist/*.png"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://theshorekeeper.oss-cn-beijing.aliyuncs.com/shorekeeper/updates/"
+      }
+    ],
     "extraResources": [
       {
         "from": "node_modules/sql.js/dist",
@@ -95,7 +117,8 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,

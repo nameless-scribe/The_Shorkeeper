@@ -34,6 +34,8 @@ export default {
         drift: 'drift 20s ease-in-out infinite',
         'pulse-glow': 'pulseGlow 3s ease-in-out infinite',
         'spin-slow': 'spin 10s linear infinite',
+        'splash-rise': 'splashRise 0.8s ease-out both',
+        'splash-fade': 'splashFade 0.35s ease-in forwards',
       },
       keyframes: {
         twinkle: {
@@ -47,6 +49,14 @@ export default {
         pulseGlow: {
           '0%, 100%': { opacity: '0.55', transform: 'scale(1)' },
           '50%': { opacity: '1', transform: 'scale(1.04)' },
+        },
+        splashRise: {
+          '0%': { opacity: '0', transform: 'translateY(12px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        splashFade: {
+          '0%': { opacity: '1' },
+          '100%': { opacity: '0' },
         },
       },
     },

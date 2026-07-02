@@ -13,7 +13,7 @@
   --sk-silver-light-rgb: 232 238 245;
   --sk-veil-opacity: 1;
   --sk-bg-size: cover;
-  --sk-bg-image: url('/keeper-bg.png');
+  --sk-bg-image: url('./keeper-bg.png');
   --sk-veil-chat: linear-gradient(
     90deg,
     rgba(10, 17, 40, 0.9) 0%,
@@ -54,6 +54,15 @@ body {
   user-select: none;
   overflow: hidden;
   background: rgb(var(--sk-navy-deep-rgb));
+}
+
+/* 主面板窗：与 ChatPage rounded-3xl 对齐，避免透明窗圆角处露白 */
+html.keeper-window,
+html.keeper-window body,
+html.keeper-window #root {
+  background: rgb(var(--sk-navy-deep-rgb));
+  border-radius: 1.5rem;
+  overflow: hidden;
 }
 
 /* Dock / 透明浮窗：仅显示组件本身，窗口其余区域透桌面 */
@@ -203,4 +212,55 @@ html.panel-transparent #root {
 ::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, rgb(var(--sk-navy-rgb)), rgb(var(--sk-cyan-rgb)));
   border-radius: 3px;
+}
+
+.splash-emblem-wrap {
+  animation: splashRise 0.85s ease-out both;
+}
+
+.splash-copy {
+  animation: splashRise 0.85s ease-out 0.12s both;
+}
+
+.splash-loader {
+  animation: splashRise 0.85s ease-out 0.24s both;
+}
+
+html.splash-exiting,
+html.splash-exiting body,
+html.splash-exiting #root {
+  animation: splashFade 0.35s ease-in forwards;
+}
+
+@keyframes splashDot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes splashRise {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splashFade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }

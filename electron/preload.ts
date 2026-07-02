@@ -47,6 +47,7 @@ import type {
   VoiceSynthesizeChunkPayload,
   VoiceSynthesizeChunkResult,
   VoiceSynthesizeResult,
+  UpdateInfo,
 } from '../src/shared/types';
 
 const shorekeeperApi = {
@@ -325,6 +326,19 @@ const shorekeeperApi = {
       ipcRenderer.on('permission:request', listener);
       return () => {
         ipcRenderer.removeListener('permission:request', listener);
+      };
+    },
+  },
+  update: {
+    getVersion: (): Promise<string> => ipcRenderer.invoke('update:getVersion'),
+    getStatus: (): Promise<UpdateInfo> => ipcRenderer.invoke('update:getStatus'),
+    check: (): Promise<UpdateInfo> => ipcRenderer.invoke('update:check'),
+    install: (): Promise<void> => ipcRenderer.invoke('update:install'),
+    onStatus: (callback: (info: UpdateInfo) => void) => {
+      const listener = (_: Electron.IpcRendererEvent, data: UpdateInfo) => callback(data);
+      ipcRenderer.on('update:status', listener);
+      return () => {
+        ipcRenderer.removeListener('update:status', listener);
       };
     },
   },

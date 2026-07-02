@@ -5,6 +5,8 @@ import electron from 'vite-plugin-electron/simple';
 
 const isExternal = (id: string) =>
   id === 'electron' ||
+  id === 'electron-updater' ||
+  id.startsWith('electron-updater/') ||
   id === 'sql.js' ||
   id === 'node-cron' ||
   id === 'docx' ||

@@ -1,7 +1,9 @@
 import { app, BrowserWindow } from 'electron';
+import { resolveAppIconPath } from '../app-icon';
 import { getPreloadPath, getRendererIndexPath } from '../paths';
 
 export function showReminderWindow(title: string, body: string): BrowserWindow {
+  const iconPath = resolveAppIconPath();
   const win = new BrowserWindow({
     width: 380,
     height: 280,
@@ -13,6 +15,7 @@ export function showReminderWindow(title: string, body: string): BrowserWindow {
     resizable: false,
     skipTaskbar: false,
     backgroundColor: '#00000000',
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,

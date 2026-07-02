@@ -5,18 +5,20 @@ import { StatusPage } from './status/StatusPage';
 import { SchedulePage } from './schedule/SchedulePage';
 import { ReminderPage } from './reminder/ReminderPage';
 import { DockPage } from './dock/DockPage';
+import { SplashPage } from './splash/SplashPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RuntimeGate } from './components/RuntimeGate';
 import { ThemeProvider } from './theme/ThemeProvider';
 import './styles/globals.css';
 
-function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' | 'dock' {
+function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' | 'dock' | 'splash' {
   const panel = new URLSearchParams(window.location.search).get('panel');
   if (
     panel === 'status' ||
     panel === 'schedule' ||
     panel === 'reminder' ||
-    panel === 'dock'
+    panel === 'dock' ||
+    panel === 'splash'
   ) {
     return panel;
   }
@@ -26,6 +28,8 @@ function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' | 'dock' {
 const initialPanel = resolvePanel();
 if (initialPanel === 'dock') {
   document.documentElement.classList.add('panel-transparent');
+} else if (initialPanel !== 'splash') {
+  document.documentElement.classList.add('keeper-window');
 }
 
 function App() {
@@ -34,13 +38,16 @@ function App() {
   if (panel === 'schedule') return <SchedulePage />;
   if (panel === 'reminder') return <ReminderPage />;
   if (panel === 'dock') return <DockPage />;
+  if (panel === 'splash') return <SplashPage />;
   return <ChatPage />;
 }
 
 const root = document.getElementById('root')!;
 
-ReactDOM.createRoot(root).render(
-  <React.StrictMode>
+const appTree =
+  initialPanel === 'splash' ? (
+    <App />
+  ) : (
     <ErrorBoundary>
       <RuntimeGate>
         <ThemeProvider>
@@ -48,5 +55,8 @@ ReactDOM.createRoot(root).render(
         </ThemeProvider>
       </RuntimeGate>
     </ErrorBoundary>
-  </React.StrictMode>,
+  );
+
+ReactDOM.createRoot(root).render(
+  <React.StrictMode>{appTree}</React.StrictMode>,
 );

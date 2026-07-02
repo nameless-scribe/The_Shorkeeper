@@ -2,6 +2,7 @@ import { BrowserWindow, type BrowserWindowConstructorOptions } from 'electron';
 import { getJsonSetting, setJsonSetting } from '../../src/db/app-settings';
 import type { WindowBounds } from '../../src/db/schema';
 import { syncDockVisibility } from '../dock/visibility';
+import { resolveAppIconPath } from '../app-icon';
 import { getPreloadPath, getRendererIndexPath } from '../paths';
 import { clampBoundsToWorkArea } from './bounds';
 import { hideWindowToTray, showWindowFromTray } from '../tray';
@@ -44,6 +45,7 @@ function baseOptions(kind: WindowKind): BrowserWindowConstructorOptions {
   const saved = getJsonSetting<Partial<WindowBounds>>(BOUNDS_KEYS[kind]);
   const defaults = DEFAULT_BOUNDS[kind];
   const bounds = clampBoundsToWorkArea(saved ?? {}, defaults);
+  const iconPath = resolveAppIconPath();
 
   if (
     !saved ||
@@ -65,6 +67,7 @@ function baseOptions(kind: WindowKind): BrowserWindowConstructorOptions {
     transparent: true,
     resizable: true,
     backgroundColor: '#0A1128',
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
@@ -123,6 +126,9 @@ export class WindowManager {
 
     loadWindowContent(win, kind);
     win.once('ready-to-show', () => {
+      // 透明无边框窗在圆角抗锯齿处若底色不一致会露白（Windows DWM）
+      win.setBackgroundColor('#0A1128');
+
       const clamped = clampBoundsToWorkArea(win.getBounds(), DEFAULT_BOUNDS[kind]);
       const current = win.getBounds();
       if (

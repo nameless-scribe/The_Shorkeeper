@@ -59,6 +59,7 @@ export function ChatPage() {
   const ensureSession = useCallback(async () => {
     if (sessionId) return sessionId;
     const session = await window.shorekeeper.sessions.current();
+    sessionIdRef.current = session.id;
     setSessionId(session.id);
     return session.id;
   }, [sessionId]);
@@ -66,21 +67,30 @@ export function ChatPage() {
   const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
   const { playText, stop: stopSpeech, remapPlayingId, playingId, loadingId, error: voiceError } =
     useVoicePlayback();
+  const playTextRef = useRef(playText);
+  playTextRef.current = playText;
 
   const handleAssistantReplyFinished = useCallback(
     (message: { id: string; content: string; sessionId: string }) => {
       if (message.sessionId !== sessionIdRef.current) return;
       if (!hasSpeakableDialogue(message.content)) return;
 
-      void window.shorekeeper.voice.getSettings().then((settings) => {
-        if (message.sessionId !== sessionIdRef.current) return;
-        const enabled = settings.ttsEnabled && Boolean(settings.ttsVoiceId.trim());
-        if (!enabled || !settings.ttsAutoPlay) return;
-        voicePrefsRef.current = { enabled, autoPlay: settings.ttsAutoPlay };
-        void playText(message.id, message.content);
-      });
+      void (async () => {
+        try {
+          const settings = await window.shorekeeper.voice.getSettings();
+          if (message.sessionId !== sessionIdRef.current) return;
+
+          const enabled = settings.ttsEnabled && Boolean(settings.ttsVoiceId.trim());
+          if (!enabled || !settings.ttsAutoPlay) return;
+
+          voicePrefsRef.current = { enabled, autoPlay: settings.ttsAutoPlay };
+          await playTextRef.current(message.id, message.content);
+        } catch (err) {
+          console.error('[voice] auto-play failed:', err);
+        }
+      })();
     },
-    [playText],
+    [],
   );
 
   const handleAssistantMessagePersisted = useCallback(

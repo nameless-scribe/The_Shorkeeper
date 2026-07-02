@@ -35,20 +35,29 @@ export function useVoicePlayback() {
     setLoadingId(next);
   }, []);
 
-  const cleanup = useCallback(() => {
-    generationRef.current += 1;
+  const stopPlaybackOnly = useCallback(() => {
     playbackRef.current?.stop();
     playbackRef.current = null;
   }, []);
 
-  useEffect(() => () => cleanup(), [cleanup]);
+  const invalidatePlayback = useCallback(() => {
+    generationRef.current += 1;
+    stopPlaybackOnly();
+  }, [stopPlaybackOnly]);
+
+  useEffect(
+    () => () => {
+      invalidatePlayback();
+    },
+    [invalidatePlayback],
+  );
 
   const stop = useCallback(() => {
-    cleanup();
+    invalidatePlayback();
     inFlightRef.current = null;
     syncPlayingId(null);
     syncLoadingId(null);
-  }, [cleanup, syncLoadingId, syncPlayingId]);
+  }, [invalidatePlayback, syncLoadingId, syncPlayingId]);
 
   const remapPlayingId = useCallback(
     (from: string, to: string) => {
@@ -70,7 +79,7 @@ export function useVoicePlayback() {
       }
 
       inFlightRef.current = messageId;
-      cleanup();
+      invalidatePlayback();
       const generation = generationRef.current;
 
       setError(null);
@@ -129,7 +138,7 @@ export function useVoicePlayback() {
         stop();
       }
     },
-    [cleanup, stop, syncLoadingId, syncPlayingId],
+    [invalidatePlayback, stop, syncLoadingId, syncPlayingId],
   );
 
   return {

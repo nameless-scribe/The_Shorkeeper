@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { TethysEmblem } from '../components/TethysEmblem';
 import { ProfilePage } from './ProfilePage';
 import { PersonaPage } from './PersonaPage';
 import { AppearancePage } from './AppearancePage';
@@ -12,6 +13,7 @@ import { ModelPage } from './ModelPage';
 import { PerformancePage } from './PerformancePage';
 import { PluginsPage } from './PluginsPage';
 import { DisclaimerPage } from './DisclaimerPage';
+import { AboutPage } from './AboutPage';
 import { VoicePage } from './VoicePage';
 import {
   SettingsSidebar,
@@ -39,9 +41,13 @@ export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawer
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center justify-between border-b border-keeper-cyan/12 bg-keeper-navyDeep/40 px-6 py-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-keeper-cyan/12 text-lg">
-              {icon}
-            </span>
+            {tab === 'about' ? (
+              <TethysEmblem size="md" />
+            ) : (
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-keeper-cyan/12 text-lg">
+                {icon}
+              </span>
+            )}
             <div>
               <h2 className="text-base font-semibold text-keeper-ice">{title}</h2>
               <p className="mt-0.5 text-xs text-keeper-ice/45">{subtitle}</p>
@@ -73,6 +79,7 @@ export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawer
             {tab === 'skills' && <SkillsPage />}
             {tab === 'mcp' && <McpPage />}
             {tab === 'model' && <ModelPage onConfigChange={onConfigChange} />}
+            {tab === 'about' && <AboutPage />}
             {tab === 'disclaimer' && <DisclaimerPage />}
           </ErrorBoundary>
         </div>
