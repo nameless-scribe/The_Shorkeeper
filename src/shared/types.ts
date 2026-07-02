@@ -378,6 +378,7 @@ export type {
   CosyVoiceModel,
   PlaybackTarget,
   SttLanguage,
+  SttModel,
   VoiceSettings,
   VoiceSource,
 } from '../voice/types';
@@ -395,9 +396,14 @@ export interface VoiceSettingsInfo {
   ttsMaxChars: number;
   sttEnabled: boolean;
   sttLanguage: import('../voice/types').SttLanguage;
+  sttModel: import('../voice/types').SttModel;
   pushToTalk: boolean;
   sttAutoSend: boolean;
   playbackTarget: import('../voice/types').PlaybackTarget;
+  callMode: 'push_to_talk' | 'vad_auto';
+  callSilenceMs: number;
+  callAllowBargeIn: boolean;
+  callPersistTranscript: boolean;
   useChatApi: boolean;
   voiceTtsEndpoint: string;
   apiKeyConfigured: boolean;
@@ -423,6 +429,18 @@ export interface VoiceSynthesizePayload {
 export interface VoiceSynthesizeChunkPayload {
   text: string;
 }
+
+export interface VoiceTranscribePayload {
+  /** Raw PCM 16-bit little-endian mono samples. */
+  audio: ArrayBuffer;
+  /** Sample rate of the PCM data in Hz (e.g. 16000). */
+  sampleRate: number;
+  lang?: import('../voice/types').SttLanguage;
+}
+
+export type VoiceTranscribeResult =
+  | { ok: true; text: string }
+  | { ok: false; error: string };
 
 export type VoiceSynthesizeChunkResult =
   | { ok: true; audio: ArrayBuffer; mime: string }

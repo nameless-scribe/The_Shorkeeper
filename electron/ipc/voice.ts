@@ -7,6 +7,7 @@ import {
   saveVoiceSettings,
 } from '../../src/config/voice';
 import { synthesizeVoiceChunk } from '../../src/voice/synthesize-chunk';
+import { getBailianSttEngine } from '../../src/voice/bailian-stt';
 import {
   hasSpeakableDialogue,
   planStreamingSpeechFromMessage,
@@ -19,6 +20,8 @@ import type {
   VoiceSynthesizeChunkResult,
   VoiceSynthesizePayload,
   VoiceSynthesizeResult,
+  VoiceTranscribePayload,
+  VoiceTranscribeResult,
 } from '../../src/shared/types';
 
 function toInfo(settings: ReturnType<typeof getVoiceSettings>): VoiceSettingsInfo {
@@ -107,6 +110,36 @@ export function registerVoiceIpc(): void {
       try {
         const result = await synthesizeVoiceChunk(raw);
         return { ok: true, audio: result.audio, mime: result.mime };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: message };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'voice:transcribe',
+    async (_event, payload: VoiceTranscribePayload): Promise<VoiceTranscribeResult> => {
+      const settings = getVoiceSettings();
+      if (!settings.sttEnabled) {
+        return { ok: false, error: '语音输入已关闭' };
+      }
+
+      const audio = payload.audio;
+      if (!audio || audio.byteLength === 0) {
+        return { ok: false, error: '录音数据为空' };
+      }
+
+      const lang = payload.lang ?? settings.sttLanguage;
+      const languageHints = lang === 'auto' ? undefined : [lang];
+
+      try {
+        const result = await getBailianSttEngine().transcribe(audio, {
+          model: settings.sttModel,
+          sampleRate: payload.sampleRate,
+          languageHints,
+        });
+        return { ok: true, text: result.text };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return { ok: false, error: message };

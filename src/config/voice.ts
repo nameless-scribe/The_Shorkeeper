@@ -26,9 +26,14 @@ function mergeVoiceSettings(raw: Partial<VoiceSettings> | null | undefined): Voi
     ttsMaxChars: raw.ttsMaxChars ?? VOICE_DEFAULTS.ttsMaxChars,
     sttEnabled: raw.sttEnabled ?? VOICE_DEFAULTS.sttEnabled,
     sttLanguage: raw.sttLanguage ?? VOICE_DEFAULTS.sttLanguage,
+    sttModel: raw.sttModel ?? VOICE_DEFAULTS.sttModel,
     pushToTalk: raw.pushToTalk ?? VOICE_DEFAULTS.pushToTalk,
     sttAutoSend: raw.sttAutoSend ?? VOICE_DEFAULTS.sttAutoSend,
     playbackTarget: raw.playbackTarget ?? VOICE_DEFAULTS.playbackTarget,
+    callMode: raw.callMode ?? VOICE_DEFAULTS.callMode,
+    callSilenceMs: raw.callSilenceMs ?? VOICE_DEFAULTS.callSilenceMs,
+    callAllowBargeIn: raw.callAllowBargeIn ?? VOICE_DEFAULTS.callAllowBargeIn,
+    callPersistTranscript: raw.callPersistTranscript ?? VOICE_DEFAULTS.callPersistTranscript,
     useChatApi: raw.useChatApi ?? VOICE_DEFAULTS.useChatApi,
     voiceApiKey: raw.voiceApiKey?.trim() ?? VOICE_DEFAULTS.voiceApiKey,
     voiceTtsEndpoint: normalizeVoiceTtsEndpoint(
@@ -154,6 +159,15 @@ export function resolveTtsEndpoint(): string {
   }
 
   return 'https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer';
+}
+
+const DEFAULT_STT_WS_ENDPOINT = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
+
+/** Resolve the Paraformer real-time WebSocket endpoint. */
+export function resolveSttWsEndpoint(): string {
+  const fromEnv = process.env.VOICE_STT_ENDPOINT?.trim().replace(/\/$/, '');
+  if (fromEnv) return fromEnv;
+  return DEFAULT_STT_WS_ENDPOINT;
 }
 
 export function getVoiceApiKeyMasked(): string {

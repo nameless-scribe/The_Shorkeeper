@@ -1,0 +1,4 @@
+probe exists
+.gitprobe.txt removed
+.gitst.txt removed
+.verify.txt removed

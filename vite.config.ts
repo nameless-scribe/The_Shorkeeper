@@ -9,6 +9,7 @@ const isExternal = (id: string) =>
   id.startsWith('electron-updater/') ||
   id === 'sql.js' ||
   id === 'node-cron' ||
+  id === 'ws' ||
   id === 'docx' ||
   id === 'exceljs' ||
   id === 'mammoth' ||

@@ -47,6 +47,8 @@ import type {
   VoiceSynthesizeChunkPayload,
   VoiceSynthesizeChunkResult,
   VoiceSynthesizeResult,
+  VoiceTranscribePayload,
+  VoiceTranscribeResult,
   UpdateInfo,
 } from '../src/shared/types';
 
@@ -316,6 +318,8 @@ const shorekeeperApi = {
       ipcRenderer.invoke('voice:synthesize', payload),
     synthesizeChunk: (payload: VoiceSynthesizeChunkPayload): Promise<VoiceSynthesizeChunkResult> =>
       ipcRenderer.invoke('voice:synthesizeChunk', payload),
+    transcribe: (payload: VoiceTranscribePayload): Promise<VoiceTranscribeResult> =>
+      ipcRenderer.invoke('voice:transcribe', payload),
   },
   permission: {
     respond: (requestId: string, approved: boolean) =>
