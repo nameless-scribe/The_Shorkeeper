@@ -11,7 +11,7 @@ export function RuntimeGate({ children }: { children: ReactNode }) {
   }
 
   const shell = (body: ReactNode) => (
-    <div className="relative h-screen overflow-hidden rounded-3xl">
+    <div className="keeper-panel-shell">
       <AppBackground />
       <div className="relative z-10 flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
         {body}

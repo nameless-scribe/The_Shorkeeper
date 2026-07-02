@@ -138,7 +138,7 @@ export function ChatPage() {
   );
 
   return (
-    <div className="relative h-screen overflow-hidden rounded-3xl border border-keeper-silver/25 shadow-cyanSm">
+    <div className="keeper-panel-shell border border-keeper-silver/25 shadow-cyanSm">
       <AppBackground />
 
       <div className="relative z-10 flex h-full min-h-0">

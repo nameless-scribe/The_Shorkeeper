@@ -5,7 +5,7 @@ interface PanelTitleBarProps {
 
 export function PanelTitleBar({ title, subtitle }: PanelTitleBarProps) {
   return (
-    <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between border-b border-keeper-cyan/15 px-4 py-3">
+    <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3">
       <div>
         <h1 className="text-sm font-semibold tracking-wide text-keeper-ice">{title}</h1>
         {subtitle && <p className="text-xs text-keeper-ice/60">{subtitle}</p>}

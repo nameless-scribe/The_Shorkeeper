@@ -64,7 +64,8 @@ function baseOptions(kind: WindowKind): BrowserWindowConstructorOptions {
     height: bounds.height,
     show: false,
     frame: false,
-    transparent: true,
+    // 不透明窗 + 与主题一致的底色：透明窗在 Windows 圆角抗锯齿处易露黑边
+    transparent: false,
     resizable: true,
     backgroundColor: '#0A1128',
     ...(iconPath ? { icon: iconPath } : {}),
@@ -126,9 +127,6 @@ export class WindowManager {
 
     loadWindowContent(win, kind);
     win.once('ready-to-show', () => {
-      // 透明无边框窗在圆角抗锯齿处若底色不一致会露白（Windows DWM）
-      win.setBackgroundColor('#0A1128');
-
       const clamped = clampBoundsToWorkArea(win.getBounds(), DEFAULT_BOUNDS[kind]);
       const current = win.getBounds();
       if (

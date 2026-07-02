@@ -15,7 +15,7 @@ export function ReminderPage() {
   const body = readQuery('body') || '';
 
   return (
-    <div className="relative h-screen overflow-hidden rounded-3xl border border-keeper-cyan/40 shadow-cyan">
+    <div className="relative h-screen overflow-hidden rounded-3xl border border-keeper-cyan/40 bg-keeper-navyDeep shadow-cyan">
       <AppBackground />
 
       <div className="relative z-10 flex h-full min-h-0 flex-col">

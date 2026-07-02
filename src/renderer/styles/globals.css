@@ -56,13 +56,11 @@ body {
   background: rgb(var(--sk-navy-deep-rgb));
 }
 
-/* 主面板窗：与 ChatPage rounded-3xl 对齐，避免透明窗圆角处露白 */
+/* 主面板窗：铺满窗口底色，圆角由 .keeper-panel-shell 负责 */
 html.keeper-window,
 html.keeper-window body,
 html.keeper-window #root {
   background: rgb(var(--sk-navy-deep-rgb));
-  border-radius: 1.5rem;
-  overflow: hidden;
 }
 
 /* Dock / 透明浮窗：仅显示组件本身，窗口其余区域透桌面 */
@@ -193,6 +191,10 @@ html.panel-transparent #root {
 }
 
 @layer components {
+  .keeper-panel-shell {
+    @apply relative h-screen overflow-hidden rounded-3xl bg-keeper-navyDeep;
+  }
+
   .keeper-glass-panel {
     @apply border border-keeper-silver/20 bg-keeper-glass shadow-glass backdrop-blur-xl;
   }

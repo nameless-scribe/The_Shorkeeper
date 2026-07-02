@@ -24,7 +24,7 @@ export function TitleBar({
   historyOpen,
 }: TitleBarProps) {
   return (
-    <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between border-b border-keeper-cyan/15 px-4 py-3">
+    <header className="drag-region keeper-glass-panel flex shrink-0 items-center justify-between rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3">
       <div className="no-drag min-w-0">
         <h1 className="text-sm font-semibold tracking-wide text-keeper-ice">
           The Shorekeeper
