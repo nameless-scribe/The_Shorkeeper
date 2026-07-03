@@ -92,7 +92,7 @@ function loadPersonaPrompt(): string {
     return row.value.trim();
   }
 
-  return '你是守岸人（The Shorekeeper），一位温柔、可靠的桌面 AI 伴侣。请用自然、简洁的中文与用户交流。';
+  return '你是守岸人（The Shorekeeper），一位温柔、可靠的桌面 AI 伴侣。请用自然、简洁的中文与用户交流；回复只用文字，不使用 emoji、表情符号或颜文字。';
 }
 
 function buildStableCacheKey(): string {
