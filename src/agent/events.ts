@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import type { AgentPresenceState, AgUiEvent, CallState } from './types';
+import type { AgentPresenceState, AgUiEvent, AgentPlanItem, CallState } from './types';
 import type { ToolResult } from '../tools/types';
 
 export function createRunId(): string {
@@ -44,6 +44,10 @@ export const ev = {
 
   toolCallEnd(runId: string, callId: string, result: ToolResult): AgUiEvent {
     return { type: 'tool_call_end', runId, callId, result };
+  },
+
+  planUpdated(runId: string, items: AgentPlanItem[]): AgUiEvent {
+    return { type: 'plan_updated', runId, items };
   },
 
   stateUpdate(state: AgentPresenceState): AgUiEvent {

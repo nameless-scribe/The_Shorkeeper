@@ -1,6 +1,6 @@
 {
   "name": "the-shorekeeper",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "config": {
@@ -8,6 +8,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@napi-rs/canvas",
       "electron",
       "esbuild"
     ]
@@ -27,6 +28,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.80",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@ricky0123/vad-web": "^0.0.30",
     "docx": "^9.7.1",
@@ -91,15 +93,41 @@
       "node_modules/argparse/**/*",
       "node_modules/sax/**/*",
       "node_modules/sql.js/**/*",
-      "node_modules/ws/**/*"
+      "node_modules/ws/**/*",
+      "node_modules/pdf-parse/**/*",
+      "node_modules/pdfjs-dist/**/*",
+      "node_modules/@napi-rs/**/*",
+      "node_modules/exceljs/**/*",
+      "node_modules/archiver/**/*",
+      "node_modules/archiver-utils/**/*",
+      "node_modules/compress-commons/**/*",
+      "node_modules/crc32-stream/**/*",
+      "node_modules/fast-csv/**/*",
+      "node_modules/@fast-csv/**/*",
+      "node_modules/jszip/**/*",
+      "node_modules/saxes/**/*",
+      "node_modules/unzipper/**/*",
+      "node_modules/tmp/**/*",
+      "node_modules/dayjs/**/*",
+      "node_modules/docx/**/*",
+      "node_modules/mammoth/**/*",
+      "node_modules/word-extractor/**/*",
+      "node_modules/pdf-lib/**/*",
+      "node_modules/xml-js/**/*",
+      "node_modules/nanoid/**/*",
+      "node_modules/hash.js/**/*",
+      "node_modules/lop/**/*",
+      "node_modules/duck/**/*",
+      "node_modules/option/**/*",
+      "node_modules/bluebird/**/*"
     ],
     "asar": true,
     "asarUnpack": [
       "**/node_modules/electron-updater/**",
       "**/node_modules/sql.js/**",
+      "**/node_modules/@napi-rs/**",
       "**/dist/*.png",
-      "**/*.wasm",
-      "**/*.onnx"
+      "dist/vad/**"
     ],
     "publish": [
       {

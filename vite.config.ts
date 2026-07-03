@@ -14,6 +14,12 @@ const isExternal = (id: string) =>
   id === 'exceljs' ||
   id === 'mammoth' ||
   id === 'word-extractor' ||
+  id === 'pdf-parse' ||
+  id.startsWith('pdf-parse/') ||
+  id === 'pdfjs-dist' ||
+  id.startsWith('pdfjs-dist/') ||
+  id === '@napi-rs/canvas' ||
+  id.startsWith('@napi-rs/canvas') ||
   id === 'pdf-lib' ||
   id.startsWith('@modelcontextprotocol/') ||
   id.startsWith('node:') ||
@@ -29,8 +35,10 @@ export default defineConfig({
         entry: 'electron/main.ts',
         vite: {
           build: {
+            emptyOutDir: true,
             rollupOptions: {
               external: isExternal,
+              output: { inlineDynamicImports: true },
             },
           },
         },

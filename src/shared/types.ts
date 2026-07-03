@@ -1,6 +1,6 @@
 import type { OpenAIToolCall } from '../agent/types';
 
-export type { AgUiEvent, AgentPresenceState, CallState } from '../agent/types';
+export type { AgUiEvent, AgentPresenceState, AgentPlanItem, AgentPlanItemStatus, CallState } from '../agent/types';
 export type { ToolResult } from '../tools/types';
 
 export type ModelEvent =
@@ -167,6 +167,8 @@ export interface SkillInfo {
   systemPromptFragment: string;
   allowedTools?: string[];
   trigger: 'manual' | 'auto';
+  matchKeywords?: string[];
+  priority: number;
   enabled: boolean;
 }
 
@@ -279,6 +281,21 @@ export interface ScheduledTaskInfo {
   actionPayload: string;
   enabled: boolean;
   lastRunAt: number | null;
+}
+
+export type UserTaskStatus = 'pending' | 'in_progress' | 'done' | 'cancelled';
+
+export interface UserTaskInfo {
+  id: string;
+  title: string;
+  status: UserTaskStatus;
+  sourceFile: string | null;
+  sourceRow: number | null;
+  module: string | null;
+  dueAt: string | null;
+  notes: string | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface DocumentInfo {

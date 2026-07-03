@@ -1,5 +1,13 @@
 import type { ToolResult } from '../tools/types';
 
+export type AgentPlanItemStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface AgentPlanItem {
+  id: string;
+  content: string;
+  status: AgentPlanItemStatus;
+}
+
 export interface AgentPresenceState {
   online: boolean;
   mood: 'happy' | 'calm' | 'sleepy' | 'thinking';
@@ -20,6 +28,7 @@ export type AgUiEvent =
   | { type: 'reasoning_delta'; runId: string; delta: string }
   | { type: 'tool_call_start'; runId: string; callId: string; name: string; args: unknown }
   | { type: 'tool_call_end'; runId: string; callId: string; result: ToolResult }
+  | { type: 'plan_updated'; runId: string; items: AgentPlanItem[] }
   | { type: 'state_update'; state: AgentPresenceState }
   | { type: 'live2d_motion'; motion: string; priority?: number }
   | { type: 'tts_chunk'; runId: string; audio: ArrayBuffer }

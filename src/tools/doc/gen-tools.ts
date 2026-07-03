@@ -3,18 +3,8 @@ import path from 'node:path';
 import type { ToolDefinition } from '../types';
 import { buildFileArtifact, withFileArtifact } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
-
-function cellToString(value: unknown): string {
-  if (value == null) return '';
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'object' && 'text' in value && typeof (value as { text: unknown }).text === 'string') {
-    return (value as { text: string }).text;
-  }
-  if (typeof value === 'object' && 'result' in value) {
-    return cellToString((value as { result: unknown }).result);
-  }
-  return String(value);
-}
+import { parseXlsxFile } from './parse-xlsx';
+import { loadExcelJS } from './exceljs-loader';
 
 async function writeWorkspaceFile(
   ctx: { workspaceRoot: string },
@@ -144,69 +134,16 @@ export const readXlsxTool: ToolDefinition = {
     const rowLimit = Math.max(1, Math.min(max_rows, 5000));
 
     try {
-      const absolute = resolveWorkspacePath(ctx.workspaceRoot, filePath);
-      const ExcelJS = await import('exceljs');
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.readFile(absolute);
-
-      const sheet = sheet_name?.trim()
-        ? workbook.getWorksheet(sheet_name)
-        : workbook.worksheets[0];
-
-      if (!sheet) {
-        const names = workbook.worksheets.map((ws) => ws.name).join(', ');
-        return {
-          success: false,
-          output: '',
-          error: sheet_name ? `未找到工作表「${sheet_name}」，可用：${names}` : '工作簿为空',
-        };
-      }
-
-      const rawRows: string[][] = [];
-      sheet.eachRow({ includeEmpty: false }, (row) => {
-        const values = row.values;
-        if (!Array.isArray(values)) return;
-        rawRows.push(values.slice(1).map(cellToString));
+      const parsed = await parseXlsxFile(ctx.workspaceRoot, filePath, {
+        sheet_name,
+        max_rows: rowLimit,
       });
-
-      if (!rawRows.length) {
-        const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
-        return withFileArtifact(
-          {
-            success: true,
-            output: JSON.stringify(
-              { path: filePath, sheet: sheet.name, headers: [], rows: [], total_rows: 0 },
-              null,
-              2,
-            ),
-          },
-          artifact,
-        );
-      }
-
-      const headers = rawRows[0];
-      const dataRows = rawRows.slice(1);
-      const totalRows = dataRows.length;
-      const truncated = totalRows > rowLimit;
-      const rows = truncated ? dataRows.slice(0, rowLimit) : dataRows;
 
       const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
       return withFileArtifact(
         {
           success: true,
-          output: JSON.stringify(
-            {
-              path: filePath,
-              sheet: sheet.name,
-              available_sheets: workbook.worksheets.map((ws) => ws.name),
-              headers,
-              rows,
-              total_rows: totalRows,
-              truncated,
-            },
-            null,
-            2,
-          ),
+          output: JSON.stringify(parsed, null, 2),
         },
         artifact,
       );
@@ -253,7 +190,7 @@ export const genXlsxTool: ToolDefinition = {
     }
 
     return writeWorkspaceFile(ctx, filePath, async (absolute) => {
-      const ExcelJS = await import('exceljs');
+      const ExcelJS = await loadExcelJS();
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet(sheet_name);
       sheet.addRow(headers);

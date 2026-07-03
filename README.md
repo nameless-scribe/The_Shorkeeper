@@ -56,16 +56,9 @@ pnpm dist
 
 安装包输出到 `release/` 目录。首次打包会下载 NSIS 相关工具，耗时较长。
 
-**在其他 Windows 电脑使用：** 拷贝 `release/` 下的安装包（`.exe`），双击安装即可，**无需** Node / pnpm。首次打开后会自动创建数据目录：
+**构建顺序：** `pnpm dist` 会先执行 `scripts/copy-vad-assets.mjs`（从 `node_modules` 同步 VAD / ONNX 到 `public/vad/`），再 `vite build` 与 `electron-builder`。**请勿单独运行 `vite build`**，否则 `public/vad/` 可能缺失，安装包内语音通话 VAD 将无法初始化。开发模式 `pnpm dev` 同样会在启动前同步 VAD 资源。
 
-| 路径 | 说明 |
-|------|------|
-| `D:\SQLlite\` | 数据库根目录（默认，首次启动自动创建） |
-| `D:\SQLlite\shorekeeper.db` | 聊天、设置、记忆等 |
-| `D:\SQLlite\workspace\` | Agent 读写文件的工作区 |
-| `D:\SQLlite\appearance\` | 自定义背景与头像 |
-
-安装包内已包含 **sql.js 运行时**（WASM）与 **数据库迁移脚本**，无需单独安装 SQLite。若目标机没有 `D:` 盘，会自动回退到用户目录下的应用数据文件夹。
+**在其他 Windows 电脑使用：** 拷贝 `release/` 下的安装包（`.exe`），双击安装即可，**无需** Node / pnpm。安装包内已包含 **sql.js 运行时**（WASM）与 **数据库迁移脚本**，无需单独安装 SQLite。若目标机没有 `D:` 盘，会自动回退到用户目录下的应用数据文件夹。
 
 **打包内容（白名单）：** 仅 `dist/`、`dist-electron/`、`skills/`、`package.json` 及 sql.js / migration 资源。**不会**打入开发机 `.env`、源码、`docs/`、本地 `shorekeeper.db` 或 `workspace/`。API Key 需在目标机 **设置 → API 设置** 填写，或在该机 `userData` / 安装目录旁自行放置 `.env`。
 

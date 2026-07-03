@@ -3,6 +3,7 @@ import { runAgentLoop } from './loop';
 import type { AgUiEvent } from './types';
 import { buildSystemPromptParts } from './context-builder';
 import { getAgentRegistry } from '../tools/agent-registry';
+import { getActiveSkills } from '../skills/state';
 import { buildPermissionPolicy } from './policy-loader';
 import { loadModelConfig } from '../models/config';
 import { getSession } from '../db/repositories/sessions';
@@ -92,11 +93,13 @@ export async function* runOrchestrator(
 
     const { maxHistoryMessages } = getPerformanceSettings();
     const history = getRecentChatMessages(session.id, maxHistoryMessages);
-    const registry = await getAgentRegistry();
+    const activeSkills = getActiveSkills(userMessage);
+    const registry = await getAgentRegistry(activeSkills);
     const systemParts = await buildSystemPromptParts({
       userMessage,
       sessionId: session.id,
       availableTools: registry.list(),
+      activeSkills,
     });
     const messages = [
       { role: 'system' as const, content: systemParts.combined },

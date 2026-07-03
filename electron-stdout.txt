@@ -1,0 +1,5 @@
+
+[data] 数据目录: D:\SQLlite
+[scheduler] 已加载 2 个周期任务、0 个一次性任务
+[update] 开发模式，跳过自动更新
+[scheduler] 已加载 2 个周期任务、1 个一次性任务

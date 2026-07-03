@@ -6,6 +6,7 @@ import { PersonaPage } from './PersonaPage';
 import { AppearancePage } from './AppearancePage';
 import { WorldbookPage } from './WorldbookPage';
 import { TasksPage } from './TasksPage';
+import { UserTodosPage } from './UserTodosPage';
 import { DocumentsPage } from './DocumentsPage';
 import { McpPage } from './McpPage';
 import { SkillsPage } from './SkillsPage';
@@ -74,6 +75,7 @@ export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawer
             {tab === 'worldbook' && <WorldbookPage />}
             {tab === 'appearance' && <AppearancePage />}
             {tab === 'voice' && <VoicePage />}
+            {tab === 'userTodos' && <UserTodosPage />}
             {tab === 'tasks' && <TasksPage />}
             {tab === 'documents' && <DocumentsPage />}
             {tab === 'skills' && <SkillsPage />}

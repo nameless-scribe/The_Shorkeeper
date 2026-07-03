@@ -7,6 +7,8 @@ import type {
   ProfileEntryInfo,
   ScheduleKind,
   ScheduledTaskInfo,
+  UserTaskInfo,
+  UserTaskStatus,
   SessionDeleteResult,
   DeleteEmptySessionsResult,
   SessionInfo,
@@ -221,6 +223,28 @@ const shorekeeperApi = {
       ipcRenderer.on('tasks:updated', listener);
       return () => {
         ipcRenderer.removeListener('tasks:updated', listener);
+      };
+    },
+  },
+  userTasks: {
+    list: (filters?: {
+      status?: UserTaskStatus;
+      module?: string;
+    }): Promise<UserTaskInfo[]> => ipcRenderer.invoke('userTasks:list', filters),
+    update: (
+      id: string,
+      patch: Partial<{
+        title: string;
+        status: UserTaskStatus;
+        notes: string;
+        dueAt: string;
+      }>,
+    ) => ipcRenderer.invoke('userTasks:update', id, patch),
+    onUpdated: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('userTasks:updated', listener);
+      return () => {
+        ipcRenderer.removeListener('userTasks:updated', listener);
       };
     },
   },

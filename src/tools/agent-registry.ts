@@ -4,30 +4,35 @@ import {
   pluginSettingsCacheKey,
 } from '../config/plugins';
 import { getMcpToolDefinitions } from '../mcp/client';
+import type { Skill } from '../skills/loader';
 import { getEnabledSkills } from '../skills/state';
 import { createBuiltinRegistry } from './builtin';
 import { ToolRegistry } from './registry';
 
-let cachedRegistry: ToolRegistry | null = null;
-let cacheKey = '';
+let cachedBaseRegistry: ToolRegistry | null = null;
+let baseCacheKey = '';
 
 /** 核心伴侣能力：不受技能工具白名单限制 */
 const CORE_TOOL_NAMES = new Set([
   'create_scheduled_task',
   'list_scheduled_tasks',
   'delete_scheduled_task',
+  'update_agent_plan',
+  'import_tasks_from_xlsx',
+  'list_user_tasks',
+  'update_user_task',
   'recall_memory',
   'save_memory',
   'search_worldbook',
   'search_knowledge',
 ]);
 
-function buildCacheKey(skillIds: string[], mcpTools: { name: string }[], pluginsKey: string): string {
+function buildBaseCacheKey(mcpTools: { name: string }[], pluginsKey: string): string {
   const mcpHash = mcpTools
     .map((t) => t.name)
     .sort()
     .join(',');
-  return `${skillIds.sort().join(',')}:${mcpHash}:${pluginsKey}`;
+  return `${mcpHash}:${pluginsKey}`;
 }
 
 function applyPluginFilter(registry: ToolRegistry): ToolRegistry {
@@ -41,9 +46,8 @@ function applyPluginFilter(registry: ToolRegistry): ToolRegistry {
   return filtered;
 }
 
-function applySkillToolFilter(registry: ToolRegistry): ToolRegistry {
-  const enabled = getEnabledSkills();
-  const restricted = enabled.filter((s) => s.allowedTools && s.allowedTools.length > 0);
+function applySkillToolFilter(registry: ToolRegistry, skills: Skill[]): ToolRegistry {
+  const restricted = skills.filter((s) => s.allowedTools && s.allowedTools.length > 0);
   if (restricted.length === 0) return registry;
 
   const allowed = new Set<string>();
@@ -62,14 +66,13 @@ function applySkillToolFilter(registry: ToolRegistry): ToolRegistry {
   return filtered;
 }
 
-export async function getAgentRegistry(): Promise<ToolRegistry> {
+async function getBaseRegistry(): Promise<ToolRegistry> {
   const mcpTools = await getMcpToolDefinitions();
-  const skillIds = getEnabledSkills().map((s) => s.id);
   const pluginsKey = pluginSettingsCacheKey(getPluginSettings());
-  const key = buildCacheKey(skillIds, mcpTools, pluginsKey);
+  const key = buildBaseCacheKey(mcpTools, pluginsKey);
 
-  if (cachedRegistry && cacheKey === key) {
-    return cachedRegistry;
+  if (cachedBaseRegistry && baseCacheKey === key) {
+    return cachedBaseRegistry;
   }
 
   const registry = createBuiltinRegistry();
@@ -81,12 +84,18 @@ export async function getAgentRegistry(): Promise<ToolRegistry> {
     }
   }
 
-  cachedRegistry = applyPluginFilter(applySkillToolFilter(registry));
-  cacheKey = key;
-  return cachedRegistry;
+  cachedBaseRegistry = applyPluginFilter(registry);
+  baseCacheKey = key;
+  return cachedBaseRegistry;
+}
+
+export async function getAgentRegistry(activeSkills?: Skill[]): Promise<ToolRegistry> {
+  const base = await getBaseRegistry();
+  const skills = activeSkills ?? getEnabledSkills();
+  return applySkillToolFilter(base, skills);
 }
 
 export function invalidateAgentRegistry(): void {
-  cachedRegistry = null;
-  cacheKey = '';
+  cachedBaseRegistry = null;
+  baseCacheKey = '';
 }

@@ -3,6 +3,9 @@ id: excel
 name: Excel 表格处理
 description: 读取、分析、汇总工作区 .xlsx 文件，并生成新的 Excel 报表
 version: 1.0.0
+trigger: auto
+matchKeywords: xlsx, excel, 表格, 工作表, 附件已解析, .xlsx
+priority: 10
 allowedTools: read_xlsx, gen_xlsx, list_dir, read_file
 ---
 

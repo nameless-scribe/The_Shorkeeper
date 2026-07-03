@@ -19,6 +19,7 @@ import { registerStatsIpc } from './ipc/stats';
 import { registerPresenceIpc } from './ipc/presence';
 import { registerWindowIpc } from './ipc/window';
 import { registerTasksIpc } from './ipc/tasks';
+import { registerUserTasksIpc } from './ipc/user-tasks';
 import { initDatabase, closeDatabase } from '../src/db';
 import { setDatabaseReady } from '../src/db/state';
 import { restoreActiveSession } from '../src/session/active';
@@ -145,6 +146,7 @@ app.whenReady().then(async () => {
     registerWorldbookIpc();
     registerStatsIpc();
     registerTasksIpc();
+    registerUserTasksIpc();
     registerWorkspaceIpc();
     registerDockIpc();
     registerDocumentsIpc();

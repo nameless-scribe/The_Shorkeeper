@@ -7,6 +7,7 @@ import { webSearchTool } from '../web/web-search';
 import { fetchUrlTool } from '../web/fetch-url';
 import { translateTool } from '../web/translate';
 import { genDocxTool, genMarkdownTool, genXlsxTool, readXlsxTool } from '../doc/gen-tools';
+import { loadExcelJS } from '../doc/exceljs-loader';
 import { convertToMarkdownTool } from '../doc/convert-markdown';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -214,7 +215,7 @@ describe('gen_markdown', () => {
 
 describe('read_xlsx / gen_xlsx', () => {
   beforeAll(async () => {
-    const ExcelJS = await import('exceljs');
+    const ExcelJS = await loadExcelJS();
     const wb = new ExcelJS.Workbook();
     wb.addWorksheet('warmup');
     await wb.xlsx.writeBuffer();

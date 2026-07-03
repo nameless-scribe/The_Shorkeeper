@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { ToolDefinition } from '../types';
 import { buildFileArtifact, withFileArtifact } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
+import { loadMammoth, loadWordExtractor } from './doc-loaders';
 
 const DOCX_EXT = new Set(['.docx']);
 const DOC_EXT = new Set(['.doc']);
@@ -85,14 +86,13 @@ function plainTextToMarkdown(content: string, title: string, ext: string): strin
 }
 
 async function convertDocx(absolute: string, title: string): Promise<string> {
-  const mammoth = await import('mammoth');
+  const mammoth = await loadMammoth();
   const result = await mammoth.extractRawText({ path: absolute });
   return plainTextToMarkdown(result.value, title, '.txt');
 }
 
 async function convertDoc(absolute: string, title: string): Promise<string> {
-  const mod = await import('word-extractor');
-  const WordExtractor = mod.default;
+  const WordExtractor = await loadWordExtractor();
   const extractor = new WordExtractor();
   const doc = await extractor.extract(absolute);
   const body = doc.getBody().trim();

@@ -11,6 +11,10 @@ import {
   SettingsSection,
 } from './components/settings-ui';
 
+function triggerLabel(trigger: SkillInfo['trigger']): string {
+  return trigger === 'auto' ? '自动' : '手动';
+}
+
 export function SkillsPage() {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +40,8 @@ export function SkillsPage() {
     <SettingsPageShell>
       <SettingsIntro>
         技能来自内置 <code className="rounded bg-keeper-navyDeep/60 px-1 py-0.5 text-keeper-cyan/90">skills/*/SKILL.md</code>（开发时在项目根目录，安装包内已一并打包）。
-        启用后注入 system prompt。若技能配置了工具白名单，**多个技能同时启用时，可用工具为各白名单的并集**（取所有已启用技能允许的工具）；未配置白名单的技能不限制工具。
+        <strong>手动</strong>技能启用后每轮注入；<strong>自动</strong>技能仅在用户消息命中关键词时注入。
+        若技能配置了工具白名单，**多个技能同时启用时，可用工具为各白名单的并集**；未配置白名单的技能不限制工具。
       </SettingsIntro>
 
       <SettingsSection title="已安装技能" hint={`${skills.length} 个`}>
@@ -50,21 +55,34 @@ export function SkillsPage() {
                 title={skill.name}
                 subtitle={skill.description || skill.id}
                 badge={
-                  skill.enabled ? (
-                    <SettingsBadge tone="cyan">已启用</SettingsBadge>
-                  ) : (
-                    <SettingsBadge tone="muted">未启用</SettingsBadge>
-                  )
+                  <>
+                    {skill.enabled ? (
+                      <SettingsBadge tone="cyan">已启用</SettingsBadge>
+                    ) : (
+                      <SettingsBadge tone="muted">未启用</SettingsBadge>
+                    )}
+                    <SettingsBadge tone={skill.trigger === 'auto' ? 'muted' : 'cyan'}>
+                      {triggerLabel(skill.trigger)}
+                    </SettingsBadge>
+                  </>
                 }
-                meta={
+                meta={[
+                  skill.trigger === 'auto' && skill.matchKeywords?.length
+                    ? `触发词：${skill.matchKeywords.join('、')}`
+                    : null,
                   skill.allowedTools?.length
                     ? `工具白名单：${skill.allowedTools.join(', ')}${
                         skill.enabled
                           ? '（与其他带白名单的技能合并为并集）'
                           : ''
                       }`
-                    : undefined
-                }
+                    : null,
+                  skill.id === 'example' && skill.enabled
+                    ? '演示技能建议单独启用，与其他带白名单技能并存会放宽工具限制'
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || undefined}
                 actions={
                   <SettingsToggle
                     checked={skill.enabled}

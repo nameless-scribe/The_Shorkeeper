@@ -1,5 +1,6 @@
 import { getJsonSetting, setJsonSetting } from '../db/app-settings';
 import { discoverSkills, type Skill } from './loader';
+import { resolveActiveSkills } from './resolve';
 
 const ENABLED_KEY = 'skills.enabled';
 
@@ -20,6 +21,10 @@ export function getEnabledSkills(): Skill[] {
   return discoverSkills().filter((s) => ids.has(s.id));
 }
 
+export function getActiveSkills(userMessage: string): Skill[] {
+  return resolveActiveSkills(userMessage, getEnabledSkills());
+}
+
 export function listSkillsWithState(): SkillInfo[] {
   const enabled = new Set(getEnabledSkillIds());
   return discoverSkills().map((skill) => ({
@@ -33,9 +38,4 @@ export function toggleSkill(id: string, enabled: boolean): void {
   if (enabled) ids.add(id);
   else ids.delete(id);
   setEnabledSkillIds([...ids]);
-}
-
-export function formatSkillsForPrompt(skills: Skill[]): string | null {
-  if (!skills.length) return null;
-  return skills.map((s) => s.systemPromptFragment).join('\n\n');
 }

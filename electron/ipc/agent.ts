@@ -10,6 +10,7 @@ import {
 import { resolveAgentSession } from '../../src/agent/resolve-session';
 import { cancelAllPendingPermissions } from './permission';
 import { formatAttachmentsForMessage } from '../../src/workspace/import';
+import { enrichAttachmentsMessage } from '../../src/workspace/attachment-preparse';
 import { runOrchestrator } from '../../src/agent/orchestrator';
 import { getModelConfigSafe } from '../../src/models/config';
 import { recordTokenUsage } from '../../src/db/token-usage';
@@ -35,8 +36,12 @@ export function registerAgentIpc() {
 
     onRunStarted();
 
-    const userMessage = formatAttachmentsForMessage(
+    const baseMessage = formatAttachmentsForMessage(
       payload.message,
+      payload.attachments ?? [],
+    );
+    const userMessage = await enrichAttachmentsMessage(
+      baseMessage,
       payload.attachments ?? [],
     );
 

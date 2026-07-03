@@ -30,7 +30,7 @@ interface ToolCallCardProps {
 }
 
 export function ToolCallCard({ toolCall }: ToolCallCardProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(toolCall.status === 'error');
   const label = TOOL_LABELS[toolCall.name] ?? toolCall.name;
   const isRunning = toolCall.status === 'running';
   const isError = toolCall.status === 'error';

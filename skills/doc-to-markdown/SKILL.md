@@ -3,6 +3,9 @@ id: doc-to-markdown
 name: 文档转 Markdown
 description: 将 Word（doc/docx）及 txt、csv、html 等文本文件转换为工作区 .md 文档
 version: 1.0.0
+trigger: auto
+matchKeywords: 转 markdown, docx, word, 转换, .doc
+priority: 5
 allowedTools: convert_to_markdown, list_dir, read_file, gen_markdown
 ---
 

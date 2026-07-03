@@ -10,6 +10,7 @@ export type SettingsTab =
   | 'appearance'
   | 'voice'
   | 'tasks'
+  | 'userTodos'
   | 'documents'
   | 'skills'
   | 'mcp'
@@ -58,6 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: '数据与任务',
     items: [
       { id: 'documents', label: '泰提斯终端', icon: '🛰' },
+      { id: 'userTodos', label: '用户待办', icon: '✅' },
       { id: 'tasks', label: '定时任务', icon: '⏰' },
     ],
   },
@@ -152,6 +154,7 @@ export const SETTINGS_TAB_TITLES: Record<SettingsTab, { title: string; subtitle:
   appearance: { title: '外观', subtitle: '主题预设与背景、头像', icon: '🎨' },
   voice: { title: '语音', subtitle: 'CosyVoice 朗读与复刻音色', icon: '🔊' },
   tasks: { title: '定时任务', subtitle: '提醒与静默 Agent 任务', icon: '⏰' },
+  userTodos: { title: '用户待办', subtitle: '进度跟踪与 Excel 同步', icon: '✅' },
   documents: { title: '泰提斯终端', subtitle: '知识库导入与管理', icon: '🛰' },
   skills: { title: '技能', subtitle: 'Agent Skills 包', icon: '✨' },
   mcp: { title: 'MCP', subtitle: 'Model Context Protocol 服务器', icon: '🔌' },

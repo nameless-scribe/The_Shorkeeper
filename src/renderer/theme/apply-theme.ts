@@ -1,5 +1,6 @@
 import type { AppearanceSettingsInfo } from '../../shared/types';
 import { buildThemeCssVars, hexToRgbChannels } from '../../shared/theme-styles';
+import { publicAssetUrl } from '../public-assets';
 
 const COLOR_KEYS = [
   'navyDeep',
@@ -22,11 +23,6 @@ const CSS_VAR_MAP: Record<(typeof COLOR_KEYS)[number], string> = {
   silver: '--sk-silver-rgb',
   silverLight: '--sk-silver-light-rgb',
 };
-
-function publicAssetUrl(filename: string): string {
-  const base = import.meta.env.BASE_URL;
-  return `${base}${filename}`;
-}
 
 function resolveBackgroundUrl(info: AppearanceSettingsInfo): string {
   if (info.assets.backgroundUrl) {

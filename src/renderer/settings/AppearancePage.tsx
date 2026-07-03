@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AppearanceSettingsInfo } from '@/shared/types';
+import { publicAssetUrl } from '../public-assets';
 import { getResolvedKeeperAvatarSrc, getResolvedUserAvatarSrc } from '../theme/apply-theme';
 import {
   SettingsField,
@@ -14,8 +15,7 @@ import { SettingsThemeSelect } from './components/SettingsThemeSelect';
 
 function resolvePreviewBackground(info: AppearanceSettingsInfo): string {
   if (info.assets.backgroundUrl) return info.assets.backgroundUrl;
-  const base = import.meta.env.BASE_URL;
-  return `${base}${info.assets.builtinBackground}`;
+  return publicAssetUrl(info.assets.builtinBackground);
 }
 
 export function AppearancePage() {

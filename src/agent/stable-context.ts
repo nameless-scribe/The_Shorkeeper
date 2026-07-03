@@ -1,6 +1,5 @@
 import { PERSONA_SETTING_KEYS } from '../db/seeds/persona-shorekeeper';
 import { getDatabase } from '../db';
-import { formatSkillsForPrompt, getEnabledSkills } from '../skills/state';
 import type { ToolDefinition } from '../tools/types';
 
 /** 各工具在 system prompt 中的简短说明（仅列出当前实际可用的工具） */
@@ -27,6 +26,10 @@ const TOOL_SUMMARY: Record<string, string> = {
   create_scheduled_task: '创建定时提醒',
   list_scheduled_tasks: '列出定时任务',
   delete_scheduled_task: '删除定时任务',
+  update_agent_plan: '更新执行计划',
+  import_tasks_from_xlsx: '从 Excel 导入待办',
+  list_user_tasks: '列出用户待办',
+  update_user_task: '更新用户待办',
 };
 
 const SCHEDULE_TOOL_HINT =
@@ -36,9 +39,13 @@ const SCHEDULE_TOOL_HINT =
   '「指定日期时间提醒一次」→ schedule_kind=once + run_at（ISO 本地时间，如 2026-06-30T17:30:00）。';
 
 /** 根据当前可用工具生成说明，避免技能白名单禁用后仍提示不可用工具 */
-export function formatToolGuideForPrompt(tools: ToolDefinition[]): string | null {
+export function formatToolGuideForPrompt(
+  tools: ToolDefinition[],
+  activeSkillIds: string[] = [],
+): string | null {
   if (!tools.length) return null;
 
+  const skillSet = new Set(activeSkillIds);
   const lines = tools.map((tool) => {
     const summary = TOOL_SUMMARY[tool.name] ?? tool.description.split('。')[0];
     return `- ${tool.name}：${summary}`;
@@ -48,15 +55,29 @@ export function formatToolGuideForPrompt(tools: ToolDefinition[]): string | null
   if (tools.some((t) => t.name === 'create_scheduled_task')) {
     sections.push(`【定时提醒】${SCHEDULE_TOOL_HINT}`);
   }
+  if (
+    tools.some((t) => t.name === 'update_agent_plan') &&
+    !skillSet.has('task-execution')
+  ) {
+    sections.push(
+      '【执行计划】多步文件/表格任务须先调用 update_agent_plan 列出步骤，并逐步更新状态（pending → in_progress → completed）。',
+    );
+  }
+
+  const workspaceWriteHint = skillSet.has('workspace-doc-edit')
+    ? '用户要求修改/更新/保存工作区文件时，按已激活的「工作区文档维护」技能流程执行（read → write → 读回校验）。'
+    : '用户要求修改/更新/保存工作区文件时，必须调用 write_file 或 gen_* 真正写入磁盘；不可只在回复文字中描述已修改。写入成功后用户会看到可点击打开的文件卡片。';
+
   sections.push(
     '【工作区文件】读取前必须先 list_dir 确认真实路径与文件名；禁止猜测子目录。' +
       '用户口述的《》书名号、文档标题不等于磁盘文件名；上传附件消息里给出的路径最准确。' +
       'read_file 失败时按错误提示中的候选路径重试，或 list_dir "." 列出根目录。' +
-      '用户要求修改/更新/保存工作区文件时，必须调用 write_file 或 gen_* 真正写入磁盘；不可只在回复文字中描述已修改。写入成功后用户会看到可点击打开的文件卡片。' +
+      `${workspaceWriteHint} ` +
       '涉及用户偏好或过往事实时，可先 recall_memory。' +
       (tools.some((t) => t.name === 'search_knowledge')
         ? ' 用户可能在讨论已导入的业务文档（知识库）；需要具体内容时请调用 search_knowledge，不要声称没有知识库。'
-        : ''),
+        : '') +
+      '【工具错误】工具返回以「错误:」开头的消息时，必须在回复中如实引用具体错误原文；禁止用「临时问题」「工具侧故障」等模糊说法掩盖失败原因。',
   );
 
   return sections.join('\n\n');
@@ -75,23 +96,19 @@ function loadPersonaPrompt(): string {
 }
 
 function buildStableCacheKey(): string {
-  const skillIds = getEnabledSkills()
-    .map((s) => s.id)
-    .sort()
-    .join(',');
-  return `${loadPersonaPrompt()}\0${skillIds}`;
+  return loadPersonaPrompt();
 }
 
 let cachedStablePrefix: { key: string; text: string } | null = null;
 
-/** 人设 / 技能变更时调用 */
+/** 人设变更时调用 */
 export function invalidateStableContext(): void {
   cachedStablePrefix = null;
 }
 
 /**
- * 稳定 system 前缀：人设 → 工具说明 → 技能。
- * 每轮不变的部分集中在前，便于 LLM provider 的 prompt cache 命中。
+ * 稳定 system 前缀：人设 → 上下文优先级。
+ * 工具说明与技能在 context-builder 中按本轮对话组装。
  */
 export function getStableSystemPrefix(): string {
   const key = buildStableCacheKey();
@@ -99,14 +116,11 @@ export function getStableSystemPrefix(): string {
     return cachedStablePrefix.text;
   }
 
-  const sections = [loadPersonaPrompt()];
-  const skillsBlock = formatSkillsForPrompt(getEnabledSkills());
-  if (skillsBlock) sections.push(skillsBlock);
-
-  sections.push(
+  const sections = [
+    loadPersonaPrompt(),
     '【上下文优先级】Worldbook 提供行为与背景规则；长期记忆记录用户偏好与事实；' +
       'RAG 引用块来自用户导入文档的事实。若内容冲突，以 RAG 引用为准。',
-  );
+  ];
 
   const text = sections.join('\n\n');
   cachedStablePrefix = { key, text };

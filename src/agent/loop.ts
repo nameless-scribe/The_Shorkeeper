@@ -1,12 +1,13 @@
 import type { LlmMessage, OpenAIToolCall, PermissionPolicy } from './types';
 import { createCallId, ev } from './events';
-import type { AgUiEvent } from './types';
+import { getRunPlan, clearRunPlan } from './plan-state';
 import {
   checkPermission,
   confirmPermission,
   defaultPermissionPolicy,
   ensureWorkspaceDir,
 } from './permissions';
+import type { AgUiEvent } from './types';
 import { loadModelConfig } from '../models/config';
 import { streamChat } from '../models/stream-chat';
 import type { ToolRegistry } from '../tools/registry';
@@ -98,6 +99,7 @@ export async function* runAgentLoop(
   let messages = [...options.messages];
   let rounds = 0;
 
+  try {
   while (rounds < maxRounds) {
     if (signal?.aborted) {
       yield ev.runError(runId, '已取消', sessionId);
@@ -146,13 +148,15 @@ export async function* runAgentLoop(
       sessionId,
       workspaceRoot,
       signal: signal ?? new AbortController().signal,
+      runId,
     };
 
     for (const toolCall of roundToolCalls) {
       const callId = toolCall.id || createCallId();
       const parsedArgs = parseToolArgs(toolCall.function.arguments);
+      const toolName = toolCall.function.name;
 
-      yield ev.toolCallStart(runId, callId, toolCall.function.name, parsedArgs.args);
+      yield ev.toolCallStart(runId, callId, toolName, parsedArgs.args);
 
       const result = parsedArgs.error
         ? { success: false as const, output: '', error: parsedArgs.error }
@@ -164,6 +168,10 @@ export async function* runAgentLoop(
           );
 
       yield ev.toolCallEnd(runId, callId, result);
+
+      if (toolName === 'update_agent_plan' && result.success) {
+        yield ev.planUpdated(runId, getRunPlan(runId));
+      }
 
       messages = [
         ...messages,
@@ -179,4 +187,7 @@ export async function* runAgentLoop(
   }
 
   yield ev.runError(runId, `已达到最大工具轮次 (${maxRounds})`, sessionId);
+  } finally {
+    clearRunPlan(runId);
+  }
 }

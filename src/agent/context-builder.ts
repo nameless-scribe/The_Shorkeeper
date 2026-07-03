@@ -13,6 +13,8 @@ import {
   getSessionSummary,
 } from '../memory/session-context';
 import { formatAffectionForPrompt } from '../affection';
+import { formatSkillsForPrompt } from '../skills/loader';
+import type { Skill } from '../skills/loader';
 import { formatToolGuideForPrompt, getStableSystemPrefix } from './stable-context';
 import type { ToolDefinition } from '../tools/types';
 
@@ -20,11 +22,12 @@ export interface ContextBuildInput {
   userMessage: string;
   sessionId: string;
   availableTools?: ToolDefinition[];
+  activeSkills?: Skill[];
 }
 
 /**
  * 组装 system prompt：
- * - 稳定前缀（人设 + 工具 + 技能）→ 利于 prompt cache
+ * - 稳定前缀（人设 + 上下文优先级）+ 本轮技能 + 工具说明
  * - 半稳定（用户画像、会话摘要）
  * - 动态块（记忆 / Worldbook / RAG，随 query 变化）
  */
@@ -42,11 +45,20 @@ export interface SystemPromptParts {
 export async function buildSystemPromptParts(
   input: ContextBuildInput,
 ): Promise<SystemPromptParts> {
-  const stableBase = getStableSystemPrefix();
-  const toolGuide = input.availableTools
-    ? formatToolGuideForPrompt(input.availableTools)
+  const stableSections = [getStableSystemPrefix()];
+
+  const skillsBlock = input.activeSkills?.length
+    ? formatSkillsForPrompt(input.activeSkills)
     : null;
-  const stable = toolGuide ? `${stableBase}\n\n${toolGuide}` : stableBase;
+  if (skillsBlock) stableSections.push(skillsBlock);
+
+  const activeSkillIds = input.activeSkills?.map((s) => s.id) ?? [];
+  const toolGuide = input.availableTools
+    ? formatToolGuideForPrompt(input.availableTools, activeSkillIds)
+    : null;
+  if (toolGuide) stableSections.push(toolGuide);
+
+  const stable = stableSections.join('\n\n');
   const dynamicSections: string[] = [];
 
   dynamicSections.push(formatAffectionForPrompt());

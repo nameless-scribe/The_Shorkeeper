@@ -20,6 +20,7 @@ export interface ToolContext {
   sessionId: string;
   workspaceRoot: string;
   signal: AbortSignal;
+  runId?: string;
 }
 
 export interface ToolDefinition {

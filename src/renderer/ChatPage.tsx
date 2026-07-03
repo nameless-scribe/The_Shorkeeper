@@ -7,6 +7,7 @@ import { useVoicePlayback } from './hooks/useVoicePlayback';
 import { AppBackground } from './components/AppBackground';
 import { TitleBar } from './components/TitleBar';
 import { AgentWorkflowStrip } from './components/AgentWorkflowStrip';
+import { AgentPlanPanel } from './components/AgentPlanPanel';
 import { MessageList } from './components/MessageList';
 import { InputBar } from './components/InputBar';
 import { SettingsDrawer } from './settings/SettingsDrawer';
@@ -104,7 +105,7 @@ export function ChatPage() {
     [remapPlayingId],
   );
 
-  const { messages, loadingMessages, isRunning, error, send } = useAgentEvents(sessionId, ensureSession, {
+  const { messages, loadingMessages, isRunning, error, agentPlan, send } = useAgentEvents(sessionId, ensureSession, {
     onRunFinished: bumpHistory,
     onRunStarted: stopSpeech,
     onRunStopped: stopSpeech,
@@ -170,6 +171,11 @@ export function ChatPage() {
             historyOpen={historyOpen}
           />
           <AgentWorkflowStrip status={workflow} />
+          {agentPlan.length > 0 && (
+            <div className="no-drag shrink-0 border-b border-keeper-cyan/12 px-4 py-2">
+              <AgentPlanPanel items={agentPlan} />
+            </div>
+          )}
           <MessageList
             messages={messages}
             loading={loadingMessages}

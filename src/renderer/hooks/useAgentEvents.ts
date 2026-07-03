@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgUiEvent, WorkspaceAttachment } from '@/shared/types';
+import type { AgUiEvent, AgentPlanItem, WorkspaceAttachment } from '@/shared/types';
 import type { UiToolCall } from '../components/ToolCallCard';
 import { extractFilesFromToolCall, mergeAttachments } from '../components/file-attachment-utils';
 
@@ -43,6 +43,7 @@ export function useAgentEvents(
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [agentPlan, setAgentPlan] = useState<AgentPlanItem[]>([]);
 
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
@@ -100,6 +101,7 @@ export function useAgentEvents(
 
       if (event.type === 'run_finished') {
         const runId = event.runId;
+        setAgentPlan([]);
         const streamId = `stream-${runId}`;
         const streamEntry = streamRunsRef.current.get(runId);
         const finishedSessionId =
@@ -207,6 +209,7 @@ export function useAgentEvents(
 
       if (event.type === 'run_started') {
         if (event.sessionId !== activeSessionId) return;
+        setAgentPlan([]);
         options?.onRunStarted?.();
         runSessionIdRef.current = event.sessionId;
         currentRunIdRef.current = event.runId;
@@ -313,7 +316,14 @@ export function useAgentEvents(
         );
       }
 
+      if (event.type === 'plan_updated') {
+        if (currentRunIdRef.current !== event.runId) return;
+        setAgentPlan(event.items);
+        return;
+      }
+
       if (event.type === 'run_error') {
+        setAgentPlan([]);
         streamRunsRef.current.delete(event.runId);
         if (runSessionIdRef.current !== activeSessionId) {
           if (
@@ -381,5 +391,5 @@ export function useAgentEvents(
     }
   };
 
-  return { messages, loadingMessages, isRunning, error, send };
+  return { messages, loadingMessages, isRunning, error, agentPlan, send };
 }

@@ -71,12 +71,31 @@ describe('getAgentRegistry', () => {
   it('does not filter tools when no skill has a whitelist', async () => {
     invalidateAgentRegistry();
     vi.mocked(getEnabledSkills).mockReturnValue([
-      { id: 'example', allowedTools: undefined } as never,
+      { id: 'example', allowedTools: undefined, trigger: 'manual', priority: 0 } as never,
     ]);
 
     const registry = await getAgentRegistry();
     const names = registry.list().map((t) => t.name);
     expect(names).toContain('web_search');
+    expect(names).toContain('create_scheduled_task');
+  });
+
+  it('filters by activeSkills instead of all enabled when provided', async () => {
+    invalidateAgentRegistry();
+    const activeOnly = [
+      {
+        id: 'excel',
+        allowedTools: ['read_xlsx', 'gen_xlsx'],
+        trigger: 'auto' as const,
+        priority: 10,
+      },
+    ];
+
+    const registry = await getAgentRegistry(activeOnly);
+    const names = registry.list().map((t) => t.name);
+
+    expect(names).toContain('read_xlsx');
+    expect(names).not.toContain('web_search');
     expect(names).toContain('create_scheduled_task');
   });
 });

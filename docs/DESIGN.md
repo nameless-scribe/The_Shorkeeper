@@ -393,13 +393,22 @@ interface Skill {
   systemPromptFragment: string;
   allowedTools?: string[];       // 白名单，空=不限制
   trigger: 'manual' | 'auto';
+  matchKeywords?: string[];      // auto 技能：用户消息命中任一关键词时激活
+  priority: number;              // 注入顺序，高者优先
   enabled: boolean;
 }
 ```
 
-技能包目录：`skills/<skill-id>/SKILL.md` + 可选脚本。
+技能包目录：`skills/<skill-id>/SKILL.md`。
 
-编排器在 system prompt 末尾追加已启用技能的 fragment；若 `allowedTools` 存在，则过滤工具列表。
+**激活逻辑**（`resolveActiveSkills`）：
+
+- `manual`：用户开关后每轮注入 prompt，并参与工具白名单并集
+- `auto`：仅当 `userMessage` 命中 `matchKeywords` 时注入 prompt 且参与本轮白名单（附件预解析会追加 `[工作区附件已解析]`，相关技能关键词须覆盖该标记）
+
+**注入位置**：`context-builder` 在稳定前缀（人设 + 上下文优先级）之后追加 `<skill>` 包裹的 fragment，再拼接工具说明；`stable-context` 中按已激活技能 ID 去重全局工具规则，避免与技能正文重复。
+
+**工具过滤**：多个带白名单的技能同时激活时，可用工具为各白名单的**并集**，外加 `CORE_TOOL_NAMES`（定时、计划、记忆、知识库等核心能力）不受限制。
 
 ### 5.8 MCP 集成
 

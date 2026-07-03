@@ -99,3 +99,16 @@ export interface SessionSummaryRow {
   compressed_up_to_message_id: string | null;
   updated_at: number;
 }
+
+export interface UserTaskRow {
+  id: string;
+  title: string;
+  status: string;
+  source_file: string | null;
+  source_row: number | null;
+  module: string | null;
+  due_at: string | null;
+  notes: string | null;
+  created_at: number;
+  updated_at: number;
+}

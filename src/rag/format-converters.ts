@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { loadMammoth, loadWordExtractor } from '../tools/doc/doc-loaders';
 
 function ensureTitle(markdown: string, title: string): string {
   const trimmed = markdown.trim();
@@ -23,7 +24,7 @@ export async function convertDocxToMarkdown(
   title?: string,
 ): Promise<string> {
   const name = title ?? path.basename(absolutePath, path.extname(absolutePath));
-  const mammoth = await import('mammoth');
+  const mammoth = await loadMammoth();
   const result = await mammoth.extractRawText({ path: absolutePath });
   return plainTextToMarkdown(result.value, name);
 }
@@ -33,8 +34,7 @@ export async function convertDocToMarkdown(
   title?: string,
 ): Promise<string> {
   const name = title ?? path.basename(absolutePath, path.extname(absolutePath));
-  const mod = await import('word-extractor');
-  const WordExtractor = mod.default;
+  const WordExtractor = await loadWordExtractor();
   const extractor = new WordExtractor();
   const doc = await extractor.extract(absolutePath);
   return plainTextToMarkdown(doc.getBody(), name);

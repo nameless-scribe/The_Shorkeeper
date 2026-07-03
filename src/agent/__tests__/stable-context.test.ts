@@ -8,37 +8,25 @@ vi.mock('../../db', () => ({
   })),
 }));
 
-vi.mock('../../skills/state', () => ({
-  getEnabledSkills: vi.fn(() => [{ id: 'skill-a', systemPromptFragment: '【技能A】' }]),
-  formatSkillsForPrompt: vi.fn((skills: { systemPromptFragment: string }[]) =>
-    skills.map((s) => s.systemPromptFragment).join('\n\n'),
-  ),
-}));
-
 import {
   formatToolGuideForPrompt,
   getStableSystemPrefix,
   invalidateStableContext,
 } from '../stable-context';
-import { getEnabledSkills } from '../../skills/state';
 import { readFileTool } from '../../tools/file/read-file';
 import { createScheduledTaskTool } from '../../tools/schedule/schedule-tools';
+import { updateAgentPlanTool } from '../../tools/plan/plan-tools';
 
 describe('stable context', () => {
   beforeEach(() => {
     invalidateStableContext();
-    vi.mocked(getEnabledSkills).mockReturnValue([
-      { id: 'skill-a', systemPromptFragment: '【技能A】' } as never,
-    ]);
   });
 
-  it('places persona before skills in stable prefix', () => {
+  it('stable prefix contains persona but not skills', () => {
     const text = getStableSystemPrefix();
-    const personaIdx = text.indexOf('测试人设');
-    const skillIdx = text.indexOf('【技能A】');
-
-    expect(personaIdx).toBeGreaterThanOrEqual(0);
-    expect(skillIdx).toBeGreaterThan(personaIdx);
+    expect(text).toContain('测试人设');
+    expect(text).toContain('【上下文优先级】');
+    expect(text).not.toContain('【技能');
     expect(text).not.toContain('create_scheduled_task');
   });
 
@@ -48,12 +36,8 @@ describe('stable context', () => {
     expect(first).toBe(second);
 
     invalidateStableContext();
-    vi.mocked(getEnabledSkills).mockReturnValue([
-      { id: 'skill-b', systemPromptFragment: '【技能B】' } as never,
-    ]);
     const third = getStableSystemPrefix();
-    expect(third).not.toBe(first);
-    expect(third).toContain('【技能B】');
+    expect(third).toBe(first);
   });
 
   it('lists only provided tools in tool guide', () => {
@@ -67,5 +51,19 @@ describe('stable context', () => {
     expect(guide).toContain('schedule_kind=once');
     expect(guide).toContain('create_scheduled_task');
     expect(guide).toContain('禁止仅口头答应');
+  });
+
+  it('skips plan hint when task-execution skill is active', () => {
+    const guide = formatToolGuideForPrompt(
+      [updateAgentPlanTool, readFileTool],
+      ['task-execution'],
+    );
+    expect(guide).not.toContain('【执行计划】');
+  });
+
+  it('shortens workspace write hint when workspace-doc-edit is active', () => {
+    const guide = formatToolGuideForPrompt([readFileTool], ['workspace-doc-edit']);
+    expect(guide).toContain('工作区文档维护');
+    expect(guide).not.toContain('不可只在回复文字中描述已修改');
   });
 });
