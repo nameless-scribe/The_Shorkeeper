@@ -1,10 +1,19 @@
 import { getPerformanceSettings } from '../config/performance';
 import { embedText } from './embedding';
 import { getCachedChunkEmbeddings } from './chunk-cache';
-import { listDocuments, searchChunksFts, type DocumentInfo } from './documents';
+import { getCachedDocEmbeddings, getDocumentCount } from './doc-cache';
+import {
+  getAdjacentChunks,
+  searchChunksFts,
+  type DocumentInfo,
+  type FtsSearchHit,
+} from './documents';
 import { ranksFromOrderedIds, reciprocalRankFusion } from './hybrid';
+import { generateHydeQuery } from './hyde';
+import { rerankChunks } from './reranker';
+import { isFtsStrongHit } from './sparse-search';
 import { SqlJsEmbeddingStore } from './sqljs-embedding-store';
-import { cosineSimilarity } from './vector';
+import { cosineSimilarity, topKBySimilarity } from './vector';
 
 export interface RetrievedChunk {
   documentId: string;
@@ -16,6 +25,7 @@ export interface RetrievedChunk {
 
 const DENSE_CANDIDATES = 20;
 const SPARSE_CANDIDATES = 20;
+const FTS_STRONG_THRESHOLD = -3.0;
 const embeddingStore = new SqlJsEmbeddingStore();
 
 let lastRetrieveCache: {
@@ -53,34 +63,104 @@ function applyDiverseLimit(
   return result;
 }
 
-export async function retrieveRelevantChunks(
-  query: string,
-  limit = 5,
-  options?: { skipCache?: boolean },
-): Promise<RetrievedChunk[]> {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
+function expandNeighborContent(
+  documentId: string,
+  chunkIndex: number,
+  content: string,
+  window: number,
+): string {
+  if (window <= 0) return content;
 
-  if (
-    !options?.skipCache &&
-    lastRetrieveCache &&
-    lastRetrieveCache.query === trimmed &&
-    Date.now() - lastRetrieveCache.at < 60_000
-  ) {
-    return lastRetrieveCache.chunks.slice(0, limit);
+  const neighbors = getAdjacentChunks(documentId, chunkIndex, window);
+  if (neighbors.length <= 1) return content;
+
+  return neighbors.map((n) => n.content).join('\n\n');
+}
+
+function expandResultsWithNeighbors(
+  hits: ChunkCandidate[],
+  window: number,
+): RetrievedChunk[] {
+  return hits.map((c) => ({
+    documentId: c.documentId,
+    filename: c.filename,
+    chunkIndex: c.chunkIndex,
+    content: expandNeighborContent(c.documentId, c.chunkIndex, c.content, window),
+    score: c.rrfScore || c.denseScore,
+  }));
+}
+
+function resolveDocRouteIds(queryVec: Float32Array, topK: number, minDocs: number): string[] | undefined {
+  if (getDocumentCount() < minDocs) return undefined;
+
+  const docEmbeddings = getCachedDocEmbeddings();
+  if (!docEmbeddings.length) return undefined;
+
+  const hits = topKBySimilarity(
+    queryVec,
+    docEmbeddings.map((d) => ({ data: d, embedding: d.embedding })),
+    topK,
+  );
+
+  const ids = hits.map((h) => h.item.id);
+  return ids.length ? ids : undefined;
+}
+
+function sparseHitsToCandidates(
+  sparseHits: FtsSearchHit[],
+  limit: number,
+  maxPerDocument: number,
+): RetrievedChunk[] {
+  const docCounts = new Map<string, number>();
+  const results: RetrievedChunk[] = [];
+
+  for (const hit of sparseHits) {
+    if (results.length >= limit) break;
+    const count = docCounts.get(hit.documentId) ?? 0;
+    if (count >= maxPerDocument) continue;
+    docCounts.set(hit.documentId, count + 1);
+    results.push({
+      documentId: hit.documentId,
+      filename: hit.filename,
+      chunkIndex: hit.chunkIndex,
+      content: hit.content,
+      score: hit.score ?? 1,
+    });
   }
 
+  return results;
+}
+
+async function retrieveHybridInternal(
+  trimmed: string,
+  limit: number,
+  skipEmbed: boolean,
+  queryVecOverride?: Float32Array,
+): Promise<RetrievedChunk[]> {
   const settings = getPerformanceSettings();
   const minScore = settings.ragMinScore;
   const maxPerDocument = settings.ragMaxChunksPerDoc;
+  const neighborWindow = settings.ragNeighborWindow;
+  const rerankTopK = settings.ragRerankTopK;
 
   const stored = getCachedChunkEmbeddings();
   if (!stored.length) return [];
 
-  const queryVec = new Float32Array(await embedText(trimmed));
+  const queryVec =
+    queryVecOverride ??
+    (skipEmbed ? null : new Float32Array(await embedText(trimmed)));
+  if (!queryVec) return [];
+
+  const routeDocIds = resolveDocRouteIds(
+    queryVec,
+    settings.ragDocRouteTopK,
+    settings.ragDocRouteMinDocs,
+  );
+  const searchFilter = routeDocIds ? { documentIds: routeDocIds } : undefined;
+
   const byId = new Map(stored.map((s) => [s.id, s]));
 
-  const denseRecords = await embeddingStore.search(queryVec, DENSE_CANDIDATES);
+  const denseRecords = await embeddingStore.search(queryVec, DENSE_CANDIDATES, searchFilter);
   const denseHits = denseRecords
     .map((r) => {
       const item = byId.get(r.id);
@@ -90,7 +170,7 @@ export async function retrieveRelevantChunks(
     .filter((h): h is { item: (typeof stored)[0]; score: number } => h !== null);
 
   const denseScoreById = new Map(denseHits.map((h) => [h.item.id, h.score]));
-  const sparseHits = searchChunksFts(trimmed, SPARSE_CANDIDATES);
+  const sparseHits = searchChunksFts(trimmed, SPARSE_CANDIDATES, routeDocIds);
   const sparseIds = new Set(sparseHits.map((h) => h.chunkId));
 
   let candidateIds: string[];
@@ -141,15 +221,82 @@ export async function retrieveRelevantChunks(
     }
   }
 
-  const diverse = applyDiverseLimit(candidates, limit, maxPerDocument);
+  const recallLimit = settings.ragRerankEnabled ?
+      Math.max(limit, rerankTopK)
+    : limit;
+  const diverse = applyDiverseLimit(candidates, recallLimit, maxPerDocument);
+  let result = expandResultsWithNeighbors(diverse, neighborWindow);
 
-  const result = diverse.map((c) => ({
-    documentId: c.documentId,
-    filename: c.filename,
-    chunkIndex: c.chunkIndex,
-    content: c.content,
-    score: sparseHits.length ? c.rrfScore : c.denseScore,
-  }));
+  if (settings.ragRerankEnabled && result.length > limit) {
+    result = await rerankChunks(trimmed, result, limit, true);
+  } else {
+    result = result.slice(0, limit);
+  }
+
+  for (let i = 0; i < result.length; i++) {
+    const src = diverse[i];
+    if (src) {
+      result[i].score = sparseHits.length ? src.rrfScore : src.denseScore;
+    }
+  }
+
+  return result;
+}
+
+export async function retrieveRelevantChunks(
+  query: string,
+  limit = 5,
+  options?: { skipCache?: boolean; skipHyde?: boolean },
+): Promise<RetrievedChunk[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  if (
+    !options?.skipCache &&
+    lastRetrieveCache &&
+    lastRetrieveCache.query === trimmed &&
+    Date.now() - lastRetrieveCache.at < 60_000
+  ) {
+    return lastRetrieveCache.chunks.slice(0, limit);
+  }
+
+  const settings = getPerformanceSettings();
+  const maxPerDocument = settings.ragMaxChunksPerDoc;
+  const neighborWindow = settings.ragNeighborWindow;
+
+  if (settings.ragFtsFirst) {
+    const sparseHits = searchChunksFts(trimmed, SPARSE_CANDIDATES);
+    if (isFtsStrongHit(sparseHits, FTS_STRONG_THRESHOLD)) {
+      let sparseResults = sparseHitsToCandidates(sparseHits, limit, maxPerDocument);
+      if (neighborWindow > 0) {
+        sparseResults = sparseResults.map((hit) => ({
+          ...hit,
+          content: expandNeighborContent(
+            hit.documentId,
+            hit.chunkIndex,
+            hit.content,
+            neighborWindow,
+          ),
+        }));
+      }
+      lastRetrieveCache = { query: trimmed, at: Date.now(), chunks: sparseResults };
+      return sparseResults;
+    }
+  }
+
+  let result = await retrieveHybridInternal(trimmed, limit, false);
+
+  if (!result.length && settings.ragHydeEnabled && !options?.skipHyde) {
+    try {
+      const hydeQuery = await generateHydeQuery(trimmed);
+      if (hydeQuery && hydeQuery !== trimmed) {
+        const hydeVec = new Float32Array(await embedText(hydeQuery));
+        result = await retrieveHybridInternal(trimmed, limit, true, hydeVec);
+      }
+    } catch {
+      /* HyDE 失败时保持空结果 */
+    }
+  }
 
   lastRetrieveCache = { query: trimmed, at: Date.now(), chunks: result };
   return result;
@@ -158,7 +305,12 @@ export async function retrieveRelevantChunks(
 export function formatDocumentCatalogForPrompt(documents: DocumentInfo[]): string | null {
   if (!documents.length) return null;
 
-  const lines = documents.map((d, i) => `${i + 1}. ${d.filename}`);
+  const lines = documents.map((d, i) => {
+    const summary = d.summary?.trim();
+    return summary ?
+        `${i + 1}. ${d.filename} — ${summary}`
+      : `${i + 1}. ${d.filename}`;
+  });
 
   return (
     '【已导入知识库】\n' +

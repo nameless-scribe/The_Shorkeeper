@@ -3,6 +3,8 @@ import {
   loadEmbeddingConfig,
 } from '../models/embedding-config';
 
+/** 本地 ONNX embedding（如 bge-small-zh-v1.5）需与 chunk 向量同一模型族；见 docs/RAG-OPTIMIZATION.md §4.8 */
+
 export function getEmbeddingModel(): string {
   return getEmbeddingModelName();
 }

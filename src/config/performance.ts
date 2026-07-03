@@ -11,6 +11,13 @@ export interface PerformanceSettings {
   ragMinScore: number;
   ragMaxChunksPerDoc: number;
   ragArchiveDedupeThreshold: number;
+  ragNeighborWindow: number;
+  ragFtsFirst: boolean;
+  ragDocRouteTopK: number;
+  ragDocRouteMinDocs: number;
+  ragRerankEnabled: boolean;
+  ragRerankTopK: number;
+  ragHydeEnabled: boolean;
   memoryExtractMode: MemoryExtractMode;
   memoryExtractInterval: number;
   maxHistoryMessages: number;
@@ -24,6 +31,13 @@ const DEFAULTS: PerformanceSettings = {
   ragMinScore: 0.35,
   ragMaxChunksPerDoc: 2,
   ragArchiveDedupeThreshold: 0.92,
+  ragNeighborWindow: 1,
+  ragFtsFirst: true,
+  ragDocRouteTopK: 3,
+  ragDocRouteMinDocs: 4,
+  ragRerankEnabled: false,
+  ragRerankTopK: 15,
+  ragHydeEnabled: false,
   memoryExtractMode: 'always',
   memoryExtractInterval: 3,
   maxHistoryMessages: 20,
@@ -35,6 +49,13 @@ function envBool(key: string, fallback: boolean): boolean {
   const raw = process.env[key];
   if (raw == null || raw === '') return fallback;
   return raw === '1' || raw.toLowerCase() === 'true';
+}
+
+function envIntNonNegative(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (raw == null || raw === '') return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
 function envInt(key: string, fallback: number): number {
@@ -83,6 +104,32 @@ export function getPerformanceSettings(): PerformanceSettings {
       ? Number.parseFloat(getSetting('RAG_ARCHIVE_DEDUPE_THRESHOLD')!) ||
         DEFAULTS.ragArchiveDedupeThreshold
       : envFloat('RAG_ARCHIVE_DEDUPE_THRESHOLD', DEFAULTS.ragArchiveDedupeThreshold),
+    ragNeighborWindow: (() => {
+      const raw = getSetting('RAG_NEIGHBOR_WINDOW');
+      if (raw != null) {
+        const n = Number.parseInt(raw, 10);
+        if (Number.isFinite(n) && n >= 0) return n;
+      }
+      return envIntNonNegative('RAG_NEIGHBOR_WINDOW', DEFAULTS.ragNeighborWindow);
+    })(),
+    ragFtsFirst: getSetting('RAG_FTS_FIRST') != null
+      ? getSetting('RAG_FTS_FIRST') === 'true'
+      : envBool('RAG_FTS_FIRST', DEFAULTS.ragFtsFirst),
+    ragDocRouteTopK: getSetting('RAG_DOC_ROUTE_TOP_K') != null
+      ? Number.parseInt(getSetting('RAG_DOC_ROUTE_TOP_K')!, 10) || DEFAULTS.ragDocRouteTopK
+      : envInt('RAG_DOC_ROUTE_TOP_K', DEFAULTS.ragDocRouteTopK),
+    ragDocRouteMinDocs: getSetting('RAG_DOC_ROUTE_MIN_DOCS') != null
+      ? Number.parseInt(getSetting('RAG_DOC_ROUTE_MIN_DOCS')!, 10) || DEFAULTS.ragDocRouteMinDocs
+      : envInt('RAG_DOC_ROUTE_MIN_DOCS', DEFAULTS.ragDocRouteMinDocs),
+    ragRerankEnabled: getSetting('RAG_RERANK_ENABLED') != null
+      ? getSetting('RAG_RERANK_ENABLED') === 'true'
+      : envBool('RAG_RERANK_ENABLED', DEFAULTS.ragRerankEnabled),
+    ragRerankTopK: getSetting('RAG_RERANK_TOP_K') != null
+      ? Number.parseInt(getSetting('RAG_RERANK_TOP_K')!, 10) || DEFAULTS.ragRerankTopK
+      : envInt('RAG_RERANK_TOP_K', DEFAULTS.ragRerankTopK),
+    ragHydeEnabled: getSetting('RAG_HYDE_ENABLED') != null
+      ? getSetting('RAG_HYDE_ENABLED') === 'true'
+      : envBool('RAG_HYDE_ENABLED', DEFAULTS.ragHydeEnabled),
     memoryExtractMode: getSetting('AUTO_MEMORY_EXTRACT') != null
       ? parseMemoryExtractMode(getSetting('AUTO_MEMORY_EXTRACT'))
       : envBool('AUTO_MEMORY_EXTRACT', true)
@@ -113,6 +160,21 @@ export function savePerformanceSettings(patch: Partial<PerformanceSettings>): Pe
   if (patch.ragArchiveDedupeThreshold != null) {
     setSetting('RAG_ARCHIVE_DEDUPE_THRESHOLD', String(patch.ragArchiveDedupeThreshold));
   }
+  if (patch.ragNeighborWindow != null) {
+    setSetting('RAG_NEIGHBOR_WINDOW', String(patch.ragNeighborWindow));
+  }
+  if (patch.ragFtsFirst != null) setSetting('RAG_FTS_FIRST', String(patch.ragFtsFirst));
+  if (patch.ragDocRouteTopK != null) {
+    setSetting('RAG_DOC_ROUTE_TOP_K', String(patch.ragDocRouteTopK));
+  }
+  if (patch.ragDocRouteMinDocs != null) {
+    setSetting('RAG_DOC_ROUTE_MIN_DOCS', String(patch.ragDocRouteMinDocs));
+  }
+  if (patch.ragRerankEnabled != null) {
+    setSetting('RAG_RERANK_ENABLED', String(patch.ragRerankEnabled));
+  }
+  if (patch.ragRerankTopK != null) setSetting('RAG_RERANK_TOP_K', String(patch.ragRerankTopK));
+  if (patch.ragHydeEnabled != null) setSetting('RAG_HYDE_ENABLED', String(patch.ragHydeEnabled));
   if (patch.memoryExtractMode != null) setSetting('AUTO_MEMORY_EXTRACT', patch.memoryExtractMode);
   if (patch.memoryExtractInterval != null) {
     setSetting('MEMORY_EXTRACT_INTERVAL', String(patch.memoryExtractInterval));

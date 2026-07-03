@@ -45,6 +45,7 @@ describe('importDocumentFromPath', () => {
     const docs = listDocuments();
     expect(docs).toHaveLength(1);
     expect(docs[0].id).toBe(doc.id);
+    expect(docs[0].summary).toBeTruthy();
   });
 });
 

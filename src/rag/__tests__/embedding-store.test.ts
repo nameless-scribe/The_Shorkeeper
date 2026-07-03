@@ -31,4 +31,13 @@ describe('SqlJsEmbeddingStore', () => {
     expect(results[0].id).toBe('c1');
     expect(chunkCache.getCachedChunkEmbeddings).toHaveBeenCalled();
   });
+
+  it('search filters by documentIds', async () => {
+    const store = new SqlJsEmbeddingStore();
+    const results = await store.search(new Float32Array([0, 1, 0]), 5, {
+      documentIds: ['d2'],
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe('c2');
+  });
 });

@@ -67,8 +67,8 @@ pnpm dist
 1. **设置 → API 设置** — 填写模型 API Key 与接入地址
 2. **设置 → 人设** — 编辑核心 System Prompt（每轮注入）
 3. **设置 → 外观** — 切换主题或上传背景/头像
-4. **设置 → 技能** — 打开需要的技能（`skills/` 已内置）
-5. **设置 → 插件** — 按需开启联网搜索、文档生成等工具
+4. **设置 → 技能** — 打开需要的技能（见 [使用说明.md](docs/使用说明.md#技能系统)）；自动技能按消息关键词激活，手动技能每轮生效
+5. **设置 → 插件** — 按需开启联网搜索、**多格式编写**（Excel/Word/PDF 等；技能依赖此插件）
 6. **设置 → 泰提斯终端** — 导入知识库（支持 MD / TXT / PDF / DOCX）
 
 自定义数据目录（可选）：环境变量 `SHOREKEEPER_DB_DIR` / `SHOREKEEPER_WORKSPACE_DIR`，或在安装目录旁放置 `.env`。
@@ -136,7 +136,8 @@ TheShorekeeper/
 │   ├── memory/               # 长期记忆、Worldbook、摘要、自动提取
 │   ├── rag/                  # 文档导入、分块、混合检索、缓存
 │   ├── mcp/                  # MCP Client
-│   ├── skills/               # 技能包加载（对应仓库根 skills/）
+│   ├── skills/               # loader / resolve / state（对应仓库根 skills/）
+│   ├── tasks/                # 用户待办与 Excel 回写
 │   ├── db/                   # sql.js、schema、migrations、repositories
 │   ├── session/              # 活跃会话
 │   ├── scheduler/            # 提醒意图解析
@@ -151,7 +152,13 @@ TheShorekeeper/
 │       ├── dock/             # Dock 快捷栏
 │       ├── status/           # 状态面板
 │       └── schedule/         # 日程与 Token 图表
-├── skills/                   # 用户技能包（SKILL.md，会打入安装包）
+├── skills/                   # 内置技能包（SKILL.md，会打入安装包）
+│   ├── excel/                # Excel 表格（auto）
+│   ├── task-execution/       # 多步执行计划（auto）
+│   ├── progress-tracker/     # 进度与待办（auto）
+│   ├── workspace-doc-edit/   # 工作区文档维护（auto）
+│   ├── doc-to-markdown/      # 文档转 Markdown（auto）
+│   └── example/              # 演示技能（manual）
 ├── scripts/                  # 维护脚本（见下方常用命令）
 ├── public/                   # 内置立绘、默认头像（构建进 dist/）
 ├── docs/                     # 设计 / 数据库 / 模型 / 主题 / 计划
@@ -164,7 +171,7 @@ TheShorekeeper/
 
 | 分组 | 页面 | 说明 |
 |------|------|------|
-| 能力 | 插件 / 技能 / MCP | 联网搜索、文档工具、外部 MCP |
+| 能力 | 插件 / 技能 / MCP | 联网搜索、Excel/文档工具、多步任务与待办技能、外部 MCP |
 | 人格与记忆 | 人设 / 用户信息 / 记忆 / Worldbook | System Prompt、画像、性能与 RAG 调优 |
 | 个性化 | 外观 / 语音 | 9 套主题预设、壁纸、头像；百炼 CosyVoice TTS |
 | 数据与任务 | 泰提斯终端 / 定时任务 | 知识库导入、周期与一次性任务 |
@@ -191,6 +198,7 @@ pnpm db:reset-keep-models     # 重置数据库但保留 API 模型配置
 
 ## 文档
 
+- [使用说明.md](docs/使用说明.md) — 技能、插件、工作区、待办等使用指南
 - [DESIGN.md](docs/DESIGN.md) — 架构设计
 - [DATABASE.md](docs/DATABASE.md) — 数据库与 migration
 - [MODELS.md](docs/MODELS.md) — 模型与 API 配置

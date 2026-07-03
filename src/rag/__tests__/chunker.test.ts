@@ -7,7 +7,10 @@ describe('splitTextIntoChunks', () => {
   });
 
   it('returns single chunk for short text', () => {
-    expect(splitTextIntoChunks('hello')).toEqual(['hello']);
+    const chunks = splitTextIntoChunks('hello');
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].content).toBe('hello');
+    expect(chunks[0].embedText).toContain('hello');
   });
 
   it('splits long text with overlap', () => {
@@ -15,9 +18,11 @@ describe('splitTextIntoChunks', () => {
     const chunks = splitTextIntoChunks(text);
     expect(chunks.length).toBeGreaterThan(1);
     for (const chunk of chunks) {
-      expect(chunk.length).toBeLessThanOrEqual(CHUNK_SIZE);
+      expect(chunk.content.length).toBeLessThanOrEqual(CHUNK_SIZE);
     }
-    expect(chunks[1].slice(0, CHUNK_OVERLAP)).toBe(chunks[0].slice(-CHUNK_OVERLAP));
+    expect(chunks[1].content.slice(0, CHUNK_OVERLAP)).toBe(
+      chunks[0].content.slice(-CHUNK_OVERLAP),
+    );
   });
 
   it('does not infinite loop on edge case', () => {
@@ -40,11 +45,13 @@ const y = 2;
 ## Section B
 More content here.`;
 
-    const chunks = splitMarkdownIntoChunks(md);
+    const chunks = splitMarkdownIntoChunks(md, CHUNK_SIZE, CHUNK_OVERLAP, 'doc.md');
     expect(chunks.length).toBeGreaterThanOrEqual(2);
-    const codeChunk = chunks.find((c) => c.includes('const x = 1'));
+    const codeChunk = chunks.find((c) => c.content.includes('const x = 1'));
     expect(codeChunk).toBeDefined();
-    expect(codeChunk).toContain('const y = 2');
-    expect(chunks.some((c) => c.includes('Section A'))).toBe(true);
+    expect(codeChunk?.content).toContain('const y = 2');
+    expect(chunks.some((c) => c.content.includes('Section A'))).toBe(true);
+    expect(chunks.some((c) => c.sectionTitle === 'Section A')).toBe(true);
+    expect(chunks[0].embedText).toContain('[doc.md > Title]');
   });
 });

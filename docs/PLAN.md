@@ -929,17 +929,20 @@ git commit -m "feat(m6): mcp client integration"
 ### Task M6-2：技能系统
 
 **Files:**
-- Create: `src/skills/loader.ts`, `skills/example/SKILL.md`
+- `src/skills/loader.ts`, `resolve.ts`, `state.ts`
+- `skills/*/SKILL.md`（excel, task-execution, progress-tracker, workspace-doc-edit, doc-to-markdown, example）
 
-- [x] **Step 1** 解析 SKILL.md frontmatter + body 为 Skill
+- [x] **Step 1** 解析 SKILL.md frontmatter + body（含 `trigger`, `matchKeywords`, `priority`）
 
-- [x] **Step 2** context-builder 注入已启用技能 fragment
+- [x] **Step 2** `resolveActiveSkills` + `context-builder` 按轮注入激活技能
 
-- [x] **Step 3** `allowedTools` 过滤工具列表
+- [x] **Step 3** `allowedTools` 按本轮激活技能过滤；`CORE_TOOL_NAMES` 豁免
 
-- [x] **Step 4** 设置页技能开关
+- [x] **Step 4** 设置页技能开关（展示手动/自动与触发词）
 
-- [ ] **Step 5** Commit
+- [x] **Step 5** `discoverSkills` mtime 缓存；文档库 CJS 加载器（exceljs / mammoth / word-extractor）
+
+- [ ] **Step 6** Commit
 
 ```bash
 git commit -m "feat(m6): skill system"

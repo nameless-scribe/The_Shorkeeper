@@ -140,6 +140,13 @@ export interface PerformanceSettingsInfo {
   ragInjectMode: 'auto' | 'catalog' | 'tool';
   ragMinScore: number;
   ragMaxChunksPerDoc: number;
+  ragNeighborWindow: number;
+  ragFtsFirst: boolean;
+  ragDocRouteTopK: number;
+  ragDocRouteMinDocs: number;
+  ragRerankEnabled: boolean;
+  ragRerankTopK: number;
+  ragHydeEnabled: boolean;
   memoryExtractMode: 'always' | 'manual' | 'every_n';
   memoryExtractInterval: number;
   maxHistoryMessages: number;

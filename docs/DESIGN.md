@@ -202,8 +202,10 @@ interface AgentRunRequest {
 
 **上下文组装顺序**（`context-builder.ts`）：
 
-1. **稳定前缀**（`stable-context.ts`）：人设 System Prompt + **当前可用工具**摘要（`formatToolGuideForPrompt`）+ 技能 fragment（利于 prompt cache）
-2. **动态块**（随 query 变化）：
+1. **稳定前缀**（`getStableSystemPrefix`）：人设 System Prompt + 【上下文优先级】（缓存于 `stable-context.ts`，利于 prompt cache）
+2. **本轮技能**（`formatSkillsForPrompt`）：仅注入 `resolveActiveSkills` 激活的技能，以 `<skill id="..." name="...">` 包裹
+3. **工具说明**（`formatToolGuideForPrompt`）：根据当前 registry 实际可用工具生成；若已激活 `task-execution` / `workspace-doc-edit` 等技能，则省略与之重复的全局规则
+4. **动态块**（随 query 变化）：
    - 好感度阶段指引（`affection`）
    - 用户画像摘要（`user_profile`）
    - 会话摘要（`session_summaries`，长会话压缩后）
@@ -281,8 +283,19 @@ interface ToolContext {
 | 记忆 / 知识 | `recall_memory`, `save_memory`, `search_worldbook`, `search_knowledge` |
 | 生活 | `bookkeeping`, `travel_plan` |
 | 日程 | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task` |
+| 计划 / 待办 | `update_agent_plan`, `import_tasks_from_xlsx`, `list_user_tasks`, `update_user_task` |
 
-工具可见性受 **设置 → 插件**（`PluginSettings`）与 **技能白名单** 双重过滤；核心伴侣工具（记忆、知识检索、定时任务）不受技能白名单限制。
+**文档库加载**（CJS 包在 ESM 动态 `import()` 下的互操作）：`src/tools/doc/` 提供统一加载器，避免 `is not a constructor` 类错误。
+
+| 加载器 | 依赖 | 使用处 |
+|--------|------|--------|
+| `exceljs-loader.ts` → `loadExcelJS()` | exceljs | `parse-xlsx`, `gen_xlsx`, `xlsx-task-sync` |
+| `doc-loaders.ts` → `loadMammoth()` | mammoth | `convert-markdown`, RAG `format-converters` |
+| `doc-loaders.ts` → `loadWordExtractor()` | word-extractor | 同上 |
+
+`docx`、`pdf-lib`、`pdf-parse` 为原生 ESM 命名导出，无需 loader。
+
+工具可见性受 **设置 → 插件**（`PluginSettings`）与 **本轮激活技能的白名单** 双重过滤；`getAgentRegistry(activeSkills)` 先缓存 builtin+MCP+插件过滤后的 base registry，再按激活技能做白名单并集。核心伴侣工具（`CORE_TOOL_NAMES`：记忆、知识检索、定时任务、执行计划、用户待办等）不受技能白名单限制。
 
 MCP 工具在运行时动态合并，与内置工具同名时 MCP 优先或加前缀（`mcp__server__tool`）。
 
@@ -342,14 +355,20 @@ MCP 工具在运行时动态合并，与内置工具同名时 MCP 优先或加�
 
 ```
 用户 query
+  → FTS 强命中?（ragFtsFirst）→ 直接返回 sparse top-K
   → embedText(query)
-  → dense top-20（余弦，读 chunk-cache 内存缓存）
-  → sparse top-20（document_chunks_fts BM25）
+  → 文档路由 top-3（文档数 ≥ ragDocRouteMinDocs 时）
+  → dense top-20 + sparse top-20（候选文档子集内；sparse 优先 FTS5 trigram，sql.js 无 FTS 时走内存子串匹配）
   → RRF 融合（hybrid.ts）
   → 按 ragMinScore 过滤
   → 按文档去重（ragMaxChunksPerDoc）
+  → 相邻 chunk 扩展（ragNeighborWindow）
+  → 可选 rerank（ragRerankEnabled）
+  → 0 结果时可选 HyDE 重试（ragHydeEnabled）
   → 格式化为 context 片段
 ```
+
+**Catalog 注入**：`catalog` 模式下注入「文件名 + 一句话摘要」，引导模型调用 `search_knowledge`。
 
 **注入模式**（`RagInjectMode`，设置 → 性能）：
 
@@ -366,7 +385,12 @@ MCP 工具在运行时动态合并，与内置工具同名时 MCP 优先或加�
 | `chunk-cache.ts` | embedding 内存缓存，导入/删除时失效 |
 | `hybrid.ts` | Reciprocal Rank Fusion |
 | `embedding-store.ts` / `sqljs-embedding-store.ts` | 向量存储抽象（sql.js 实现） |
-| `reindex.ts` | 换 embedding 模型后批量重嵌入 |
+| `reindex.ts` | 换 embedding 模型后批量重嵌入；`reindexFts()` 重建 FTS |
+| `summary.ts` | 导入时规则生成文档摘要 / 大纲 |
+| `sparse-search.ts` | 中文友好内存 sparse 检索（sql.js 无 FTS5 时的后备） |
+| `doc-cache.ts` | 文档级 embedding 内存缓存 |
+| `reranker.ts` | 可选精排（默认透传） |
+| `hyde.ts` | 0 结果时假设答案重检索 |
 | `conversation-knowledge.ts` | 对话归档写入知识库（语义去重） |
 
 ### 5.6 Worldbook
@@ -408,7 +432,20 @@ interface Skill {
 
 **注入位置**：`context-builder` 在稳定前缀（人设 + 上下文优先级）之后追加 `<skill>` 包裹的 fragment，再拼接工具说明；`stable-context` 中按已激活技能 ID 去重全局工具规则，避免与技能正文重复。
 
-**工具过滤**：多个带白名单的技能同时激活时，可用工具为各白名单的**并集**，外加 `CORE_TOOL_NAMES`（定时、计划、记忆、知识库等核心能力）不受限制。
+**工具过滤**：多个带白名单的技能同时激活时，可用工具为各白名单的**并集**，外加 `CORE_TOOL_NAMES`（定时、计划、记忆、知识库、用户待办等）不受限制。
+
+**内置技能包**（`skills/`）：
+
+| id | 名称 | trigger | 说明 |
+|----|------|---------|------|
+| `excel` | Excel 表格处理 | auto | 读/写 `.xlsx`；关键词含 `表格`、`附件已解析` |
+| `task-execution` | 多步任务执行 | auto | 须先 `update_agent_plan` 再逐步执行 |
+| `progress-tracker` | 进度与待办 | auto | Excel 导入待办、查询与回写 |
+| `workspace-doc-edit` | 工作区文档维护 | auto | 文本文件 read → write → 读回校验 |
+| `doc-to-markdown` | 文档转 Markdown | auto | Word/文本转 `.md` |
+| `example` | 简洁助手 | manual | 演示用；建议单独启用以限制工具 |
+
+**模块**：`src/skills/loader.ts`（发现 + mtime 缓存）、`resolve.ts`（激活）、`state.ts`（启用状态 + `getActiveSkills`）。
 
 ### 5.8 MCP 集成
 
@@ -877,7 +914,8 @@ TheShorekeeper/
 │   ├── tools/                    # agent-registry + 分类子目录
 │   │   ├── file/                 # read / write / list_dir / artifact / workspace-hints
 │   │   ├── web/                  # web_search, fetch, weather + search-providers/
-│   │   ├── doc/                  # 文档生成、Markdown 转换
+│   │   ├── doc/                  # 文档生成、Markdown 转换、CJS 加载器
+│   │   │                         # exceljs-loader, doc-loaders, parse-xlsx
 │   │   ├── memory/               # recall / knowledge 工具
 │   │   ├── life/                 # 记账、旅行规划等
 │   │   └── schedule/             # 定时任务工具
@@ -885,7 +923,8 @@ TheShorekeeper/
 │   ├── rag/                      # 导入、分块、FTS+向量混合检索、缓存
 │   ├── voice/                    # 百炼 CosyVoice TTS、朗读文本清洗
 │   ├── mcp/client.ts
-│   ├── skills/                   # 技能加载（运行时读 skills/）
+│   ├── skills/                   # loader, resolve, state（运行时读 skills/）
+│   ├── tasks/                    # 用户待办、xlsx 回写同步
 │   ├── scheduler/                # reminder 意图解析与执行
 │   ├── session/                  # 活跃会话 id
 │   ├── workspace/                # 工作区导入、扩展名白名单
@@ -899,7 +938,7 @@ TheShorekeeper/
 │   ├── theme/                    # ThemeProvider, apply-theme, useTheme
 │   ├── dock/ | status/ | schedule/ | reminder/
 │   └── styles/globals.css        # --sk-* CSS 变量与 keeper-* 工具类
-├── skills/                       # 技能包：example, excel, doc-to-markdown, workspace-doc-edit
+├── skills/                       # 技能包：excel, task-execution, progress-tracker, …
 ├── scripts/                      # db:init / seed / cleanup / reset-keep-models
 ├── public/                       # keeper-bg.png、默认头像等静态资源
 ├── .env.example
@@ -993,7 +1032,7 @@ TheShorekeeper/
 | Worldbook | 关键词触发的世界观/设定注入知识库 |
 | RAG | 检索增强生成，从导入文档检索相关内容 |
 | MCP | Model Context Protocol，外部工具服务协议 |
-| Skill | 可插拔的技能包，扩展 Agent 行为 |
+| Skill | 可插拔的技能包（`skills/*/SKILL.md`），支持 manual 全量注入或 auto 关键词激活；可限制工具白名单 |
 
 ### 13.2 参考资源
 

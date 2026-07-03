@@ -3,13 +3,14 @@ import path from 'node:path';
 import { getWorkspaceDir } from '../config/paths';
 import { getEmbeddingModelName } from '../models/embedding-config';
 import { splitIntoChunks } from './chunker';
-import { embedTexts } from './embedding';
+import { embedText, embedTexts } from './embedding';
 import {
   computeContentHash,
   findDocumentByContentHash,
   insertDocumentWithChunks,
   type DocumentInfo,
 } from './documents';
+import { generateDocumentSummary } from './summary';
 import { serializeEmbedding } from './vector';
 import {
   assertPathWithinKnowledge,
@@ -52,10 +53,12 @@ export async function importTextAsKnowledge(
     }
   }
 
-  const chunks = splitIntoChunks(normalized, filename);
-  if (!chunks.length) throw new Error('内容为空');
+  const textChunks = splitIntoChunks(normalized, filename);
+  if (!textChunks.length) throw new Error('内容为空');
 
-  onProgress?.({ phase: 'chunking', chunkCount: chunks.length });
+  onProgress?.({ phase: 'chunking', chunkCount: textChunks.length });
+
+  const { summary, outline } = generateDocumentSummary(normalized, filename);
 
   await fs.mkdir(getKnowledgeDir(), { recursive: true });
   const safeName = sanitizeKnowledgeFilename(filename);
@@ -67,24 +70,29 @@ export async function importTextAsKnowledge(
   const ext = path.extname(safeName).toLowerCase();
   const mimeType = ext === '.md' ? 'text/markdown' : 'text/plain';
 
+  const docEmbedInput = `${safeName}\n${summary}`;
+  const docVec = await embedText(docEmbedInput);
+  const docEmbedding = serializeEmbedding(docVec);
+
   const BATCH = 10;
-  const embeddedChunks: Array<{ content: string; embedding: Uint8Array }> = [];
+  const embeddedChunks: Array<{ content: string; embedding: Uint8Array; ftsText: string }> = [];
   let embeddingDim = 0;
 
-  for (let i = 0; i < chunks.length; i += BATCH) {
-    const batch = chunks.slice(i, i + BATCH);
-    const vectors = await embedTexts(batch);
+  for (let i = 0; i < textChunks.length; i += BATCH) {
+    const batch = textChunks.slice(i, i + BATCH);
+    const vectors = await embedTexts(batch.map((c) => c.embedText));
     for (let j = 0; j < batch.length; j++) {
       embeddingDim = vectors[j].length;
       embeddedChunks.push({
-        content: batch[j],
+        content: batch[j].content,
+        ftsText: batch[j].embedText,
         embedding: serializeEmbedding(vectors[j]),
       });
     }
     onProgress?.({
       phase: 'embedding',
-      done: Math.min(i + batch.length, chunks.length),
-      total: chunks.length,
+      done: Math.min(i + batch.length, textChunks.length),
+      total: textChunks.length,
     });
   }
 
@@ -96,6 +104,9 @@ export async function importTextAsKnowledge(
     contentHash,
     embeddingModel: getEmbeddingModelName(),
     embeddingDim,
+    summary,
+    outline,
+    docEmbedding,
   });
 
   onProgress?.({ phase: 'done', document: doc });

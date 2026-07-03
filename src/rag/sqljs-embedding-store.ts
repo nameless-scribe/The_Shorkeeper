@@ -1,5 +1,5 @@
 import { getCachedChunkEmbeddings } from './chunk-cache';
-import type { EmbeddingRecord, EmbeddingStore } from './embedding-store';
+import type { EmbeddingRecord, EmbeddingSearchFilter, EmbeddingStore } from './embedding-store';
 import { topKBySimilarity } from './vector';
 
 export class SqlJsEmbeddingStore implements EmbeddingStore {
@@ -7,8 +7,17 @@ export class SqlJsEmbeddingStore implements EmbeddingStore {
     // Chunk writes go through documents.ts; store is read-optimized for retrieval.
   }
 
-  async search(query: Float32Array, limit: number): Promise<EmbeddingRecord[]> {
-    const stored = getCachedChunkEmbeddings();
+  async search(
+    query: Float32Array,
+    limit: number,
+    filter?: EmbeddingSearchFilter,
+  ): Promise<EmbeddingRecord[]> {
+    let stored = getCachedChunkEmbeddings();
+    if (filter?.documentIds?.length) {
+      const allowed = new Set(filter.documentIds);
+      stored = stored.filter((s) => allowed.has(s.documentId));
+    }
+
     const hits = topKBySimilarity(
       query,
       stored.map((s) => ({ data: s, embedding: s.embedding })),
