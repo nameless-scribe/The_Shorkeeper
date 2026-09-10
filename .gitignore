@@ -17,9 +17,6 @@ release/
 *.db-shm
 *.db-wal
 
-# Live2D 模型资源（体积大、有版权）
-assets/live2d/
-
 # 可选：若立绘仅自用不想提交，取消下行注释
 # public/keeper-bg.png
 

@@ -54,10 +54,6 @@ export const ev = {
     return { type: 'state_update', state };
   },
 
-  live2dMotion(motion: string, priority?: number): AgUiEvent {
-    return { type: 'live2d_motion', motion, priority };
-  },
-
   ttsChunk(runId: string, audio: ArrayBuffer): AgUiEvent {
     return { type: 'tts_chunk', runId, audio };
   },

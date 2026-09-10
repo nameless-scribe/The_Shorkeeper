@@ -1,8 +1,8 @@
 # The Shorekeeper 设计文档
 
-> 版本：0.3.0  
-> 更新日期：2026-07-02  
-> 状态：**M1–M7 已完成**（含 RAG 优化、人设/外观/主题、插件与好感度、自动更新）；**语音 V1 部分落地**（百炼 TTS 按需/自动朗读）；**M8 桌宠**待做
+> 版本：0.3.1  
+> 更新日期：2026-07-13  
+> 状态：**M1–M7 已完成**（含 RAG 优化、人设/外观/主题、插件与好感度、自动更新）；**语音** TTS 已落地、通话 C1–C5 已落地（实机验收见专项计划）。推送仓库时勿提交 `.env` / 真实 Key（见根目录 README「仓库安全」）。
 
 ---
 
@@ -14,7 +14,7 @@
 
 ### 1.2 项目定位
 
-The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 能力（工具调用、记忆、RAG、MCP、技能）与 **Live2D 桌宠** 及 **伴侣式多窗 UI** 结合。用户通过透明桌宠角色与浮动面板与 Agent 交互，获得人格化、可扩展的本地智能助手体验。
+The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 能力（工具调用、记忆、RAG、MCP、技能）与 **伴侣式多窗 UI** 结合。用户通过聊天窗、状态面板、Dock 快捷栏等浮动界面与 Agent 交互，获得人格化、可扩展的本地智能助手体验。
 
 ### 1.3 核心目标
 
@@ -22,7 +22,7 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 |------|------|
 | 本地优先 | 数据、配置、会话默认存储在本机，无需依赖云端数据库 |
 | Agent 能力完整 | 支持多轮工具调用、记忆、文档检索、MCP 扩展 |
-| 伴侣式体验 | Live2D 角色、心情/状态、TTS、人格化对话 |
+| 伴侣式体验 | 心情/状态、TTS、人格化对话、多窗快捷入口 |
 | 可扩展 | 技能系统、MCP Server、内置工具可插拔 |
 | 自用友好 | 部署简单、单文件数据库备份、无服务端运维 |
 
@@ -30,7 +30,6 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 
 - 多用户 / 账号系统
 - 云端同步（可后续扩展）
-- 商业分发与 Live2D 商用授权流程
 - 移动端版本
 
 ---
@@ -44,10 +43,9 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
   → 默认显示聊天窗；状态/日程窗预加载但隐藏
   → 全部主面板隐藏时显示 Dock 快捷栏（头像 + 状态 / 日程 / Token）
   → 点击 Dock 区块 / 托盘菜单打开对应窗口
-  → （M8）Live2D 桌宠显示在桌面（透明置顶窗）
   → 选择模型、风格、推理模式
   → 发送消息 → Agent 循环（可能调用工具）→ 流式回复
-  → 角色播放动作 / TTS 朗读
+  → TTS 朗读
   → 会话与记忆自动持久化
 ```
 
@@ -72,7 +70,7 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      表现层 (Renderer)                       │
-│  Live2D 窗 │ 聊天窗 │ 状态面板 │ 日程/Token │ Dock 快捷栏 │ 设置/侧边栏 │
+│  聊天窗 │ 状态面板 │ 日程/Token │ Dock 快捷栏 │ 设置/侧边栏 │
 └──────────────────────────┬──────────────────────────────────┘
                            │ IPC + AG-UI Event Stream
 ┌──────────────────────────▼──────────────────────────────────┐
@@ -104,7 +102,6 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 
 | 窗口 | 类型 | 职责 |
 |------|------|------|
-| `live2d` | 透明、无边框、可置顶 | PixiJS 渲染 Live2D，接收动作指令（**M8**） |
 | `chat` | 无边框、圆角 | 消息列表、输入、流式输出、工具卡片；**启动时默认显示** |
 | `status` | 浮动面板 | 头像、在线、心情、活动、快捷操作 |
 | `schedule` | 浮动面板 | 日程、Token 统计、定时任务入口 |
@@ -141,7 +138,6 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 | UI 框架 | React 18 | 组件化面板 |
 | 样式 | Tailwind CSS | 主题、毛玻璃、渐变 |
 | 图表 | Recharts | Token 周趋势 |
-| Live2D | PixiJS + pixi-live2d-display | 桌宠渲染 |
 | 数据库 | SQLite（运行时 **sql.js**；设计原案 better-sqlite3） | 嵌入式主库 |
 | Schema | `src/db/schema.ts` + 手写 SQL migration | 类型与迁移 |
 | 全文检索 | SQLite FTS5 | Worldbook 关键词 |
@@ -181,7 +177,7 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 
 ### 5.1 Agent 编排器 (Orchestrator)
 
-**职责**：接收用户输入，组装上下文，驱动 Agent 循环，发射 AG-UI 事件，处理副作用（持久化、TTS、Live2D）。
+**职责**：接收用户输入，组装上下文，驱动 Agent 循环，发射 AG-UI 事件，处理副作用（持久化、TTS）。
 
 **输入**：
 
@@ -457,7 +453,7 @@ interface Skill {
 ### 5.9 语音子系统（TTS）
 
 > 专项计划：[superpowers/plans/2026-07-01-voice.md](./superpowers/plans/2026-07-01-voice.md)  
-> **当前进度：V1 部分完成**（按需朗读 + 自动播放）；STT、声音复刻 UI、Orchestrator 侧 `tts_chunk` 广播、M8 口型联动待做。
+> **当前进度：V1 部分完成**（按需朗读 + 自动播放）；STT、声音复刻 UI、Orchestrator 侧 `tts_chunk` 广播待做。
 
 **引擎**：阿里云百炼 **CosyVoice**（`src/voice/bailian-tts.ts`），替代 M6 阶段移除的 edge-tts。
 
@@ -481,9 +477,9 @@ interface Skill {
 **与 AG-UI 的关系**：
 
 - 类型中保留 `tts_chunk`，但**当前实现走 IPC `voice:synthesize`**，不经 `agent:event` 流式推送
-- `tts_start` / `tts_end` / `speak_start` / `speak_end` 尚未实现；M8 口型联动时再接入 Orchestrator 侧 pipeline
+- `tts_start` / `tts_end` 尚未实现；流式播放需要时再接入 Orchestrator 侧 pipeline
 
-**待做（按计划）**：STT 语音输入（V3）、百炼声音复刻管理 UI（V1.5）、Orchestrator `tts-pipeline` 与事件广播（V2）、桌宠口型（V4）
+**待做（按计划）**：STT 语音输入（V3）、百炼声音复刻管理 UI（V1.5）、Orchestrator `tts-pipeline` 与事件广播（V2）
 
 ### 5.10 权限控制
 
@@ -527,32 +523,14 @@ interface PermissionPolicy {
 - 配置：设置 → 插件，或 `.env` 中 `WEB_SEARCH_API_KEY` / `BOCHA_API_KEY`
 - `web_search` 工具经插件开关控制；与 RAG 知识库独立
 
-### 5.13 Live2D 子系统
-
-- 独立 `BrowserWindow`：`transparent: true`, `frame: false`
-- PixiJS Application 加载 `.model3.json`
-- 动作映射表（可配置）：
-
-| 事件 | 默认动作 |
-|------|----------|
-| `idle` | 待机 |
-| `think` | 思考 |
-| `speak` | 说话 / 口型 |
-| `happy` | 开心 |
-| `tap` | 点击反应 |
-
-- 点击角色：打开聊天窗；可选穿透模式（仅角色区域可点）
-
-**自用注意**：使用官方示例或明确允许个人使用的模型；模型目录加入 `.gitignore`。
-
-### 5.14 应用自动更新
+### 5.13 应用自动更新
 
 - 打包版集成 **electron-updater**（`electron/update/auto-updater.ts`）
 - 启动约 8s 后静默检查；设置 → **关于** 可手动检查与安装
 - IPC：`update:getVersion`、`update:check`、`update:install`；状态经 `update:status` 广播
 - 开发模式（`pnpm dev`）不支持更新检查
 
-### 5.15 Agent 工作流指示（UI）
+### 5.14 Agent 工作流指示（UI）
 
 聊天窗顶栏下方 **AgentWorkflowStrip** 展示当前 run 阶段：
 
@@ -583,7 +561,6 @@ type AgUiEvent =
   | { type: 'tool_call_start'; runId: string; callId: string; name: string; args: unknown }
   | { type: 'tool_call_end'; runId: string; callId: string; result: ToolResult }
   | { type: 'state_update'; state: AgentPresenceState }
-  | { type: 'live2d_motion'; motion: string; priority?: number }
   | { type: 'tts_chunk'; runId: string; audio: ArrayBuffer }  // 类型保留；TTS 当前走 voice IPC
   | { type: 'usage'; runId: string; promptTokens: number; completionTokens: number; cachedTokens?: number };
 ```
@@ -812,7 +789,7 @@ sessions 1───N bookkeeping_entries (optional)
 
 - 顶栏下方 **AgentWorkflowStrip**：运行中展示准备 → 思考 → 工具 → 输出四步进度
 - 左右气泡：Agent 左，用户右
-- Agent 头像：Live2D 截图或静态头像
+- Agent 头像：静态头像或用户自定义头像
 - 顶栏：模型名、连接状态、Style / Reasoning 下拉
 - 工具调用：折叠卡片展示名称、参数、结果
 - 推理过程：可折叠灰色区域
@@ -869,7 +846,7 @@ sessions 1───N bookkeeping_entries (optional)
 2. `contextIsolation: true`, `nodeIntegration: false`（渲染进程）
 3. 工具文件访问限制在 `workspaceRoot` 与用户授权目录
 4. 外部 URL 抓取需 `network` 权限
-5. Live2D 与导入文档路径不入公开仓库
+5. 导入文档路径不入公开仓库
 
 ---
 
@@ -882,7 +859,7 @@ TheShorekeeper/
 │   ├── DATABASE.md               # 数据库、migration、数据目录
 │   ├── MODELS.md                 # 模型与 API / Embedding 配置
 │   ├── UI-THEME.md               # 主题预设、壁纸、CSS 变量
-│   ├── PLAN.md                   # 里程碑实施计划（M1–M8）
+│   ├── PLAN.md                   # 里程碑实施计划（M1–M7）
 │   └── superpowers/              # 进行中的专项计划（语音 / RAG 等）
 │       ├── README.md
 │       └── plans/
@@ -1002,7 +979,6 @@ TheShorekeeper/
 | **M7** | 工具补齐 | ✅ 文档生成、记账、旅行规划；Token 优化与长会话压缩；Windows 打包 |
 | **M7+** | 人设 / 外观 / 主题 | ✅ 可编辑人设、9 套主题、自定义壁纸与头像（见 UI-THEME.md） |
 | **Voice V1** | TTS 按需/自动朗读 | 🔄 百炼 CosyVoice、语音设置页、🔊 按钮（见 voice 计划） |
-| **M8** | 桌宠 | ⏳ Live2D 或精灵图窗，动作与对话联动 |
 
 每个里程碑结束时应可独立运行、可测试。
 
@@ -1015,10 +991,9 @@ TheShorekeeper/
 | OpenAI / Anthropic 工具格式差异 | 工具循环失败 | 适配层统一 ToolCall 结构 |
 | better-sqlite3 与 Electron 版本 | 安装失败 | 已改用 sql.js（WASM），免 native 编译 |
 | 上下文超长 | 成本高、超限 | 摘要压缩 + RAG 检索代替全量历史 |
-| Live2D 模型版权 | 法律风险 | 自用官方示例/授权模型，gitignore |
 | MCP Server 不稳定 | 工具超时 | 超时、重试、禁用开关 |
 | 百炼 TTS endpoint 与 Chat 不同 | 语音不可用 | 设置 → 语音独立 endpoint；或 `VOICE_TTS_ENDPOINT` |
-| 包体过大 | 下载/更新慢 | electron-updater 增量更新；Live2D 模型可选下载 |
+| 包体过大 | 下载/更新慢 | electron-updater 增量更新；打包白名单控制资源体积 |
 
 ---
 
@@ -1036,8 +1011,6 @@ TheShorekeeper/
 
 ### 13.2 参考资源
 
-- [Live2D Cubism SDK](https://www.live2d.com/sdk/download/native/)
-- [pixi-live2d-display](https://github.com/guansss/pixi-live2d-display)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Drizzle ORM](https://orm.drizzle.team/)
 - [sqlite-vec](https://github.com/asg017/sqlite-vec)
@@ -1047,7 +1020,7 @@ TheShorekeeper/
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | 0.1.0-draft | 2026-06-29 | 初稿，基于需求讨论整理 |
-| 0.1.1 | 2026-06-29 | M4 多窗/Dock/托盘模型；M5 更正为 RAG（非 Live2D）；向量实现为 BLOB+余弦 |
+| 0.1.1 | 2026-06-29 | M4 多窗/Dock/托盘模型；M5 更正为 RAG；向量实现为 BLOB+余弦 |
 | 0.2.0 | 2026-07-01 | 反映 M1–M7 实现：混合 RAG、好感度、博查搜索、插件系统、目录与表结构更新 |
 | 0.2.1 | 2026-07-01 | 目录结构扩充：IPC/主题/打包白名单；人设外观主题落地；文档与 superpowers 索引整理 |
 | 0.3.0 | 2026-07-02 | 语音 V1（百炼 TTS）、自动更新、Agent 工作流条；表结构补全（session_summaries、bookkeeping）；目录与 IPC 同步 |

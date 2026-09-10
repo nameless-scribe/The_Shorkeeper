@@ -1,14 +1,14 @@
 # The Shorekeeper 实施计划
 
-> **执行说明：** 按里程碑 M1 → M7 顺序推进（**M8 桌宠延后**，M7 完成后再做）。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
+> **执行说明：** 按里程碑 M1 → M7 顺序推进。每完成一个 Task 勾选 checkbox。每完成一个里程碑做一次整体验证后再进入下一阶段。  
 > **设计依据：** [DESIGN.md](./DESIGN.md)  
-> **当前进度：** **M7 进行中**（2026-06-29）→ 工具补齐、Token 优化、会话压缩、打包配置
+> **当前进度：** **M1–M7 已完成**（2026-07）；语音 TTS / 通话见 [superpowers](./superpowers/README.md)
 
-**Goal：** 从零构建自用桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG 与多窗伴侣 UI；桌宠（Live2D / 精灵图）延后至 **M8**。
+**Goal：** 从零构建桌面 AI Agent 应用 The Shorekeeper，具备流式聊天、工具调用、记忆、RAG 与多窗伴侣 UI。
 
 **Architecture：** Electron 主进程承载 Agent 运行时与 SQLite；渲染进程仅负责 UI，通过 Preload IPC 与 AG-UI 事件流通信；能力按里程碑递增，每阶段可独立运行。
 
-**Tech Stack：** Electron · TypeScript · Vite · React · Tailwind · better-sqlite3 · Drizzle ·（M8：PixiJS · pixi-live2d-display）
+**Tech Stack：** Electron · TypeScript · Vite · React · Tailwind · **sql.js**（手写 migration；原案 better-sqlite3 / Drizzle 已弃用）
 
 ---
 
@@ -22,8 +22,7 @@
 | M4 | 多窗 UI | 4–5 天 | ✅ **已完成** — 多窗管理、托盘、Dock 快捷入口、Token/定时任务 |
 | M5 | RAG | 3–5 天 | ✅ **已完成** — 文档导入、向量检索、问答引用 |
 | M6 | 扩展能力 | 4–6 天 | ✅ **已完成** — MCP、技能、Anthropic 协议（TTS 延后排期） |
-| M7 | 工具补齐 | 5–7 天 | 文档生成与生活类工具；**含 Token 优化与长会话压缩** |
-| M8 | 桌宠（延后） | 3–5 天 | Live2D 或精灵图窗，动作与对话联动 |
+| M7 | 工具补齐 | 5–7 天 | ✅ **已完成** — 文档工具、Token 优化、会话压缩、打包 |
 
 ---
 
@@ -125,7 +124,6 @@ dist-electron/
 release/
 .env
 *.db
-assets/live2d/
 .DS_Store
 ```
 
@@ -819,7 +817,7 @@ git commit -m "feat(m4): dock companion bar with status schedule token"
 | Schema | `src/db/migrations/0006_rag.sql` |
 | 单测 | `src/rag/__tests__/` |
 
-> **排期说明：** 桌宠（Live2D / 精灵图）已移至 **M8**，M5 仅做 RAG。`live2d_motion` 等 AG-UI 事件类型保留，供 M8 订阅。
+> **排期说明：** M5 仅做 RAG；桌面角色窗不再作为后续里程碑规划。
 
 ---
 
@@ -891,7 +889,7 @@ git commit -m "feat(m5): rag retrieval in context builder"
 
 **交付物：** MCP Client、技能系统、Anthropic-like 模型适配。（**TTS 延后排期**，见下）
 
-**状态：** 已完成（2026-06-29）。TTS 曾尝试 edge-tts，国内网络下 Bing 语音服务合成超时，已移除 UI 与运行时逻辑，与桌宠口型一并留待后续里程碑。
+**状态：** 已完成（2026-06-29）。TTS 曾尝试 edge-tts，国内网络下 Bing 语音服务合成超时，已移除 UI 与运行时逻辑；后续语音能力独立按 superpowers 计划推进。
 
 **主要源文件：**
 
@@ -952,7 +950,7 @@ git commit -m "feat(m6): skill system"
 
 ### Task M6-3：TTS（消息朗读）— 延后排期
 
-> **2026-06-29 决策：** 国内环境 edge-tts 连接 `speech.platform.bing.com` 易超时/无音频，暂不上线。AG-UI 事件类型 `tts_chunk` 保留，供后续与 M8 桌宠一并实现。候选方案：百炼语音合成 API、可配置代理的 TTS 引擎。
+> **2026-06-29 决策：** 国内环境 edge-tts 连接 `speech.platform.bing.com` 易超时/无音频，暂不上线。AG-UI 事件类型 `tts_chunk` 保留，供后续语音流式播放使用。候选方案：百炼语音合成 API、可配置代理的 TTS 引擎。
 
 **Files:**（原计划，未交付）
 
@@ -965,7 +963,7 @@ git commit -m "feat(m6): skill system"
 
 - [ ] **Step 3** 设置页音色与自动朗读
 
-- [ ] **Step 4** （可选）`tts_chunk` 供桌宠口型
+- [ ] **Step 4** （可选）`tts_chunk` 供流式播放 UI 使用
 
 ---
 
@@ -1136,7 +1134,7 @@ git commit -m "feat(m7): session context compression and full session history"
 
 - [ ] **Step 2** `pnpm build` 生成 Windows 安装包
 
-- [x] **Step 3** README：环境变量、数据库路径；桌宠资源说明见 M8
+- [x] **Step 3** README：环境变量、数据库路径
 
 - [ ] **Step 4** Commit
 
@@ -1152,74 +1150,6 @@ git commit -m "chore(m7): electron builder config and readme"
 - [ ] Token 优化后同场景 10 轮对话 prompt tokens 明显下降（见 Schedule 统计）
 - [ ] 长会话不超限（摘要生效）
 - [ ] 本地可打包运行
-
----
-
-# M8：桌宠（延后）
-
-**交付物：** 透明桌宠窗、动作与 Agent 状态联动。实现路径二选一（或先做 Live2D，精灵图作备选）：
-
-| 路径 | 资源 | 技术 |
-|------|------|------|
-| Live2D | `assets/live2d/*.model3.json` 导出包 | PixiJS + pixi-live2d-display |
-| 精灵图 | `assets/sprites/` PNG 序列（如 Bongo Cat 素材） | 透明窗 + 状态换图 / 帧动画 |
-
-> **前置：** M2 已有 `live2d_motion` 事件类型；M4 已有 `state_update`（mood / activity）。M8 桌宠窗订阅 `agent:event` 即可联动，无需改事件协议。
-
----
-
-### Task M8-1：桌宠窗口
-
-**Files:**
-- Create: `electron/windows/pet.ts`（或 `live2d.ts`）, `src/renderer/pet/main.tsx`, `src/renderer/pet/PetStage.tsx`
-
-- [ ] **Step 1** Live2D 路径：安装 `pixi.js`, `pixi-live2d-display`；精灵图路径：仅用 Canvas / Pixi 贴图
-
-- [ ] **Step 2** 透明置顶窗 `transparent: true`, `alwaysOnTop: true`
-
-- [ ] **Step 3** 从配置加载资源路径（Live2D：`assets/live2d/`；精灵图：`assets/sprites/`）
-
-- [ ] **Step 4** 默认 idle 状态
-
-- [ ] **Step 5** README：模型 / 精灵图放置说明
-
-- [ ] **Step 6** Commit
-
-```bash
-git commit -m "feat(m8): pet transparent window"
-```
-
----
-
-### Task M8-2：动作联动
-
-**Files:**
-- Modify: `src/agent/orchestrator.ts`, `src/renderer/pet/PetStage.tsx`
-
-- [ ] **Step 1** orchestrator 在 think / speak / happy 阶段 `broadcast('agent:event', { type: 'live2d_motion', motion })`
-
-- [ ] **Step 2** 桌宠窗订阅 `live2d_motion` 与 `state_update`，映射到动作或换图
-
-- [ ] **Step 3** 点击角色 IPC 打开聊天窗 + tap 反应
-
-- [ ] **Step 4** TTS 播放时口型 / 说话帧（若模型或素材支持）
-
-- [ ] **Step 5** Commit
-
-```bash
-git commit -m "feat(m8): pet motion sync with agent"
-```
-
----
-
-### M8 验收清单
-
-- [ ] 桌宠显示在桌面，与对话状态（思考 / 说话 / 开心）联动
-- [ ] 点击桌宠可打开聊天窗
-- [ ] `assets/live2d/` 或 `assets/sprites/` 在 gitignore 中
-- [ ] Live2D 路径：模型版权与授权范围已确认
-
----
 
 ## 全局测试策略
 
@@ -1264,7 +1194,6 @@ git tag v0.2.0-m2
 | M5 结束 | RAG embedding 成本；每轮双 LLM（主对话+记忆提取）→ **M7-4 优化** |
 | M6 结束 | MCP server 超时处理 |
 | M7 结束 | write_file 权限；**Token 消耗与长会话压缩**（M7-4 + M7-5） |
-| M8 结束 | Live2D 模型版权与路径；精灵图素材授权 |
 
 ---
 
@@ -1277,11 +1206,13 @@ git tag v0.2.0-m2
 | 0.1.2 | 2026-06-29 | M2 验收完成，进入 M3 |
 | 0.1.3 | 2026-06-29 | M3 验收完成，进入 M4 |
 | 0.1.4 | 2026-06-29 | M3 文档补充：结构化 memory_key、upsert、增量提取 |
-| 0.1.5 | 2026-06-29 | 桌宠延后至 M8；M5 收窄为 RAG only |
+| 0.1.5 | 2026-06-29 | M5 收窄为 RAG only |
 | 0.1.6 | 2026-06-29 | 新增 M7-4 Token 优化排期；M7-5 会话压缩；轻量历史会话已完成 |
 | 0.1.7 | 2026-06-29 | M5 RAG 验收完成（伸宏测试文档导入问答）；进入 M6 |
 | 0.1.8 | 2026-06-29 | M4 文档同步：托盘/Dock/多窗 UX 验收；M5 里程碑确认完成 |
+| 0.1.9 | 2026-07-13 | 同步进度：M1–M7 完成；技术栈改为 sql.js；下一步为语音专项收尾 |
+| 0.1.10 | 2026-09-10 | 移除 M8 桌宠功能计划 |
 
 ---
 
-*下一步：从 **M6 Task M6-1**（MCP Client）开始执行。*
+*下一步：语音通话实机验收与文档收尾（见 [superpowers](./superpowers/README.md)）。*

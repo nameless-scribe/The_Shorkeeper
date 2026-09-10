@@ -30,7 +30,6 @@ export type AgUiEvent =
   | { type: 'tool_call_end'; runId: string; callId: string; result: ToolResult }
   | { type: 'plan_updated'; runId: string; items: AgentPlanItem[] }
   | { type: 'state_update'; state: AgentPresenceState }
-  | { type: 'live2d_motion'; motion: string; priority?: number }
   | { type: 'tts_chunk'; runId: string; audio: ArrayBuffer }
   | { type: 'usage'; runId: string; promptTokens: number; completionTokens: number; cachedTokens?: number }
   | { type: 'call_state'; callId: string; state: CallState }

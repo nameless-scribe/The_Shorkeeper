@@ -1,44 +1,39 @@
 # The Shorekeeper
 
-自用桌面 AI Agent：Electron + React + 流式对话 + 工具调用 + 记忆 / RAG + MCP / 技能 + 多窗伴侣 UI。
+桌面 AI Agent：Electron + React + 流式对话 + 工具调用 + 记忆 / RAG + MCP / 技能 + 多窗伴侣 UI + 语音朗读 / 通话。
 
-核心能力：长期记忆与 Worldbook、混合 RAG 知识库、博查联网搜索、定时任务、Token 统计、好感度阶段、文档生成与生活类工具。
+核心能力：长期记忆与 Worldbook、混合 RAG 知识库、博查联网搜索、定时任务、Token 统计、好感度阶段、文档生成与生活类工具、百炼 CosyVoice TTS 与语音通话。
+
+> 当前为个人项目。推送 GitHub 前请确认未提交 `.env`、数据库与真实 API Key（见下方「仓库安全」）。
 
 ## 环境要求
 
 - Node.js **20+**
 - pnpm
-- 数据库通过 **sql.js** 读写（默认 `D:\SQLlite\shorekeeper.db`）
+- Windows（开发与打包主路径）；数据库通过 **sql.js** 读写
 
 ## 快速开始
 
-1. 复制环境变量：
-
 ```powershell
+git clone https://github.com/<你的用户名>/<仓库名>.git
+cd TheShorekeeper   # 或你的仓库目录名
 copy .env.example .env
+pnpm install
+pnpm db:init
+pnpm db:seed        # 可选：写入守岸人人设与 Worldbook 种子
+pnpm dev
 ```
 
-2. 编辑 `.env`，填入 **阿里云百炼 Qwen3.6-Plus**（详见 [docs/MODELS.md](docs/MODELS.md)）：
+编辑 `.env`，填入 **阿里云百炼** 等配置（详见 [docs/MODELS.md](docs/MODELS.md)）：
 
 ```env
 OPENAI_API_KEY=sk-你的百炼APIKey
-OPENAI_BASE_URL=https://你的接入点/compatible-mode/v1
+OPENAI_BASE_URL=https://llm-xxxx.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 DEFAULT_MODEL=qwen3.6-plus
 INCLUDE_STREAM_USAGE=false
 ```
 
-3. 初始化数据库（若尚未创建）：
-
-```powershell
-pnpm db:init
-```
-
-4. 启动开发模式：
-
-```powershell
-pnpm install
-pnpm dev
-```
+也可启动后在 **设置 → API 设置** 填写（应用内配置优先于 `.env`）。
 
 若 Electron 下载失败，可设置镜像后重装：
 
@@ -48,30 +43,49 @@ pnpm rebuild electron
 pnpm dev
 ```
 
+## 仓库安全（推送前必读）
+
+| 项 | 说明 |
+|----|------|
+| `.env` | **勿提交**；已在 `.gitignore`。只提交 `.env.example`（占位符） |
+| `*.db` / workspace | 本地会话与知识库数据，已忽略 |
+| `node_modules/`、`dist/`、`release/` | 已忽略 |
+| `public/vad/` | 由 `scripts/copy-vad-assets.mjs` 从依赖同步，勿手改入库 |
+| API Key / 接入点 | 文档与示例一律使用占位符；个人域名与真实 Key 只放本地 `.env` 或应用内设置 |
+
+推送前自检：
+
+```powershell
+git ls-files | Select-String -Pattern '\.env$|\.db$|credentials|secret'
+```
+
+应只看到 `.env.example` 这类安全文件。
+
 ## 打包（Windows）
 
 ```powershell
 pnpm dist
 ```
 
-安装包输出到 `release/` 目录。首次打包会下载 NSIS 相关工具，耗时较长。
+安装包输出到 `release/`。首次打包会下载 NSIS 相关工具，耗时较长。
 
-**构建顺序：** `pnpm dist` 会先执行 `scripts/copy-vad-assets.mjs`（从 `node_modules` 同步 VAD / ONNX 到 `public/vad/`），再 `vite build` 与 `electron-builder`。**请勿单独运行 `vite build`**，否则 `public/vad/` 可能缺失，安装包内语音通话 VAD 将无法初始化。开发模式 `pnpm dev` 同样会在启动前同步 VAD 资源。
+**构建顺序：** `pnpm dist` 会先执行 `scripts/copy-vad-assets.mjs`（同步 VAD / ONNX 到 `public/vad/`），再 `vite build` 与 `electron-builder`。**请勿单独运行 `vite build`**，否则安装包内语音通话 VAD 可能无法初始化。开发模式 `pnpm dev` 同样会在启动前同步 VAD。
 
-**在其他 Windows 电脑使用：** 拷贝 `release/` 下的安装包（`.exe`），双击安装即可，**无需** Node / pnpm。安装包内已包含 **sql.js 运行时**（WASM）与 **数据库迁移脚本**，无需单独安装 SQLite。若目标机没有 `D:` 盘，会自动回退到用户目录下的应用数据文件夹。
+**在其他 Windows 电脑使用：** 拷贝 `release/` 下的安装包（`.exe`）安装即可，无需 Node / pnpm。安装包含 sql.js（WASM）与数据库迁移脚本。若目标机没有 `D:` 盘，会自动回退到用户目录下的应用数据文件夹。
 
-**打包内容（白名单）：** 仅 `dist/`、`dist-electron/`、`skills/`、`package.json` 及 sql.js / migration 资源。**不会**打入开发机 `.env`、源码、`docs/`、本地 `shorekeeper.db` 或 `workspace/`。API Key 需在目标机 **设置 → API 设置** 填写，或在该机 `userData` / 安装目录旁自行放置 `.env`。
+**打包白名单：** 仅 `dist/`、`dist-electron/`、`skills/`、`package.json` 及运行时依赖。**不会**打入开发机 `.env`、源码、`docs/`、本地数据库或 `workspace/`。API Key 需在目标机 **设置 → API 设置** 填写。
 
-首次打开后还需：
+首次打开建议：
 
-1. **设置 → API 设置** — 填写模型 API Key 与接入地址
-2. **设置 → 人设** — 编辑核心 System Prompt（每轮注入）
-3. **设置 → 外观** — 切换主题或上传背景/头像
-4. **设置 → 技能** — 打开需要的技能（见 [使用说明.md](docs/使用说明.md#技能系统)）；自动技能按消息关键词激活，手动技能每轮生效
-5. **设置 → 插件** — 按需开启联网搜索、**多格式编写**（Excel/Word/PDF 等；技能依赖此插件）
-6. **设置 → 泰提斯终端** — 导入知识库（支持 MD / TXT / PDF / DOCX）
+1. **设置 → API 设置** — 模型 API Key 与接入地址
+2. **设置 → 人设** — 核心 System Prompt
+3. **设置 → 外观** — 主题或背景 / 头像
+4. **设置 → 技能** — 按需开启（见 [使用说明.md](docs/使用说明.md#技能系统)）
+5. **设置 → 插件** — 联网搜索、多格式编写等
+6. **设置 → 语音** — TTS / 通话（可选）
+7. **设置 → 泰提斯终端** — 导入知识库（MD / TXT / PDF / DOCX）
 
-自定义数据目录（可选）：环境变量 `SHOREKEEPER_DB_DIR` / `SHOREKEEPER_WORKSPACE_DIR`，或在安装目录旁放置 `.env`。
+自定义数据目录：环境变量 `SHOREKEEPER_DB_DIR` / `SHOREKEEPER_WORKSPACE_DIR`，或在安装目录旁放置 `.env`。
 
 ## 路径说明
 
@@ -79,31 +93,31 @@ pnpm dist
 |----|----------|
 | 数据库目录 | `D:\SQLlite`（`SHOREKEEPER_DB_DIR`） |
 | 数据库文件 | `D:\SQLlite\shorekeeper.db`（`SHOREKEEPER_DB_PATH`） |
-| 工作区 | `D:\SQLlite\workspace`（`SHOREKEEPER_WORKSPACE_DIR`；Agent 读写与生成文档） |
-| 外观资源 | `D:\SQLlite\appearance\`（自定义背景 `bg-*`、头像；DB 仅存文件名） |
+| 工作区 | `D:\SQLlite\workspace`（`SHOREKEEPER_WORKSPACE_DIR`） |
+| 外观资源 | `D:\SQLlite\appearance\`（自定义背景 / 头像；DB 仅存文件名） |
 
-可在 `.env` 中覆盖，详见 `src/config/paths.ts`。主题与壁纸说明见 [UI-THEME.md](docs/UI-THEME.md)。
+可在 `.env` 中覆盖，见 `src/config/paths.ts`。主题说明见 [UI-THEME.md](docs/UI-THEME.md)。
 
 ## 性能 / Token 优化
 
-设置 → **性能** 页，或 `.env`：
+设置 → **性能**，或 `.env`：
 
 | 配置项 | 说明 | 默认 |
 |--------|------|------|
 | `RAG_ENABLED` | 是否启用 RAG | `true` |
-| `RAG_INJECT_MODE` | 注入模式：`catalog` / `auto` / `tool` | `catalog` |
+| `RAG_INJECT_MODE` | `catalog` / `auto` / `tool` | `catalog` |
 | `RAG_MIN_SCORE` | 检索最低相似度阈值 | `0.35` |
 | `RAG_MAX_CHUNKS_PER_DOC` | 单文档最多注入片段数 | `2` |
 | `AUTO_MEMORY_EXTRACT` | 记忆自动提取 | `true` |
-| `MEMORY_EXTRACT_INTERVAL` | 每 N 轮提取（`every_n` 模式） | `3` |
+| `MEMORY_EXTRACT_INTERVAL` | 每 N 轮提取 | `3` |
 | `MAX_HISTORY_MESSAGES` | 送入模型的最近消息条数 | `20` |
 | `COMPRESS_THRESHOLD` | 长会话压缩阈值 | `30` |
 
-`catalog` 模式下仅注入文档目录，模型按需调用 `search_knowledge` 工具，Token 开销更低。
+`catalog` 模式下仅注入文档目录，模型按需调用 `search_knowledge`，Token 更省。更多检索优化见 [RAG-OPTIMIZATION.md](docs/RAG-OPTIMIZATION.md)。
 
 ## 联网搜索
 
-设置 → **插件** 页填写博查 API Key，或 `.env`：
+设置 → **插件** 填写博查 API Key，或 `.env`：
 
 ```env
 WEB_SEARCH_API_KEY=sk-你的博查Key
@@ -115,97 +129,75 @@ WEB_SEARCH_API_KEY=sk-你的博查Key
 
 ```
 TheShorekeeper/
-├── electron/                 # Electron 主进程
-│   ├── main.ts               # 入口：DB 初始化、IPC 注册、托盘、调度器
-│   ├── preload.ts            # 渲染进程 IPC 桥（contextBridge）
-│   ├── tray.ts               # 系统托盘
-│   ├── protocol/             # 自定义协议（如 sk-asset:// 本地外观资源）
-│   ├── ipc/                  # IPC 处理器（agent / session / voice / update / …）
-│   ├── update/               # electron-updater 自动更新
-│   ├── windows/              # 多窗：chat / status / schedule / dock / reminder
-│   ├── dock/                 # Dock 显隐与偏好
-│   ├── scheduler/            # node-cron 定时任务
-│   └── state/                # Agent Presence 状态
+├── electron/                 # 主进程：IPC、托盘、多窗、调度、更新
 ├── src/
-│   ├── agent/                # 编排器、工具循环、上下文组装、会话锁
-│   ├── affection/            # 好感度阶段
-│   ├── config/               # 路径、性能、插件、人设、外观、主题预设
-│   │   └── themes/           # 9 套主题色板（shorekeeper / midnight / …）
-│   ├── models/               # OpenAI / Anthropic 适配、Embedding 配置
-│   ├── tools/                # 内置工具（file / web / doc / memory / life / schedule）
-│   ├── memory/               # 长期记忆、Worldbook、摘要、自动提取
-│   ├── rag/                  # 文档导入、分块、混合检索、缓存
+│   ├── agent/                # 编排、工具循环、上下文
+│   ├── affection/            # 好感度
+│   ├── config/               # 路径、性能、插件、人设、外观、主题
+│   ├── models/               # OpenAI / Anthropic 适配、Embedding
+│   ├── tools/                # file / web / doc / memory / life / schedule
+│   ├── memory/               # 长期记忆、Worldbook、摘要
+│   ├── rag/                  # 导入、分块、混合检索
 │   ├── mcp/                  # MCP Client
-│   ├── skills/               # loader / resolve / state（对应仓库根 skills/）
-│   ├── tasks/                # 用户待办与 Excel 回写
-│   ├── db/                   # sql.js、schema、migrations、repositories
-│   ├── session/              # 活跃会话
-│   ├── scheduler/            # 提醒意图解析
-│   ├── voice/                # 百炼 CosyVoice TTS、朗读文本清洗
-│   ├── workspace/            # 工作区文件导入
-│   ├── shared/               # 主进程/渲染进程共用类型与主题工具
-│   └── renderer/             # React UI（Vite 单入口，?panel= 区分窗口）
-│       ├── ChatPage.tsx      # 主聊天
-│       ├── components/       # 消息列表、TitleBar、权限弹窗等
-│       ├── settings/         # 设置抽屉（API / 人设 / 外观 / 文档 / …）
-│       ├── theme/            # ThemeProvider、CSS 变量注入
-│       ├── dock/             # Dock 快捷栏
-│       ├── status/           # 状态面板
-│       └── schedule/         # 日程与 Token 图表
-├── skills/                   # 内置技能包（SKILL.md，会打入安装包）
-│   ├── excel/                # Excel 表格（auto）
-│   ├── task-execution/       # 多步执行计划（auto）
-│   ├── progress-tracker/     # 进度与待办（auto）
-│   ├── workspace-doc-edit/   # 工作区文档维护（auto）
-│   ├── doc-to-markdown/      # 文档转 Markdown（auto）
-│   └── example/              # 演示技能（manual）
-├── scripts/                  # 维护脚本（见下方常用命令）
-├── public/                   # 内置立绘、默认头像（构建进 dist/）
-├── docs/                     # 设计 / 数据库 / 模型 / 主题 / 计划
-├── .env.example              # 环境变量模板（勿提交 .env）
-├── vite.config.ts
-└── package.json              # 脚本与 electron-builder 打包配置
+│   ├── skills/               # 技能加载与解析
+│   ├── voice/                # TTS / 通话会话
+│   ├── db/                   # sql.js、schema、migrations
+│   └── renderer/             # React UI（?panel= 区分窗口）
+├── skills/                   # 内置技能包（打入安装包）
+├── scripts/                  # DB / VAD / 打包辅助脚本
+├── public/                   # 内置立绘等（VAD 构建时同步）
+├── docs/                     # 设计与使用文档
+├── .env.example
+└── package.json
 ```
 
 ### 设置页一览
 
 | 分组 | 页面 | 说明 |
 |------|------|------|
-| 能力 | 插件 / 技能 / MCP | 联网搜索、Excel/文档工具、多步任务与待办技能、外部 MCP |
-| 人格与记忆 | 人设 / 用户信息 / 记忆 / Worldbook | System Prompt、画像、性能与 RAG 调优 |
-| 个性化 | 外观 / 语音 | 9 套主题预设、壁纸、头像；百炼 CosyVoice TTS |
-| 数据与任务 | 泰提斯终端 / 定时任务 | 知识库导入、周期与一次性任务 |
-| 系统 | API 设置 / 关于 / 免责声明 | 模型配置、自动更新、协议 |
+| 能力 | 插件 / 技能 / MCP | 联网、文档工具、技能、外部 MCP |
+| 人格与记忆 | 人设 / 用户信息 / 记忆 / Worldbook | System Prompt、画像、RAG 调优 |
+| 个性化 | 外观 / 语音 | 主题、壁纸、头像；TTS 与通话 |
+| 数据与任务 | 泰提斯终端 / 定时任务 | 知识库、周期与一次性任务 |
+| 系统 | API 设置 / 关于 / 免责声明 | 模型、自动更新、协议 |
 
 ### 多窗口
 
-同一 Vite 构建，通过 URL 参数 `?panel=` 加载不同 React 根组件：`chat`（默认）、`status`、`schedule`、`reminder`、`dock`。
+同一 Vite 构建，通过 `?panel=` 加载：`chat`（默认）、`status`、`schedule`、`reminder`、`dock`、`call`（语音通话）。
 
 ## 常用命令
 
 ```powershell
-pnpm dev                      # 开发模式（Vite + Electron）
-pnpm test                     # 单元测试（Vitest）
-pnpm typecheck                # TypeScript 检查
-pnpm build                    # 生产构建（不打包安装程序）
+pnpm dev                      # 开发（Vite + Electron）
+pnpm test                     # Vitest
+pnpm typecheck                # TypeScript
+pnpm build                    # 生产构建（不打安装包）
 pnpm dist                     # Windows 安装包 → release/
-pnpm db:init                  # 初始化数据库并应用 migration
+pnpm db:init                  # 初始化 DB + migration
 pnpm db:migrate               # 同 db:init
-pnpm db:seed                  # 写入守岸人人设与 Worldbook 种子
-pnpm db:cleanup-sessions      # 删除无消息的空会话
-pnpm db:reset-keep-models     # 重置数据库但保留 API 模型配置
+pnpm db:seed                  # 人设 / Worldbook 种子
+pnpm db:cleanup-sessions      # 删除空会话
+pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 ```
 
 ## 文档
 
-- [使用说明.md](docs/使用说明.md) — 技能、插件、工作区、待办等使用指南
-- [DESIGN.md](docs/DESIGN.md) — 架构设计
-- [DATABASE.md](docs/DATABASE.md) — 数据库与 migration
-- [MODELS.md](docs/MODELS.md) — 模型与 API 配置
-- [UI-THEME.md](docs/UI-THEME.md) — 主题预设与外观
-- [PLAN.md](docs/PLAN.md) — 里程碑实施计划
-- [superpowers/README.md](docs/superpowers/README.md) — 进行中的专项计划
+| 文档 | 说明 |
+|------|------|
+| [使用说明.md](docs/使用说明.md) | 技能、插件、工作区、待办 |
+| [DESIGN.md](docs/DESIGN.md) | 架构设计 |
+| [DATABASE.md](docs/DATABASE.md) | 数据库与 migration |
+| [MODELS.md](docs/MODELS.md) | 模型与 API |
+| [UI-THEME.md](docs/UI-THEME.md) | 主题与外观 |
+| [RAG-OPTIMIZATION.md](docs/RAG-OPTIMIZATION.md) | 知识库检索优化 |
+| [PLAN.md](docs/PLAN.md) | 里程碑计划 |
+| [superpowers/](docs/superpowers/README.md) | 语音等专项计划 |
 
-## 桌宠资源（M8）
+## 进度
 
-Live2D 模型或精灵图放置说明见 M8 里程碑；当前版本不含桌宠窗口。
+- **M1–M7**：已完成（脚手架、Agent、记忆、多窗、RAG、MCP/技能、工具与打包）
+- **语音**：TTS 朗读已落地；通话（STT → Agent → CosyVoice）见专项计划
+
+## License
+
+暂未指定开源许可证。仓库若公开，请自行补充 `LICENSE`，并确认立绘等资源具备再分发权利。

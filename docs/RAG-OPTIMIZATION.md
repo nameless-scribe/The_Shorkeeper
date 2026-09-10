@@ -1,9 +1,9 @@
 # 知识库检索优化方案
 
-> 版本：0.1.0  
-> 更新日期：2026-07-03  
-> 状态：**方案设计**（待实施）  
-> 关联文档：[DESIGN.md §5.5 RAG 子系统](./DESIGN.md)
+> 版本：0.2.0  
+> 更新日期：2026-07-13  
+> 状态：**第一期 / 第二期主体已落地**（邻居扩展、FTS 优先、文档路由、可选 Rerank / HyDE 等见 `src/rag/retriever.ts` 与 `src/config/performance.ts`）；精排模型与部分导入侧增强仍可按下文迭代  
+> 关联文档：[DESIGN.md §5.5 RAG 子系统](./DESIGN.md) · [使用说明.md](./使用说明.md)
 
 ---
 
@@ -73,7 +73,6 @@ The Shorekeeper 当前采用 **Dense（向量）+ Sparse（FTS5 BM25）+ RRF 融
 
 #### 问题 A：中文 Sparse 检索几乎失效（P0）
 
-FT
 FTS 表使用 `unicode61` tokenizer，不做中文分词：**
 
 ```sql

@@ -36,12 +36,12 @@ copy .env.example .env
 
 ```env
 OPENAI_API_KEY=sk-你的完整Key
-OPENAI_BASE_URL=https://llm-o3kz1vn36c7rl7o7.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+OPENAI_BASE_URL=https://llm-xxxx.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 DEFAULT_MODEL=qwen3.6-plus
 INCLUDE_STREAM_USAGE=false
 ```
 
-将 `OPENAI_BASE_URL` 换成你控制台显示的 **OpenAI compatible** 地址。
+将 `OPENAI_BASE_URL` 换成你控制台显示的 **OpenAI compatible** 地址（`llm-xxxx` 仅为占位，每人不同）。
 
 ## 3. 启动验证
 
