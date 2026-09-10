@@ -3,6 +3,7 @@ import { ToolRegistry } from '../registry';
 import { createScheduledTaskTool, deleteScheduledTaskTool, listScheduledTasksTool } from '../schedule/schedule-tools';
 import { readXlsxTool } from '../doc/gen-tools';
 import { webSearchTool } from '../web/web-search';
+import type { Skill } from '../../skills/loader';
 
 vi.mock('../builtin', () => ({
   createBuiltinRegistry: () => {
@@ -71,7 +72,16 @@ describe('getAgentRegistry', () => {
   it('does not filter tools when no skill has a whitelist', async () => {
     invalidateAgentRegistry();
     vi.mocked(getEnabledSkills).mockReturnValue([
-      { id: 'example', allowedTools: undefined, trigger: 'manual', priority: 0 } as never,
+      {
+        id: 'example',
+        name: 'Example',
+        description: 'Test skill without a tool whitelist',
+        version: '1.0.0',
+        systemPromptFragment: 'Keep responses concise.',
+        allowedTools: undefined,
+        trigger: 'manual',
+        priority: 0,
+      },
     ]);
 
     const registry = await getAgentRegistry();
@@ -82,11 +92,15 @@ describe('getAgentRegistry', () => {
 
   it('filters by activeSkills instead of all enabled when provided', async () => {
     invalidateAgentRegistry();
-    const activeOnly = [
+    const activeOnly: Skill[] = [
       {
         id: 'excel',
+        name: 'Excel',
+        description: 'Test Excel skill',
+        version: '1.0.0',
+        systemPromptFragment: 'Use Excel tools.',
         allowedTools: ['read_xlsx', 'gen_xlsx'],
-        trigger: 'auto' as const,
+        trigger: 'auto',
         priority: 10,
       },
     ];

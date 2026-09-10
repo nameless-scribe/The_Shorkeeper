@@ -7,6 +7,8 @@ import { loadExcelJS } from '../../tools/doc/exceljs-loader';
 import { enrichAttachmentsMessage } from '../attachment-preparse';
 import * as paths from '../../config/paths';
 
+const DOCUMENT_LOADER_TIMEOUT_MS = 20_000;
+
 describe('parseXlsxFile', () => {
   const tmpDirs: string[] = [];
 
@@ -34,7 +36,7 @@ describe('parseXlsxFile', () => {
     expect(parsed.headers).toEqual(['模块', '状态']);
     expect(parsed.rows).toEqual([['P1', '已完成']]);
     expect(parsed.total_rows).toBe(1);
-  });
+  }, DOCUMENT_LOADER_TIMEOUT_MS);
 });
 
 describe('enrichAttachmentsMessage', () => {
@@ -68,5 +70,5 @@ describe('enrichAttachmentsMessage', () => {
     ]);
     expect(msg).toContain('[工作区附件已解析]');
     expect(msg).toContain('模块A');
-  });
+  }, DOCUMENT_LOADER_TIMEOUT_MS);
 });

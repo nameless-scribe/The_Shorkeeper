@@ -191,6 +191,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | [UI-THEME.md](docs/UI-THEME.md) | 主题与外观 |
 | [RAG-OPTIMIZATION.md](docs/RAG-OPTIMIZATION.md) | 知识库检索优化 |
 | [PLAN.md](docs/PLAN.md) | 里程碑计划 |
+| [STABILITY-PLAN.md](docs/STABILITY-PLAN.md) | 当前阶段稳定化计划 |
 | [superpowers/](docs/superpowers/README.md) | 语音等专项计划 |
 
 ## 进度

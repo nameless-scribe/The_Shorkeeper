@@ -860,6 +860,7 @@ TheShorekeeper/
 │   ├── MODELS.md                 # 模型与 API / Embedding 配置
 │   ├── UI-THEME.md               # 主题预设、壁纸、CSS 变量
 │   ├── PLAN.md                   # 里程碑实施计划（M1–M7）
+│   ├── STABILITY-PLAN.md         # M1-M7 后稳定化计划
 │   └── superpowers/              # 进行中的专项计划（语音 / RAG 等）
 │       ├── README.md
 │       └── plans/
