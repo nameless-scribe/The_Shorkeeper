@@ -66,6 +66,12 @@ The Shorekeeper 已经具备私人助理的主要底座：流式对话、工具�
 - 统计数据库规模：会话数、消息数、记忆数、文档数、chunk 数、embedding 体积、DB 文件大小。
 - 梳理主进程模块依赖：`electron/`、`src/agent/`、`src/tools/`、`src/db/`、`src/rag/`、`src/voice/`。
 
+**基线结果（2026-09-10）**：
+
+- `pnpm typecheck`：通过。
+- `pnpm test`：66 个测试文件、266 个测试全部通过。
+- `pnpm build`：通过；渲染端主 JS chunk 约 1.14 MB，代码分包作为后续非阻断优化。
+
 **验收**：
 
 - 形成稳定性审计清单。
@@ -355,7 +361,7 @@ The Shorekeeper 桌面端
 
 ### P0：立即稳定
 
-- 修复当前 `pnpm typecheck` 失败。
+- **已完成（2026-09-10）**：修复 `pnpm typecheck` 基线失败，并恢复完整测试与生产构建通过。
 - 做数据库规模与风险审计。
 - 固定工具权限和写文件确认链路。
 - 梳理 Agent run 生命周期和错误恢复。
