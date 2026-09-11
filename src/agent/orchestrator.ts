@@ -177,6 +177,7 @@ export async function* runOrchestrator(
     const systemParts = await buildSystemPromptParts({
       userMessage,
       sessionId: session.id,
+      assistantMode: session.assistantMode,
       availableTools: registry.list(),
       activeSkills,
       signal,
@@ -292,9 +293,11 @@ export async function* runOrchestrator(
         runId,
       );
 
-      if (shouldAutoExtractMemories(session.id, userMessage)) {
+      if (shouldAutoExtractMemories(session.id, userMessage, session.assistantMode)) {
         scheduleMemoryExtract(session.id, (backgroundSignal) =>
-          extractMemoriesFromSession(session.id, backgroundSignal),
+          extractMemoriesFromSession(session.id, backgroundSignal, {
+            assistantMode: session.assistantMode,
+          }),
           runId,
         );
       }

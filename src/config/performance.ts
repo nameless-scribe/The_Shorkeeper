@@ -25,6 +25,10 @@ export interface PerformanceSettings {
   compressThreshold: number;
   contextMaxInputTokens: number;
   memorySemanticInContext: boolean;
+  proactivityEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  notificationDedupMinutes: number;
 }
 
 export { DEFAULT_CONTEXT_MAX_INPUT_TOKENS } from '../agent/context-budget';
@@ -48,6 +52,10 @@ const DEFAULTS: PerformanceSettings = {
   compressThreshold: 30,
   contextMaxInputTokens: DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
   memorySemanticInContext: true,
+  proactivityEnabled: true,
+  quietHoursStart: '',
+  quietHoursEnd: '',
+  notificationDedupMinutes: 5,
 };
 
 function envBool(key: string, fallback: boolean): boolean {
@@ -100,6 +108,16 @@ function parseMemoryExtractMode(raw: string | null): MemoryExtractMode {
 function parseRagInjectMode(raw: string | null): RagInjectMode {
   if (raw === 'auto' || raw === 'catalog' || raw === 'tool') return raw;
   return DEFAULTS.ragInjectMode;
+}
+
+function normalizeClock(raw: string | null | undefined, fallback = ''): string {
+  if (!raw) return fallback;
+  const match = raw.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return fallback;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return fallback;
+  return `${String(hour).padStart(2, '0')}:${match[2]}`;
 }
 
 export function getPerformanceSettings(): PerformanceSettings {
@@ -187,6 +205,25 @@ export function getPerformanceSettings(): PerformanceSettings {
     memorySemanticInContext: getSetting('MEMORY_SEMANTIC_IN_CONTEXT') != null
       ? getSetting('MEMORY_SEMANTIC_IN_CONTEXT') === 'true'
       : envBool('MEMORY_SEMANTIC_IN_CONTEXT', DEFAULTS.memorySemanticInContext),
+    proactivityEnabled: getSetting('PROACTIVITY_ENABLED') != null
+      ? getSetting('PROACTIVITY_ENABLED') === 'true'
+      : envBool('PROACTIVITY_ENABLED', DEFAULTS.proactivityEnabled),
+    quietHoursStart: normalizeClock(
+      getSetting('PROACTIVITY_QUIET_START') ?? process.env.PROACTIVITY_QUIET_START,
+      DEFAULTS.quietHoursStart,
+    ),
+    quietHoursEnd: normalizeClock(
+      getSetting('PROACTIVITY_QUIET_END') ?? process.env.PROACTIVITY_QUIET_END,
+      DEFAULTS.quietHoursEnd,
+    ),
+    notificationDedupMinutes: normalizeInteger(
+      getSetting('PROACTIVITY_DEDUP_MINUTES') != null
+        ? Number.parseInt(getSetting('PROACTIVITY_DEDUP_MINUTES')!, 10)
+        : envIntNonNegative('PROACTIVITY_DEDUP_MINUTES', DEFAULTS.notificationDedupMinutes),
+      0,
+      1440,
+      DEFAULTS.notificationDedupMinutes,
+    ),
   };
 }
 
@@ -230,6 +267,18 @@ export function savePerformanceSettings(patch: Partial<PerformanceSettings>): Pe
   }
   if (patch.memorySemanticInContext != null) {
     setSetting('MEMORY_SEMANTIC_IN_CONTEXT', String(patch.memorySemanticInContext));
+  }
+  if (patch.proactivityEnabled != null) {
+    setSetting('PROACTIVITY_ENABLED', String(patch.proactivityEnabled));
+  }
+  if (patch.quietHoursStart != null) {
+    setSetting('PROACTIVITY_QUIET_START', normalizeClock(patch.quietHoursStart));
+  }
+  if (patch.quietHoursEnd != null) {
+    setSetting('PROACTIVITY_QUIET_END', normalizeClock(patch.quietHoursEnd));
+  }
+  if (patch.notificationDedupMinutes != null) {
+    setSetting('PROACTIVITY_DEDUP_MINUTES', String(patch.notificationDedupMinutes));
   }
 
   return getPerformanceSettings();

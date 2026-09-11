@@ -61,12 +61,15 @@ describe('context-builder RAG budget modes', () => {
     const parts = await buildSystemPromptParts({
       userMessage: '查看知识库',
       sessionId: 'session-1',
+      assistantMode: 'review',
       availableTools: [],
       activeSkills: [],
       maxTokens: 1000,
     });
 
     expect(parts.budget.includedSectionIds).toContain('rag_catalog');
+    expect(parts.stable).toContain('审核检查');
+    expect(parts.stable).toContain('不改变工具权限');
     expect(parts.budget.includedSectionIds).not.toContain('rag_references');
     expect(state.retrieve).not.toHaveBeenCalled();
   });

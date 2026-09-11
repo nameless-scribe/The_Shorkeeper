@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   insertMessage: vi.fn(),
   scheduleCompress: vi.fn(),
   scheduleMemory: vi.fn(),
+  assistantMode: 'focus' as 'focus' | 'organize' | 'review' | 'companion',
 }));
 
 vi.mock('../loop', () => ({
@@ -39,7 +40,7 @@ vi.mock('../../models/config', () => ({
   loadModelConfig: vi.fn(() => ({ model: 'test-model' })),
 }));
 vi.mock('../../db/repositories/sessions', () => ({
-  getSession: vi.fn((id: string) => ({ id })),
+  getSession: vi.fn((id: string) => ({ id, assistantMode: state.assistantMode })),
 }));
 vi.mock('../../session/active', () => ({
   getActiveSession: vi.fn(() => ({ id: 'active-session' })),
@@ -49,7 +50,7 @@ vi.mock('../../db/repositories/messages', () => ({
 }));
 vi.mock('../../memory/summarizer', () => ({
   extractMemoriesFromSession: vi.fn(async () => 0),
-  shouldAutoExtractMemories: vi.fn(() => true),
+  shouldAutoExtractMemories: vi.fn((_sessionId: string, _message: string, mode?: string) => mode !== 'companion'),
 }));
 vi.mock('../../rag/conversation-knowledge', () => ({
   archiveConversationToKnowledge: vi.fn(),
@@ -85,6 +86,7 @@ import { runOrchestrator } from '../orchestrator';
 describe('orchestrator runtime boundaries', () => {
   beforeEach(() => {
     state.loopInput = null;
+    state.assistantMode = 'focus';
     state.insertMessage.mockReset();
     state.scheduleCompress.mockReset();
     state.scheduleMemory.mockReset();
@@ -108,6 +110,31 @@ describe('orchestrator runtime boundaries', () => {
     ]);
     expect(state.insertMessage).not.toHaveBeenCalled();
     expect(state.scheduleCompress).not.toHaveBeenCalled();
+    expect(state.scheduleMemory).not.toHaveBeenCalled();
+    expect(emitted.at(-1)).toMatchObject({ type: 'run_finished' });
+  });
+
+  it('schedules memory extraction after a persisted focus run', async () => {
+    const emitted = [];
+    for await (const event of runOrchestrator('推进这个任务', 'focus-session')) {
+      emitted.push(event);
+    }
+
+    expect(state.insertMessage).toHaveBeenCalled();
+    expect(state.scheduleCompress).toHaveBeenCalledOnce();
+    expect(state.scheduleMemory).toHaveBeenCalledOnce();
+    expect(emitted.at(-1)).toMatchObject({ type: 'run_finished' });
+  });
+
+  it('does not auto-extract memories for companion sessions', async () => {
+    state.assistantMode = 'companion';
+    const emitted = [];
+    for await (const event of runOrchestrator('今天有点累', 'companion-session')) {
+      emitted.push(event);
+    }
+
+    expect(state.insertMessage).toHaveBeenCalled();
+    expect(state.scheduleCompress).toHaveBeenCalledOnce();
     expect(state.scheduleMemory).not.toHaveBeenCalled();
     expect(emitted.at(-1)).toMatchObject({ type: 'run_finished' });
   });

@@ -17,8 +17,20 @@ import {
   listMemories,
   upsertMemory,
 } from './long-term';
+import { createMemoryCandidate } from '../db/repositories/memory-candidates';
+import { allowsAutoMemoryExtraction } from '../assistant/mode';
+import type { AssistantMode } from '../shared/types';
+import {
+  clampMemoryConfidence,
+  evaluateMemoryCandidate,
+  type MemoryCandidateDraft,
+} from './candidate-policy';
 
-export interface StructuredMemoryFact {
+export interface ExtractMemoriesOptions {
+  assistantMode?: AssistantMode;
+}
+
+export interface StructuredMemoryFact extends MemoryCandidateDraft {
   key: string;
   content: string;
 }
@@ -34,7 +46,8 @@ ${existingMemories}
 2. 若本轮更新了某个已有主题（如称呼变了），复用相同的 memory_key 并输出新 content
 3. 若无任何新事实或更新，输出 []
 4. 不要编造对话中未出现的信息
-5. memory_key 命名规范：
+5. 置信度必须是 0 到 1 的数字；reason 简述为什么这是稳定事实
+6. memory_key 命名规范：
    - user.nickname — 称呼/名字
    - user.preference.* — 偏好（如 user.preference.drink）
    - user.schedule.* — 作息/忙碌时段
@@ -44,7 +57,7 @@ ${existingMemories}
 
 【输出格式】
 仅输出 JSON 数组，例如：
-[{"key":"user.nickname","content":"用户名叫汐"}]`;
+[{"key":"user.nickname","content":"用户名叫汐","confidence":0.95,"reason":"用户明确自我介绍"}]`;
 }
 
 function parseStructuredFacts(raw: string): StructuredMemoryFact[] {
@@ -57,12 +70,14 @@ function parseStructuredFacts(raw: string): StructuredMemoryFact[] {
     if (!Array.isArray(parsed)) return [];
 
     return parsed
-      .filter((item): item is { key?: string; content?: string } => {
+      .filter((item): item is { key?: string; content?: string; confidence?: unknown; reason?: unknown } => {
         return typeof item === 'object' && item !== null;
       })
       .map((item) => ({
         key: String(item.key ?? '').trim(),
         content: String(item.content ?? '').trim(),
+        confidence: clampMemoryConfidence(item.confidence),
+        reason: typeof item.reason === 'string' ? item.reason.trim().slice(0, 240) : '',
       }))
       .filter((item) => item.key && item.content);
   } catch {
@@ -103,11 +118,14 @@ function getLatestTurn(sessionId: string): Array<{ id: string; role: string; con
   return [];
 }
 
-/** run_finished 后异步提取：仅分析本轮增量，按 key upsert */
+/** run_finished 后异步提取：仅分析本轮增量，按候选策略保存或进入待确认队列。 */
 export async function extractMemoriesFromSession(
   sessionId: string,
   signal?: AbortSignal,
+  options?: ExtractMemoriesOptions,
 ): Promise<number> {
+  if (!allowsAutoMemoryExtraction(options?.assistantMode)) return 0;
+
   const config = getModelConfigSafe();
   if (!config) return 0;
 
@@ -153,7 +171,24 @@ export async function extractMemoriesFromSession(
 
   let saved = 0;
   for (const fact of facts) {
-    await upsertMemory(fact.key, fact.content, 0.55, sessionId, { skipEmbedding: true });
+    const evaluation = evaluateMemoryCandidate(fact);
+    if (evaluation.decision === 'deny') continue;
+
+    if (evaluation.decision === 'confirm') {
+      createMemoryCandidate({
+        memoryKey: evaluation.key,
+        content: evaluation.content,
+        category: evaluation.category,
+        confidence: evaluation.confidence,
+        reason: evaluation.reason,
+        sourceSessionId: sessionId,
+      });
+      continue;
+    }
+
+    await upsertMemory(evaluation.key, evaluation.content, evaluation.confidence, sessionId, {
+      skipEmbedding: true,
+    });
     saved += 1;
   }
 
@@ -178,7 +213,13 @@ function incrementSessionTurnCount(sessionId: string): number {
 }
 
 /** 根据性能设置决定是否自动提取记忆 */
-export function shouldAutoExtractMemories(sessionId: string, _userMessage: string): boolean {
+export function shouldAutoExtractMemories(
+  sessionId: string,
+  _userMessage: string,
+  assistantMode?: AssistantMode,
+): boolean {
+  if (!allowsAutoMemoryExtraction(assistantMode)) return false;
+
   const { memoryExtractMode, memoryExtractInterval } = getPerformanceSettings();
 
   if (memoryExtractMode === 'manual') return false;

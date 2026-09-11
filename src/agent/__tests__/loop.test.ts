@@ -1,8 +1,11 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+import os from 'node:os';
+import path from 'node:path';
 import type { ModelEvent } from '../../shared/types';
 import type { PermissionPolicy } from '../types';
 import { ToolRegistry } from '../../tools/registry';
 import type { ToolDefinition } from '../../tools/types';
+import { setPermissionConfirmer } from '../permissions';
 
 const { streamChatMock } = vi.hoisted(() => ({
   streamChatMock: vi.fn(),
@@ -328,5 +331,96 @@ describe('runAgentLoop lifecycle boundaries', () => {
       sessionId: 'session-4',
     });
     expect(streamChatMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a review-style write request read-only when writes are not allowed', async () => {
+    const writeTool: ToolDefinition = {
+      name: 'write_review_result',
+      description: '测试审核写入',
+      parameters: { type: 'object' },
+      category: 'file',
+      requiresPermission: ['filesystem:write'],
+      execute: vi.fn(async () => ({ success: true, output: '不应写入' })),
+    };
+    streamChatMock
+      .mockReturnValueOnce(modelEvents([{
+        type: 'round_complete',
+        content: null,
+        toolCalls: [{
+          id: 'call-review-write',
+          type: 'function',
+          function: { name: 'write_review_result', arguments: JSON.stringify({ path: 'review.md' }) },
+        }],
+      }, { type: 'done' }]))
+      .mockReturnValueOnce(modelEvents(textRound('已完成只读审核，未写入文件')));
+
+    const registry = new ToolRegistry();
+    registry.register(writeTool);
+    const events = await collectEvents(runAgentLoop({
+      sessionId: 'session-review-write',
+      runId: 'run-review-write',
+      messages: [{ role: 'user', content: '审核这份计划，不要修改文件' }],
+      registry,
+      policy,
+    }));
+
+    expect(writeTool.execute).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'tool_call_end',
+      result: expect.objectContaining({ errorCategory: 'permission_denied' }),
+    }));
+    expect(events).toContainEqual({
+      type: 'text_delta',
+      runId: 'run-review-write',
+      delta: '已完成只读审核，未写入文件',
+    });
+  });
+
+  it('allows a focus-style write step only after the existing confirmation', async () => {
+    const writeTool: ToolDefinition = {
+      name: 'write_focus_result',
+      description: '测试任务写入',
+      parameters: { type: 'object' },
+      category: 'file',
+      requiresPermission: ['filesystem:write'],
+      execute: vi.fn(async () => ({ success: true, output: '已写入结果' })),
+    };
+    setPermissionConfirmer(async () => true);
+    streamChatMock
+      .mockReturnValueOnce(modelEvents([{
+        type: 'round_complete',
+        content: null,
+        toolCalls: [{
+          id: 'call-focus-write',
+          type: 'function',
+          function: { name: 'write_focus_result', arguments: JSON.stringify({ path: 'result.md' }) },
+        }],
+      }, { type: 'done' }]))
+      .mockReturnValueOnce(modelEvents(textRound('结果已保存')));
+
+    const registry = new ToolRegistry();
+    registry.register(writeTool);
+    const events = await collectEvents(runAgentLoop({
+      sessionId: 'session-focus-write',
+      runId: 'run-focus-write',
+      messages: [{ role: 'user', content: '推进任务并保存结果' }],
+      registry,
+      policy: {
+        ...policy,
+        filesystem: {
+          allowedRoots: [path.join(os.tmpdir(), 'sk-focus-workspace')],
+          writeAllowed: true,
+          requireConfirmOnWrite: true,
+        },
+      },
+    }));
+    setPermissionConfirmer(async () => false);
+
+    expect(writeTool.execute).toHaveBeenCalledOnce();
+    expect(events).toContainEqual({
+      type: 'text_delta',
+      runId: 'run-focus-write',
+      delta: '结果已保存',
+    });
   });
 });

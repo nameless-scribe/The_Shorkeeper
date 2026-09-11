@@ -8,11 +8,13 @@ import {
   getSession,
   listSessions,
   setSessionArchived,
+  setSessionAssistantMode,
 } from '../../src/db/repositories/sessions';
+import { normalizeAssistantMode } from '../../src/assistant/mode';
 import { isSessionRunActive } from '../../src/agent/session-run-lock';
 import { getActiveSession, getActiveSessionId, resetActiveSession, switchActiveSession } from '../../src/session/active';
 import { listMessages } from '../../src/db/repositories/messages';
-import type { AppStatus, DeleteEmptySessionsResult, MessageInfo, SessionDeleteResult, SessionInfo, SessionListOptions, SessionListResult } from '../../src/shared/types';
+import type { AppStatus, AssistantMode, DeleteEmptySessionsResult, MessageInfo, SessionDeleteResult, SessionInfo, SessionListOptions, SessionListResult } from '../../src/shared/types';
 
 const SESSION_BUSY_ERROR = '该会话正在处理消息';
 
@@ -24,6 +26,7 @@ function toSessionInfo(session: NonNullable<ReturnType<typeof getSession>>): Ses
     updatedAt: session.updatedAt,
     archived: session.archived,
     compressed: session.compressed,
+    assistantMode: session.assistantMode,
   };
 }
 
@@ -107,6 +110,15 @@ export function registerSessionIpc() {
         resetActiveSession();
       }
     }
+    const session = getSession(id);
+    if (!session) throw new Error('会话不存在');
+    return toSessionInfo(session);
+  });
+
+  ipcMain.handle('sessions:setMode', (_event, id: string, mode: AssistantMode): SessionInfo => {
+    assertSessionNotBusy(id);
+    if (!getSession(id)) throw new Error('会话不存在');
+    setSessionAssistantMode(id, normalizeAssistantMode(mode));
     const session = getSession(id);
     if (!session) throw new Error('会话不存在');
     return toSessionInfo(session);

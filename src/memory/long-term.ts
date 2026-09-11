@@ -138,7 +138,7 @@ export async function upsertMemory(
   return created;
 }
 
-/** 无 key 的自由文本写入（仅 save_memory 工具等场景）；自动提取应优先 upsertMemory */
+/** 无 key 的自由文本写入（仅 save_memory 工具等场景）；自动提取仅对已确认或静默通过的候选调用 upsertMemory */
 export async function saveMemory(
   content: string,
   importance = 0.5,

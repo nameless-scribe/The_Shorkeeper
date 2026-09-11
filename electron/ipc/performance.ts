@@ -5,6 +5,7 @@ import {
   type PerformanceSettings,
 } from '../../src/config/performance';
 import type { PerformanceSettingsInfo } from '../../src/shared/types';
+import { reloadScheduler } from '../scheduler/cron';
 
 function toInfo(settings: PerformanceSettings): PerformanceSettingsInfo {
   return {
@@ -25,6 +26,10 @@ function toInfo(settings: PerformanceSettings): PerformanceSettingsInfo {
     compressThreshold: settings.compressThreshold,
     contextMaxInputTokens: settings.contextMaxInputTokens,
     memorySemanticInContext: settings.memorySemanticInContext,
+    proactivityEnabled: settings.proactivityEnabled,
+    quietHoursStart: settings.quietHoursStart,
+    quietHoursEnd: settings.quietHoursEnd,
+    notificationDedupMinutes: settings.notificationDedupMinutes,
   };
 }
 
@@ -36,7 +41,16 @@ export function registerPerformanceIpc(): void {
   ipcMain.handle(
     'performance:set',
     (_event, patch: Partial<PerformanceSettingsInfo>): PerformanceSettingsInfo => {
-      return toInfo(savePerformanceSettings(patch));
+      const saved = savePerformanceSettings(patch);
+      if (
+        patch.proactivityEnabled != null ||
+        patch.quietHoursStart != null ||
+        patch.quietHoursEnd != null ||
+        patch.notificationDedupMinutes != null
+      ) {
+        reloadScheduler();
+      }
+      return toInfo(saved);
     },
   );
 }

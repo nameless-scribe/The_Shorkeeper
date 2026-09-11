@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { PerformanceSettingsInfo } from '@/shared/types';
 import { SettingsToggle } from './components/SettingsToggle';
 import { SettingsSegmented } from './components/SettingsSegmented';
+import { MemoryCandidatesPanel } from './MemoryCandidatesPanel';
 import {
   SettingsField,
   SettingsIntro,
@@ -125,6 +126,59 @@ export function PerformancePage() {
             </SettingsField>
           )}
         </div>
+      </SettingsPanel>
+
+      <MemoryCandidatesPanel />
+
+      <SettingsPanel
+        title="主动提醒"
+        subtitle="控制后台提醒的可见性与降噪，不影响提醒创建确认"
+        icon="🔕"
+      >
+        <SettingsRow label="允许主动弹出提醒">
+          <SettingsToggle
+            checked={settings.proactivityEnabled}
+            onChange={(proactivityEnabled) => void update({ proactivityEnabled })}
+          />
+        </SettingsRow>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SettingsField label="安静时段开始" hint="留空表示不启用安静时段">
+            <input
+              type="time"
+              value={settings.quietHoursStart}
+              disabled={!settings.proactivityEnabled}
+              onChange={(e) => void update({ quietHoursStart: e.target.value })}
+              className={`${SETTINGS_INPUT_CLASS} disabled:opacity-40`}
+            />
+          </SettingsField>
+          <SettingsField label="安静时段结束" hint="支持跨午夜，例如 22:00 → 07:00">
+            <input
+              type="time"
+              value={settings.quietHoursEnd}
+              disabled={!settings.proactivityEnabled}
+              onChange={(e) => void update({ quietHoursEnd: e.target.value })}
+              className={`${SETTINGS_INPUT_CLASS} disabled:opacity-40`}
+            />
+          </SettingsField>
+        </div>
+
+        <SettingsField label="重复提醒抑制窗口" hint="同一提醒在窗口内重复触发时不再弹窗；设为 0 关闭抑制">
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={1440}
+              value={settings.notificationDedupMinutes}
+              disabled={!settings.proactivityEnabled}
+              onChange={(e) =>
+                void update({ notificationDedupMinutes: Number(e.target.value) || 0 })
+              }
+              className={`${SETTINGS_INPUT_CLASS} max-w-[140px] disabled:opacity-40`}
+            />
+            <span className="text-xs text-keeper-ice/45">分钟</span>
+          </div>
+        </SettingsField>
       </SettingsPanel>
 
       <SettingsPanel title="上下文窗口" icon="📊">

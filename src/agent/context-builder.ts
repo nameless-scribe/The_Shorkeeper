@@ -17,6 +17,9 @@ import { formatSkillsForPrompt } from '../skills/loader';
 import type { Skill } from '../skills/loader';
 import { formatToolGuideForPrompt, getStableSystemPrefix } from './stable-context';
 import type { ToolDefinition } from '../tools/types';
+import { normalizeAssistantMode } from '../assistant/mode';
+import { getAssistantModePrompt } from '../assistant/mode-prompt';
+import type { AssistantMode } from '../shared/types';
 import {
   applyContextSectionBudget,
   DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
@@ -30,6 +33,7 @@ export interface ContextBuildInput {
   sessionId: string;
   availableTools?: ToolDefinition[];
   activeSkills?: Skill[];
+  assistantMode?: AssistantMode;
   signal?: AbortSignal;
   maxTokens?: number;
 }
@@ -64,6 +68,13 @@ export async function buildSystemPromptParts(
     required: true,
     group: 'stable',
   }];
+  sections.push({
+    id: 'assistant_mode',
+    text: getAssistantModePrompt(normalizeAssistantMode(input.assistantMode)),
+    priority: 92,
+    required: true,
+    group: 'stable',
+  });
 
   const skillsBlock = input.activeSkills?.length
     ? formatSkillsForPrompt(input.activeSkills)

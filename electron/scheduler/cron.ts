@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import type { ScheduledTaskInfo } from '../../src/shared/types';
+import type { AssistantActionPolicy, ScheduledTaskInfo } from '../../src/shared/types';
 import {
   disableScheduledTask,
   listEnabledScheduledTasks,
@@ -16,9 +16,26 @@ import {
 import { getActiveSession } from '../../src/session/active';
 import { broadcastAgentEvent, onRunError, onRunFinished, onRunStarted } from '../state/presence';
 import { showReminderPopup } from '../reminder/popup';
+import {
+  evaluateReminderDelivery,
+  getQuietHoursEndAt,
+  isRepeatedNotification,
+  isWithinQuietHours,
+  recordProactivityDecision,
+} from '../../src/assistant/proactivity';
+import { getPerformanceSettings } from '../../src/config/performance';
+
+export interface ReminderExecutionResult {
+  delivered: boolean;
+  deferred: boolean;
+  policy: AssistantActionPolicy;
+  reason: string;
+  fireAt?: number;
+}
 
 const cronJobs = new Map<string, ReturnType<typeof cron.schedule>>();
 const onceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const lastReminderNotificationAt = new Map<string, number>();
 
 function parsePayload(raw: string): Record<string, unknown> {
   try {
@@ -28,9 +45,59 @@ function parsePayload(raw: string): Record<string, unknown> {
   }
 }
 
-async function executeReminder(task: ScheduledTaskInfo, payload: Record<string, unknown>) {
-  const body = await resolveReminderBody(task, payload);
-  await showReminderPopup(task.name, body);
+export async function executeReminder(
+  task: ScheduledTaskInfo,
+  payload: Record<string, unknown>,
+): Promise<ReminderExecutionResult> {
+  const settings = getPerformanceSettings();
+  const now = Date.now();
+  const quietHours = isWithinQuietHours(
+    new Date(now),
+    settings.quietHoursStart,
+    settings.quietHoursEnd,
+  );
+  const decision = evaluateReminderDelivery({
+    // 能进入 scheduled_tasks 的提醒都经过用户创建/确认链路。
+    explicit: true,
+    enabled: settings.proactivityEnabled,
+    quietHours,
+    repeated: isRepeatedNotification(
+      lastReminderNotificationAt.get(task.id),
+      now,
+      settings.notificationDedupMinutes,
+    ),
+    scheduleKind: task.scheduleKind,
+  });
+  recordProactivityDecision({
+    taskId: task.id,
+    kind: 'scheduled_reminder',
+    policy: decision.policy,
+    reason: decision.reason,
+    at: now,
+  });
+
+  if (decision.action === 'notify') {
+    const body = await resolveReminderBody(task, payload);
+    await showReminderPopup(task.name, body);
+    lastReminderNotificationAt.set(task.id, now);
+    return {
+      delivered: true,
+      deferred: false,
+      policy: decision.policy,
+      reason: decision.reason,
+    };
+  }
+
+  const fireAt = decision.action === 'defer'
+    ? getQuietHoursEndAt(new Date(now), settings.quietHoursStart, settings.quietHoursEnd) ?? now + 60_000
+    : undefined;
+  return {
+    delivered: false,
+    deferred: decision.action === 'defer',
+    policy: decision.policy,
+    reason: decision.reason,
+    fireAt,
+  };
 }
 
 export async function executeAgentPrompt(
@@ -83,7 +150,11 @@ async function runTask(task: ScheduledTaskInfo): Promise<void> {
   try {
     let skipped = false;
     if (task.actionType === 'reminder') {
-      await executeReminder(task, payload);
+      const result = await executeReminder(task, payload);
+      if (result.deferred) {
+        scheduleDeferredReminder(task, result.fireAt);
+        return;
+      }
     } else if (task.actionType === 'agent_prompt') {
       const result = await executeAgentPrompt(task, payload);
       skipped = result.skipped;
@@ -116,26 +187,36 @@ function scheduleRecurringTask(task: ScheduledTaskInfo): void {
   cronJobs.set(task.id, job);
 }
 
-function scheduleOnceTask(task: ScheduledTaskInfo): void {
-  if (!task.runAt) {
-    console.warn(`[scheduler] 一次性任务缺少 run_at: ${task.name}`);
-    return;
-  }
-  if (task.lastRunAt) return;
+function scheduleOnceAt(task: ScheduledTaskInfo, fireAt: number): void {
+  const existing = onceTimers.get(task.id);
+  if (existing) clearTimeout(existing);
 
   const trigger = () => {
     onceTimers.delete(task.id);
     void runTask(task);
   };
 
-  const delay = task.runAt - Date.now();
+  const delay = fireAt - Date.now();
   if (delay <= 0) {
     void trigger();
     return;
   }
 
-  const timer = setTimeout(trigger, delay);
-  onceTimers.set(task.id, timer);
+  onceTimers.set(task.id, setTimeout(trigger, delay));
+}
+
+function scheduleDeferredReminder(task: ScheduledTaskInfo, fireAt?: number): void {
+  if (fireAt == null) return;
+  scheduleOnceAt(task, fireAt);
+}
+
+function scheduleOnceTask(task: ScheduledTaskInfo): void {
+  if (!task.runAt) {
+    console.warn(`[scheduler] 一次性任务缺少 run_at: ${task.name}`);
+    return;
+  }
+  if (task.lastRunAt) return;
+  scheduleOnceAt(task, task.runAt);
 }
 
 export function startScheduler(): void {

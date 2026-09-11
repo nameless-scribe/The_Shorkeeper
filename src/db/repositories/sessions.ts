@@ -1,6 +1,8 @@
 import { v4 as uuid } from 'uuid';
 import { getDatabase, type AppDatabase } from '../index';
 import { clearSessionExtractionState } from '../../memory/extraction-state';
+import type { AssistantMode } from '../../shared/types';
+import { DEFAULT_ASSISTANT_MODE, normalizeAssistantMode } from '../../assistant/mode';
 
 export interface Session {
   id: string;
@@ -9,6 +11,7 @@ export interface Session {
   updatedAt: number;
   archived: boolean;
   compressed: boolean;
+  assistantMode: AssistantMode;
 }
 
 export interface ListSessionsOptions {
@@ -31,6 +34,7 @@ function rowToSession(row: {
   updated_at: number;
   archived?: number;
   compressed?: number;
+  assistant_mode?: string | null;
 }): Session {
   return {
     id: String(row.id),
@@ -39,11 +43,13 @@ function rowToSession(row: {
     updatedAt: Number(row.updated_at),
     archived: Number(row.archived ?? 0) === 1,
     compressed: Number(row.compressed ?? 0) === 1,
+    assistantMode: normalizeAssistantMode(row.assistant_mode),
   };
 }
 
 const SESSION_SELECT = `s.id, s.title, s.created_at, s.updated_at,
-  COALESCE(s.archived, 0) AS archived, COALESCE(s.compressed, 0) AS compressed`;
+  COALESCE(s.archived, 0) AS archived, COALESCE(s.compressed, 0) AS compressed,
+  COALESCE(s.assistant_mode, 'focus') AS assistant_mode`;
 
 function buildSessionFilters(options: ListSessionsOptions): {
   where: string;
@@ -84,11 +90,12 @@ export function createSession(db: AppDatabase = getDatabase(), title = '新对�
     updatedAt: now,
     archived: false,
     compressed: false,
+    assistantMode: DEFAULT_ASSISTANT_MODE,
   };
   db.prepare(
-    `INSERT INTO sessions (id, title, created_at, updated_at, archived, compressed)
-     VALUES (?, ?, ?, ?, 0, 0)`,
-  ).run(session.id, session.title, session.createdAt, session.updatedAt);
+    `INSERT INTO sessions (id, title, created_at, updated_at, archived, compressed, assistant_mode)
+     VALUES (?, ?, ?, ?, 0, 0, ?)`,
+  ).run(session.id, session.title, session.createdAt, session.updatedAt, session.assistantMode);
   return session;
 }
 
@@ -96,7 +103,8 @@ export function getSession(id: string, db: AppDatabase = getDatabase()): Session
   const row = db
     .prepare(
       `SELECT id, title, created_at, updated_at,
-              COALESCE(archived, 0) AS archived, COALESCE(compressed, 0) AS compressed
+              COALESCE(archived, 0) AS archived, COALESCE(compressed, 0) AS compressed,
+              COALESCE(assistant_mode, 'focus') AS assistant_mode
        FROM sessions WHERE id = ?`,
     )
     .get(id);
@@ -204,6 +212,18 @@ export function deleteEmptySessions(
 export function setSessionArchived(id: string, archived: boolean, db: AppDatabase = getDatabase()): void {
   db.prepare(`UPDATE sessions SET archived = ?, updated_at = ? WHERE id = ?`).run(
     archived ? 1 : 0,
+    Date.now(),
+    id,
+  );
+}
+
+export function setSessionAssistantMode(
+  id: string,
+  assistantMode: AssistantMode,
+  db: AppDatabase = getDatabase(),
+): void {
+  db.prepare(`UPDATE sessions SET assistant_mode = ?, updated_at = ? WHERE id = ?`).run(
+    normalizeAssistantMode(assistantMode),
     Date.now(),
     id,
   );

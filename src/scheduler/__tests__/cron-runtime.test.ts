@@ -8,6 +8,12 @@ const state = vi.hoisted(() => ({
   onRunStarted: vi.fn(),
   onRunFinished: vi.fn(),
   onRunError: vi.fn(),
+  settings: {
+    proactivityEnabled: true,
+    quietHoursStart: '',
+    quietHoursEnd: '',
+    notificationDedupMinutes: 5,
+  },
 }));
 
 vi.mock('node-cron', () => ({
@@ -25,6 +31,9 @@ vi.mock('../task-events', () => ({ notifyTasksChanged: vi.fn() }));
 vi.mock('../reminder-message', () => ({
   resolveReminderBody: vi.fn(async () => '提醒'),
 }));
+vi.mock('../../config/performance', () => ({
+  getPerformanceSettings: vi.fn(() => ({ ...state.settings })),
+}));
 vi.mock('../../agent/orchestrator', () => ({
   runOrchestrator: (...args: unknown[]) => state.runOrchestrator(...args),
 }));
@@ -41,7 +50,12 @@ vi.mock('../../../electron/reminder/popup', () => ({
   showReminderPopup: vi.fn(async () => undefined),
 }));
 
-import { executeAgentPrompt } from '../../../electron/scheduler/cron';
+import { executeAgentPrompt, executeReminder } from '../../../electron/scheduler/cron';
+import { showReminderPopup } from '../../../electron/reminder/popup';
+import {
+  clearProactivityDecisions,
+  listProactivityDecisions,
+} from '../../assistant/proactivity';
 
 const task: ScheduledTaskInfo = {
   id: 'task-1',
@@ -93,5 +107,95 @@ describe('scheduled Agent runs', () => {
     expect(state.onRunError).toHaveBeenCalledOnce();
     expect(state.onRunFinished).not.toHaveBeenCalled();
     expect(isSessionRunActive('scheduled-session')).toBe(false);
+  });
+});
+
+describe('scheduled reminder visibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    clearProactivityDecisions();
+    state.settings.proactivityEnabled = true;
+    state.settings.quietHoursStart = '';
+    state.settings.quietHoursEnd = '';
+    state.settings.notificationDedupMinutes = 5;
+  });
+
+  it('keeps explicitly created reminders visible through the policy layer', async () => {
+    const result = await executeReminder({
+      ...task,
+      actionType: 'reminder',
+    }, { message: '按计划休息' });
+
+    expect(result).toMatchObject({ delivered: true, deferred: false, reason: 'notified' });
+    expect(showReminderPopup).toHaveBeenCalledWith('定时整理', '提醒');
+    expect(state.onRunError).not.toHaveBeenCalled();
+    expect(listProactivityDecisions()[0]).toMatchObject({
+      taskId: 'task-1',
+      reason: 'notified',
+    });
+  });
+
+  it('suppresses a duplicate reminder inside the configured window', async () => {
+    await executeReminder({
+      ...task,
+      id: 'task-dedup',
+      actionType: 'reminder',
+    }, { message: '按计划休息' });
+    const repeated = await executeReminder({
+      ...task,
+      id: 'task-dedup',
+      actionType: 'reminder',
+    }, { message: '按计划休息' });
+
+    expect(showReminderPopup).toHaveBeenCalledOnce();
+    expect(repeated).toMatchObject({ delivered: false, deferred: false, reason: 'repeated' });
+  });
+
+  it('defers a once reminder in quiet hours instead of consuming it', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 0, 1, 23, 30));
+    state.settings.quietHoursStart = '22:00';
+    state.settings.quietHoursEnd = '07:00';
+
+    const result = await executeReminder({
+      ...task,
+      id: 'task-once-quiet',
+      scheduleKind: 'once',
+      actionType: 'reminder',
+    }, { message: '按计划休息' });
+
+    expect(showReminderPopup).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      delivered: false,
+      deferred: true,
+      reason: 'quiet_hours',
+      fireAt: new Date(2026, 0, 2, 7, 0, 0, 0).getTime(),
+    });
+    expect(state.onRunStarted).not.toHaveBeenCalled();
+    expect(state.onRunError).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('suppresses a recurring reminder in quiet hours without starting a chat run', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 0, 1, 23, 30));
+    state.settings.quietHoursStart = '22:00';
+    state.settings.quietHoursEnd = '07:00';
+
+    const result = await executeReminder({
+      ...task,
+      id: 'task-recurring-quiet',
+      actionType: 'reminder',
+    }, { message: '按计划休息' });
+
+    expect(showReminderPopup).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      delivered: false,
+      deferred: false,
+      reason: 'quiet_hours',
+    });
+    expect(state.onRunError).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });

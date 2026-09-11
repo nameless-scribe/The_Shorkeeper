@@ -153,6 +153,10 @@ export interface PerformanceSettingsInfo {
   compressThreshold: number;
   contextMaxInputTokens: number;
   memorySemanticInContext: boolean;
+  proactivityEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  notificationDedupMinutes: number;
 }
 
 export type FilesystemMode = 'readonly' | 'confirm' | 'full';
@@ -180,6 +184,8 @@ export interface SkillInfo {
   enabled: boolean;
 }
 
+export type AssistantMode = 'focus' | 'organize' | 'review' | 'companion';
+
 export interface SessionInfo {
   id: string;
   title: string;
@@ -187,6 +193,30 @@ export interface SessionInfo {
   updatedAt: number;
   archived?: boolean;
   compressed?: boolean;
+  assistantMode: AssistantMode;
+}
+
+export type MemoryCandidateCategory =
+  | 'stable_preference'
+  | 'relationship'
+  | 'other';
+
+export type MemoryCandidateDecision = 'silent' | 'confirm' | 'deny';
+export type MemoryCandidateStatus = 'pending' | 'confirmed' | 'rejected';
+
+export type AssistantActionPolicy = 'silent' | 'notify' | 'confirm' | 'deny';
+
+export interface MemoryCandidateInfo {
+  id: string;
+  memoryKey: string;
+  content: string;
+  category: MemoryCandidateCategory;
+  confidence: number;
+  reason: string;
+  sourceSessionId: string | null;
+  status: MemoryCandidateStatus;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface SessionListOptions {

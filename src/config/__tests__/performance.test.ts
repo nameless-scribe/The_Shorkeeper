@@ -26,6 +26,10 @@ const baseSettings: PerformanceSettings = {
   compressThreshold: 30,
   contextMaxInputTokens: 24_000,
   memorySemanticInContext: true,
+  proactivityEnabled: true,
+  quietHoursStart: '',
+  quietHoursEnd: '',
+  notificationDedupMinutes: 5,
 };
 
 describe('performance config', () => {

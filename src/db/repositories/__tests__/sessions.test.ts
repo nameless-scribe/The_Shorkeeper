@@ -5,7 +5,9 @@ import path from 'node:path';
 import { closeDatabase, initDatabase } from '../..';
 import {
   createSession,
+  getSession,
   listSessions,
+  setSessionAssistantMode,
 } from '../sessions';
 import { insertMessage } from '../messages';
 
@@ -22,6 +24,16 @@ afterEach(async () => {
 });
 
 describe('listSessions', () => {
+  it('persists the assistant mode per session', () => {
+    const session = createSession();
+    expect(session.assistantMode).toBe('focus');
+
+    setSessionAssistantMode(session.id, 'review');
+
+    expect(getSession(session.id)?.assistantMode).toBe('review');
+    expect(listSessions().sessions[0]?.assistantMode).toBe('review');
+  });
+
   it('paginates results', () => {
     for (let i = 0; i < 5; i += 1) {
       createSession(undefined, `会话 ${i}`);

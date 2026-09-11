@@ -35,4 +35,18 @@ describe('performance runtime normalization', () => {
       compressThreshold: 200,
     });
   });
+
+  it('normalizes proactivity settings and preserves a disabled quiet window', () => {
+    settings.set('PROACTIVITY_ENABLED', 'false');
+    settings.set('PROACTIVITY_QUIET_START', '9:05');
+    settings.set('PROACTIVITY_QUIET_END', 'not-a-time');
+    settings.set('PROACTIVITY_DEDUP_MINUTES', '9999');
+
+    expect(getPerformanceSettings()).toMatchObject({
+      proactivityEnabled: false,
+      quietHoursStart: '09:05',
+      quietHoursEnd: '',
+      notificationDedupMinutes: 1440,
+    });
+  });
 });

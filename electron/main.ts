@@ -15,6 +15,7 @@ import { registerProfileIpc } from './ipc/profile';
 import { registerPersonaIpc } from './ipc/persona';
 import { registerAppearanceIpc } from './ipc/appearance';
 import { registerWorldbookIpc } from './ipc/worldbook';
+import { registerMemoryIpc } from './ipc/memory';
 import { registerStatsIpc } from './ipc/stats';
 import { registerPresenceIpc } from './ipc/presence';
 import { registerWindowIpc } from './ipc/window';
@@ -170,6 +171,7 @@ app.whenReady().then(async () => {
     registerPersonaIpc();
     registerAppearanceIpc();
     registerWorldbookIpc();
+    registerMemoryIpc();
     registerStatsIpc();
     registerTasksIpc();
     registerUserTasksIpc();

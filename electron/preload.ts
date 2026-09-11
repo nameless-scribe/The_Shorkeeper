@@ -12,6 +12,9 @@ import type {
   SessionDeleteResult,
   DeleteEmptySessionsResult,
   SessionInfo,
+  AssistantMode,
+  MemoryCandidateInfo,
+  MemoryCandidateStatus,
   SessionListOptions,
   SessionListResult,
   TokenUsageSummaryInfo,
@@ -95,6 +98,8 @@ const shorekeeperApi = {
     current: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:current'),
     create: (): Promise<SessionInfo> => ipcRenderer.invoke('sessions:create'),
     switch: (id: string): Promise<SessionInfo> => ipcRenderer.invoke('sessions:switch', id),
+    setMode: (id: string, mode: AssistantMode): Promise<SessionInfo> =>
+      ipcRenderer.invoke('sessions:setMode', id, mode),
     delete: (id: string): Promise<SessionDeleteResult> =>
       ipcRenderer.invoke('sessions:delete', id),
     archive: (id: string, archived: boolean): Promise<SessionInfo> =>
@@ -162,6 +167,14 @@ const shorekeeperApi = {
       },
     ) => ipcRenderer.invoke('worldbook:update', id, patch),
     delete: (id: string) => ipcRenderer.invoke('worldbook:delete', id),
+  },
+  memoryCandidates: {
+    list: (status?: MemoryCandidateStatus, limit?: number): Promise<MemoryCandidateInfo[]> =>
+      ipcRenderer.invoke('memory:candidates:list', status, limit),
+    confirm: (id: string): Promise<MemoryCandidateInfo> =>
+      ipcRenderer.invoke('memory:candidates:confirm', id),
+    reject: (id: string): Promise<MemoryCandidateInfo> =>
+      ipcRenderer.invoke('memory:candidates:reject', id),
   },
   documents: {
     list: (): Promise<DocumentInfo[]> => ipcRenderer.invoke('documents:list'),
