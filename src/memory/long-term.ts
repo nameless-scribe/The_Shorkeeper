@@ -1,13 +1,18 @@
 import {
   createMemory,
+  deleteMemoryById,
+  getMemoryById,
   getMemoryByKey,
   getMemoryWithEmbeddingByKey,
   listMemories,
   listMemoryEmbeddings,
   searchMemoryEntries,
   updateMemoryByKey,
+  updateMemoryContentById,
   type MemoryEntry,
 } from '../db/repositories/long-term-memory';
+import { rejectMemoryFact } from '../db/repositories/memory-candidates';
+import { classifyMemoryKey } from './candidate-policy';
 import { embedText } from '../rag/embedding';
 import { serializeEmbedding } from '../rag/vector';
 import { deserializeEmbedding, topKBySimilarity } from '../rag/vector';
@@ -15,6 +20,9 @@ import { isDuplicateMemory, isSemanticallyDuplicateMemory } from './dedupe';
 import { queueMemoryReembed } from './reembed-queue';
 
 export { getMemoryByKey, listMemories, type MemoryEntry };
+
+export const MANAGED_MEMORY_MAX_CONTENT_LENGTH = 2000;
+export const MANAGED_MEMORY_LIST_LIMIT = 200;
 
 export function searchMemories(query: string, limit = 5): MemoryEntry[] {
   return searchMemoryEntries(query, limit);
@@ -201,4 +209,54 @@ export function formatMemoriesForExtraction(memories: MemoryEntry[]): string {
 
 export function listMemoryContents(): string[] {
   return listMemories(200).map((m) => m.content);
+}
+
+export function listManagedMemories(limit = MANAGED_MEMORY_LIST_LIMIT): MemoryEntry[] {
+  return listMemories(Math.max(1, Math.min(500, limit)));
+}
+
+function rejectManagedMemoryFact(
+  memoryKey: string | null,
+  content: string,
+  reason: string,
+): void {
+  if (!memoryKey) return;
+  rejectMemoryFact({
+    memoryKey,
+    content,
+    category: classifyMemoryKey(memoryKey) ?? 'other',
+    confidence: 1,
+    reason,
+  });
+}
+
+export async function updateManagedMemory(id: string, content: string): Promise<MemoryEntry> {
+  const trimmed = content.trim();
+  if (!trimmed) throw new Error('记忆内容不能为空');
+  if (trimmed.length > MANAGED_MEMORY_MAX_CONTENT_LENGTH) {
+    throw new Error(`记忆内容不能超过 ${MANAGED_MEMORY_MAX_CONTENT_LENGTH} 字`);
+  }
+
+  const existing = getMemoryById(id);
+  if (!existing) throw new Error('长期记忆不存在');
+  if (existing.content === trimmed) return existing;
+
+  const updated = updateMemoryContentById(id, trimmed, null);
+  if (!updated) throw new Error('长期记忆在更新后消失');
+
+  rejectManagedMemoryFact(existing.memoryKey, existing.content, '用户从设置中修改');
+
+  if (updated.memoryKey) {
+    queueMemoryReembed(updated.memoryKey, trimmed);
+  }
+
+  return updated;
+}
+
+export function deleteManagedMemory(id: string): MemoryEntry {
+  const deleted = deleteMemoryById(id);
+  if (!deleted) throw new Error('长期记忆不存在');
+
+  rejectManagedMemoryFact(deleted.memoryKey, deleted.content, '用户从设置中删除');
+  return deleted;
 }

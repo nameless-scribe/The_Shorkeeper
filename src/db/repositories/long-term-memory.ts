@@ -215,3 +215,44 @@ export function updateMemoryEmbeddingByKey(
     memoryKey,
   );
 }
+
+export function getMemoryById(
+  id: string,
+  db: AppDatabase = getDatabase(),
+): MemoryEntry | undefined {
+  const row = db
+    .prepare(`SELECT ${MEMORY_SELECT} FROM long_term_memory WHERE id = ?`)
+    .get(id) as unknown as MemoryRow | undefined;
+  return row ? rowToEntry(row) : undefined;
+}
+
+export function updateMemoryContentById(
+  id: string,
+  content: string,
+  embedding: Uint8Array | null,
+  db: AppDatabase = getDatabase(),
+): MemoryEntry | undefined {
+  const existing = getMemoryById(id, db);
+  if (!existing) return undefined;
+
+  const updated: MemoryEntry = {
+    ...existing,
+    content,
+  };
+  db.prepare(
+    `UPDATE long_term_memory
+     SET content = ?, embedding = ?
+     WHERE id = ?`,
+  ).run(updated.content, embedding, id);
+  return updated;
+}
+
+export function deleteMemoryById(
+  id: string,
+  db: AppDatabase = getDatabase(),
+): MemoryEntry | undefined {
+  const existing = getMemoryById(id, db);
+  if (!existing) return undefined;
+  db.prepare('DELETE FROM long_term_memory WHERE id = ?').run(id);
+  return existing;
+}

@@ -3,6 +3,7 @@ import type { PerformanceSettingsInfo } from '@/shared/types';
 import { SettingsToggle } from './components/SettingsToggle';
 import { SettingsSegmented } from './components/SettingsSegmented';
 import { MemoryCandidatesPanel } from './MemoryCandidatesPanel';
+import { LongTermMemoryPanel } from './LongTermMemoryPanel';
 import {
   SettingsField,
   SettingsIntro,
@@ -56,7 +57,7 @@ export function PerformancePage() {
   return (
     <SettingsPageShell>
       <SettingsIntro>
-        控制 RAG 注入、记忆自动提取与送入模型的历史消息上限，降低 Token 消耗。也可在{' '}
+        控制 RAG 注入、已保存长期记忆、自动提取与送入模型的历史消息上限。也可在{' '}
         <code className="rounded bg-keeper-navyDeep/60 px-1 py-0.5 text-keeper-cyan/90">.env</code>{' '}
         设置默认值。
       </SettingsIntro>
@@ -127,6 +128,8 @@ export function PerformancePage() {
           )}
         </div>
       </SettingsPanel>
+
+      <LongTermMemoryPanel />
 
       <MemoryCandidatesPanel />
 

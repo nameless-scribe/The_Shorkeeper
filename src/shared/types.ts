@@ -219,6 +219,15 @@ export interface MemoryCandidateInfo {
   updatedAt: number;
 }
 
+export interface MemoryInfo {
+  id: string;
+  memoryKey: string | null;
+  content: string;
+  importance: number;
+  sourceSessionId: string | null;
+  createdAt: number;
+}
+
 export interface SessionListOptions {
   includeArchived?: boolean;
   query?: string;

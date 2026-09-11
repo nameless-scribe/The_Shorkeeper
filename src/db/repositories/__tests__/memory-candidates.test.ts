@@ -6,7 +6,9 @@ import { closeDatabase, initDatabase, type AppDatabase } from '../../index';
 import {
   createMemoryCandidate,
   getMemoryCandidate,
+  hasRejectedMemoryFact,
   listMemoryCandidates,
+  rejectMemoryFact,
   setMemoryCandidateStatus,
 } from '../memory-candidates';
 
@@ -92,5 +94,25 @@ describe('memory candidate repository', () => {
       status: 'pending',
     });
     expect(listMemoryCandidates('pending', 10, db)).toHaveLength(1);
+  });
+
+  it('records a deleted memory fact so it is not auto-restored', () => {
+    const rejected = rejectMemoryFact({
+      memoryKey: 'user.preference.drink',
+      content: '用户喜欢拿铁',
+      category: 'stable_preference',
+      confidence: 1,
+      reason: '用户从设置中删除',
+    }, db);
+
+    expect(rejected.status).toBe('rejected');
+    expect(hasRejectedMemoryFact('user.preference.drink', '用户喜欢拿铁', db)).toBe(true);
+    expect(createMemoryCandidate({
+      memoryKey: 'user.preference.drink',
+      content: '用户喜欢拿铁',
+      category: 'stable_preference',
+      confidence: 0.95,
+      reason: '再次提取',
+    }, db)).toBeNull();
   });
 });

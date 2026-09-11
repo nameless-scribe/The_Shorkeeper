@@ -17,7 +17,7 @@ import {
   listMemories,
   upsertMemory,
 } from './long-term';
-import { createMemoryCandidate } from '../db/repositories/memory-candidates';
+import { createMemoryCandidate, hasRejectedMemoryFact } from '../db/repositories/memory-candidates';
 import { allowsAutoMemoryExtraction } from '../assistant/mode';
 import type { AssistantMode } from '../shared/types';
 import {
@@ -174,22 +174,23 @@ export async function extractMemoriesFromSession(
     const evaluation = evaluateMemoryCandidate(fact);
     if (evaluation.decision === 'deny') continue;
 
-    if (evaluation.decision === 'confirm') {
-      createMemoryCandidate({
-        memoryKey: evaluation.key,
-        content: evaluation.content,
-        category: evaluation.category,
-        confidence: evaluation.confidence,
-        reason: evaluation.reason,
-        sourceSessionId: sessionId,
+    if (evaluation.decision === 'silent') {
+      if (hasRejectedMemoryFact(evaluation.key, evaluation.content)) continue;
+      await upsertMemory(evaluation.key, evaluation.content, evaluation.confidence, sessionId, {
+        skipEmbedding: true,
       });
+      saved += 1;
       continue;
     }
 
-    await upsertMemory(evaluation.key, evaluation.content, evaluation.confidence, sessionId, {
-      skipEmbedding: true,
+    createMemoryCandidate({
+      memoryKey: evaluation.key,
+      content: evaluation.content,
+      category: evaluation.category,
+      confidence: evaluation.confidence,
+      reason: evaluation.reason,
+      sourceSessionId: sessionId,
     });
-    saved += 1;
   }
 
   markExtractedUpToMessageId(sessionId, latestUserMessage.id);

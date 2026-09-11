@@ -149,7 +149,7 @@ export const SETTINGS_TAB_TITLES: Record<SettingsTab, { title: string; subtitle:
   plugins: { title: '插件', subtitle: '扩展功能与第三方集成', icon: '🧩' },
   persona: { title: '人设', subtitle: '核心 System Prompt，每轮对话注入', icon: '🎭' },
   profile: { title: '用户信息', subtitle: '长期画像与偏好字段', icon: '👤' },
-  memory: { title: '记忆', subtitle: 'RAG 注入、自动提取与上下文压缩', icon: '🧠' },
+  memory: { title: '记忆', subtitle: '长期记忆、自动提取与 RAG', icon: '🧠' },
   worldbook: { title: 'Worldbook', subtitle: '触发词与背景设定', icon: '📖' },
   appearance: { title: '外观', subtitle: '主题预设与背景、头像', icon: '🎨' },
   voice: { title: '语音', subtitle: 'CosyVoice 朗读与复刻音色', icon: '🔊' },

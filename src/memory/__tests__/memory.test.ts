@@ -5,11 +5,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { closeDatabase, initDatabase, type AppDatabase } from '../../db';
 import {
   createMemory,
+  getMemoryByKey,
   getMemoryWithEmbeddingByKey,
 } from '../../db/repositories/long-term-memory';
+import { hasRejectedMemoryFact } from '../../db/repositories/memory-candidates';
 import { seedShorekeeper } from '../../db/seed';
 import { isDuplicateMemory, isSemanticallyDuplicateMemory } from '../dedupe';
-import { saveMemory, searchMemories, upsertMemory } from '../long-term';
+import {
+  saveMemory,
+  searchMemories,
+  upsertMemory,
+  deleteManagedMemory,
+  updateManagedMemory,
+} from '../long-term';
 import { serializeEmbedding } from '../../rag/vector';
 import { getProfileSummary, setProfileValue } from '../user-profile';
 import {
@@ -59,6 +67,33 @@ describe('long term memory', () => {
     expect(hits).toHaveLength(1);
     expect(hits[0].memoryKey).toBe('user.nickname');
     expect(hits[0].content).toBe('用户名叫汐汐');
+  });
+
+  it('updates managed memory content', async () => {
+    const entry = await upsertMemory('user.preference.drink', '用户喜欢拿铁', 0.95, 'session-1', {
+      skipEmbedding: true,
+    });
+    const updated = await updateManagedMemory(entry.id, '用户喜欢美式');
+
+    expect(updated.content).toBe('用户喜欢美式');
+    expect(getMemoryByKey('user.preference.drink')?.content).toBe('用户喜欢美式');
+    expect(hasRejectedMemoryFact('user.preference.drink', '用户喜欢拿铁')).toBe(true);
+    expect(hasRejectedMemoryFact('user.preference.drink', '用户喜欢美式')).toBe(false);
+  });
+
+  it('deletes a managed memory and does not allow auto-restore of the same fact', async () => {
+    const entry = await upsertMemory('user.preference.drink', '用户喜欢拿铁', 0.95, 'session-1', {
+      skipEmbedding: true,
+    });
+    deleteManagedMemory(entry.id);
+
+    expect(getMemoryByKey('user.preference.drink')).toBeUndefined();
+    expect(hasRejectedMemoryFact('user.preference.drink', '用户喜欢拿铁')).toBe(true);
+
+    const restored = await upsertMemory('user.preference.drink', '用户喜欢拿铁', 0.95, 'session-1', {
+      skipEmbedding: true,
+    });
+    expect(restored.content).toBe('用户喜欢拿铁');
   });
 
   it('clears embedding when content changes with skipEmbedding', async () => {

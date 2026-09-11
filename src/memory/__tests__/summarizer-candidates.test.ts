@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   reply: '[]',
   upsertMemory: vi.fn(async () => undefined),
   createMemoryCandidate: vi.fn(() => undefined),
+  hasRejectedMemoryFact: vi.fn(() => false),
   markExtractedUpToMessageId: vi.fn(),
 }));
 
@@ -41,6 +42,7 @@ vi.mock('../long-term', () => ({
 }));
 vi.mock('../../db/repositories/memory-candidates', () => ({
   createMemoryCandidate: state.createMemoryCandidate,
+  hasRejectedMemoryFact: state.hasRejectedMemoryFact,
 }));
 
 import { completeChat } from '../../models/complete-chat';
@@ -51,6 +53,8 @@ describe('summarizer candidate boundary', () => {
     state.reply = '[]';
     state.upsertMemory.mockClear();
     state.createMemoryCandidate.mockClear();
+    state.hasRejectedMemoryFact.mockClear();
+    state.hasRejectedMemoryFact.mockReturnValue(false);
     state.markExtractedUpToMessageId.mockClear();
     vi.mocked(completeChat).mockClear();
   });
@@ -108,5 +112,21 @@ describe('summarizer candidate boundary', () => {
     expect(state.upsertMemory).not.toHaveBeenCalled();
     expect(state.createMemoryCandidate).not.toHaveBeenCalled();
     expect(state.markExtractedUpToMessageId).not.toHaveBeenCalled();
+  });
+
+  it('does not silently restore a memory the user deleted', async () => {
+    state.hasRejectedMemoryFact.mockReturnValue(true);
+    state.reply = JSON.stringify([
+      {
+        key: 'user.preference.drink',
+        content: '用户喜欢拿铁',
+        confidence: 0.95,
+        reason: '用户明确表达',
+      },
+    ]);
+
+    await expect(extractMemoriesFromSession('session-1')).resolves.toBe(0);
+    expect(state.upsertMemory).not.toHaveBeenCalled();
+    expect(state.createMemoryCandidate).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,7 @@ import type {
   AssistantMode,
   MemoryCandidateInfo,
   MemoryCandidateStatus,
+  MemoryInfo,
   SessionListOptions,
   SessionListResult,
   TokenUsageSummaryInfo,
@@ -175,6 +176,12 @@ const shorekeeperApi = {
       ipcRenderer.invoke('memory:candidates:confirm', id),
     reject: (id: string): Promise<MemoryCandidateInfo> =>
       ipcRenderer.invoke('memory:candidates:reject', id),
+  },
+  memories: {
+    list: (limit?: number): Promise<MemoryInfo[]> => ipcRenderer.invoke('memory:list', limit),
+    update: (id: string, content: string): Promise<MemoryInfo> =>
+      ipcRenderer.invoke('memory:update', id, content),
+    delete: (id: string): Promise<MemoryInfo> => ipcRenderer.invoke('memory:delete', id),
   },
   documents: {
     list: (): Promise<DocumentInfo[]> => ipcRenderer.invoke('documents:list'),

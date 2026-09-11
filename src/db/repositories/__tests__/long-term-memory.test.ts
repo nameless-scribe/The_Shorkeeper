@@ -5,12 +5,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { closeDatabase, initDatabase, type AppDatabase } from '../../index';
 import {
   createMemory,
+  getMemoryById,
   getMemoryByKey,
   getMemoryWithEmbeddingByKey,
   listMemories,
   listMemoryEmbeddings,
   searchMemoryEntries,
   updateMemoryByKey,
+  updateMemoryContentById,
+  deleteMemoryById,
   updateMemoryEmbeddingByKey,
 } from '../long-term-memory';
 
@@ -77,6 +80,14 @@ describe('long-term memory repository', () => {
       importance: 0.5,
       embedding: null,
     }, db)).toBeUndefined();
+
+    const revised = updateMemoryContentById(first.id, '用户喜欢冰拿铁', null, db);
+    expect(revised?.content).toBe('用户喜欢冰拿铁');
+
+    const removed = deleteMemoryById(first.id, db);
+    expect(removed?.id).toBe(first.id);
+    expect(getMemoryById(first.id, db)).toBeUndefined();
+    expect(getMemoryByKey('user.preference.drink', db)).toBeUndefined();
   });
 
   it('normalizes and updates embedding blobs', () => {

@@ -182,3 +182,77 @@ export function setMemoryCandidateStatus(
   );
   return getMemoryCandidate(id, db);
 }
+
+export function hasRejectedMemoryFact(
+  memoryKey: string,
+  content: string,
+  db: AppDatabase = getDatabase(),
+): boolean {
+  const row = selectCandidateRow(
+    db,
+    `SELECT id, memory_key, content, category, confidence, reason,
+            source_session_id, status, created_at, updated_at
+     FROM memory_candidates
+     WHERE memory_key = ? AND content = ? AND status = 'rejected'
+     LIMIT 1`,
+    memoryKey,
+    content,
+  );
+  return Boolean(row);
+}
+
+/** 用户删除长期记忆后，阻止自动提取再恢复同一条事实。 */
+export function rejectMemoryFact(
+  input: CreateMemoryCandidateInput,
+  db: AppDatabase = getDatabase(),
+): MemoryCandidateInfo {
+  const existing = selectCandidateRow(
+    db,
+    `SELECT id, memory_key, content, category, confidence, reason,
+            source_session_id, status, created_at, updated_at
+     FROM memory_candidates
+     WHERE memory_key = ? AND content = ?
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    input.memoryKey,
+    input.content,
+  );
+
+  if (existing) {
+    const current = rowToCandidate(existing);
+    if (current.status === 'rejected') return current;
+    const rejected = setMemoryCandidateStatus(current.id, 'rejected', db);
+    if (!rejected) throw new Error('记忆候选在拒绝后消失');
+    return rejected;
+  }
+
+  const now = Date.now();
+  const candidate: MemoryCandidateInfo = {
+    id: uuidv4(),
+    memoryKey: input.memoryKey,
+    content: input.content,
+    category: input.category,
+    confidence: Math.max(0, Math.min(1, input.confidence)),
+    reason: input.reason,
+    sourceSessionId: input.sourceSessionId ?? null,
+    status: 'rejected',
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.prepare(
+    `INSERT INTO memory_candidates
+       (id, memory_key, content, category, confidence, reason, source_session_id, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'rejected', ?, ?)`,
+  ).run(
+    candidate.id,
+    candidate.memoryKey,
+    candidate.content,
+    candidate.category,
+    candidate.confidence,
+    candidate.reason,
+    candidate.sourceSessionId,
+    candidate.createdAt,
+    candidate.updatedAt,
+  );
+  return candidate;
+}
