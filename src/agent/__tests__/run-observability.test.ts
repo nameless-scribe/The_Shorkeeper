@@ -86,6 +86,33 @@ describe('run observability', () => {
     ]);
   });
 
+  it('keeps the stable tool error category in activity diagnostics', () => {
+    const telemetry = createRunTelemetry({
+      runId: 'run-tool-category',
+      sessionId: 'session-tool-category',
+      now: () => 100,
+    });
+
+    telemetry.recordToolStart('call-1', 'read_file');
+    telemetry.recordToolEnd(
+      'call-1',
+      false,
+      '路径越界',
+      'path_out_of_scope',
+    );
+
+    expect(telemetry.finish('finished', 'finished').activities).toEqual([
+      {
+        stage: 'tool',
+        status: 'failed',
+        name: 'read_file',
+        durationMs: 0,
+        errorCategory: 'internal',
+        toolErrorCategory: 'path_out_of_scope',
+      },
+    ]);
+  });
+
   it('logs only an error category', () => {
     const logger = vi.fn();
     const telemetry = createRunTelemetry({

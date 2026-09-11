@@ -1,6 +1,7 @@
 import type { RunTerminalReason } from './run-state';
 import type { RunPhase } from './run-lifecycle';
 import { classifyRunError, type RunErrorCategory } from './run-errors';
+import type { ToolErrorCategory } from '../tools/types';
 
 export { classifyRunError, type RunErrorCategory } from './run-errors';
 
@@ -13,6 +14,7 @@ export interface RunActivityEvent {
   name?: string;
   durationMs?: number;
   errorCategory?: RunErrorCategory;
+  toolErrorCategory?: ToolErrorCategory;
   reason?: string;
   attempts?: number;
 }
@@ -170,7 +172,12 @@ export class RunTelemetry {
     this.recordActivityStart(callId, 'tool', name, startedAt);
   }
 
-  recordToolEnd(callId: string, success: boolean, errorMessage?: string): void {
+  recordToolEnd(
+    callId: string,
+    success: boolean,
+    errorMessage?: string,
+    toolErrorCategory?: ToolErrorCategory,
+  ): void {
     if (this.ended) return;
     const active = this.activeTools.get(callId);
     if (active) {
@@ -182,6 +189,7 @@ export class RunTelemetry {
       callId,
       success ? 'succeeded' : errorMessage === '已取消' ? 'cancelled' : 'failed',
       errorMessage,
+      toolErrorCategory,
     );
   }
 
@@ -296,6 +304,7 @@ export class RunTelemetry {
     activityId: string,
     status: RunActivityStatus,
     errorMessage?: string,
+    toolErrorCategory?: ToolErrorCategory,
   ): void {
     if (this.ended) return;
     const active = this.activeActivities.get(activityId);
@@ -310,6 +319,7 @@ export class RunTelemetry {
       ...(status === 'failed' && errorMessage
         ? { errorCategory: classifyRunError(errorMessage) }
         : {}),
+      ...(status === 'failed' && toolErrorCategory ? { toolErrorCategory } : {}),
     });
   }
 }

@@ -13,8 +13,20 @@ export interface ToolResult {
   success: boolean;
   output: string;
   error?: string;
+  errorCategory?: ToolErrorCategory;
+  metadata?: Record<string, unknown>;
   artifacts?: WorkspaceAttachment[];
 }
+
+export type ToolErrorCategory =
+  | 'invalid_arguments'
+  | 'permission_denied'
+  | 'path_out_of_scope'
+  | 'network_failure'
+  | 'external_service_failure'
+  | 'timeout'
+  | 'cancelled'
+  | 'internal_error';
 
 export interface ToolContext {
   sessionId: string;

@@ -32,6 +32,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:s2": "vitest run src/agent/__tests__/loop.test.ts src/agent/__tests__/orchestrator-runtime.test.ts src/agent/__tests__/run-lifecycle.test.ts src/agent/__tests__/run-errors.test.ts src/agent/__tests__/run-observability.test.ts src/agent/__tests__/session-run-lock.test.ts src/agent/__tests__/session-background.test.ts src/agent/__tests__/context-budget.test.ts src/agent/__tests__/context-builder-rag-modes.test.ts src/memory/__tests__/session-context.test.ts src/scheduler/__tests__/cron-runtime.test.ts src/voice/__tests__/call-session.test.ts src/config/__tests__/performance-runtime.test.ts src/models/__tests__/stream-resource.test.ts src/rag/__tests__/request-timeout.test.ts src/voice/__tests__/bailian-tts-stream.test.ts",
+    "test:s3": "vitest run src/tools/__tests__/result.test.ts src/agent/__tests__/loop.test.ts src/agent/__tests__/run-observability.test.ts src/scheduler/__tests__/reminder-message.test.ts",
     "test:electron": "pnpm build && electron scripts/electron-runtime-smoke.cjs",
     "test:packaged-native": "node scripts/packaged-native-sqlite-smoke.cjs",
     "test:nsis-lifecycle": "node scripts/nsis-install-lifecycle-smoke.cjs"

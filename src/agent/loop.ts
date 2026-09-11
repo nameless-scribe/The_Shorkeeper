@@ -12,6 +12,7 @@ import { loadModelConfig } from '../models/config';
 import { streamChat } from '../models/stream-chat';
 import type { ToolRegistry } from '../tools/registry';
 import type { ToolContext, ToolResult } from '../tools/types';
+import { createToolError, normalizeToolResult } from '../tools/result';
 import { awaitWithAbort, createLinkedTimeoutSignal } from './abort';
 
 export const DEFAULT_MODEL_ROUND_TIMEOUT_MS = 120_000;
@@ -60,31 +61,22 @@ async function executeToolCall(
 ): Promise<ToolResult> {
   const tool = registry.get(toolCall.function.name);
   if (!tool) {
-    return {
-      success: false,
-      output: '',
-      error: `未知工具: ${toolCall.function.name}`,
-    };
+    return createToolError(`未知工具: ${toolCall.function.name}`, 'internal_error');
   }
 
   const parsed = parseToolArgs(toolCall.function.arguments);
   if (parsed.error) {
-    return {
-      success: false,
-      output: '',
-      error: parsed.error,
-    };
+    return createToolError(parsed.error, 'invalid_arguments');
   }
 
   const args = parsed.args;
   const decision = checkPermission(tool, policy, args);
 
   if (decision === 'deny') {
-    return {
-      success: false,
-      output: '',
-      error: `权限被拒绝: ${toolCall.function.name}`,
-    };
+    return createToolError(
+      `权限被拒绝: ${toolCall.function.name}`,
+      'permission_denied',
+    );
   }
 
   if (decision === 'confirm') {
@@ -110,15 +102,14 @@ async function executeToolCall(
       );
     }
     if (!approved) {
-      return {
-        success: false,
-        output: '',
-        error: ctx.signal.aborted ? '已取消' : '用户拒绝了此操作',
-      };
+      return createToolError(
+        ctx.signal.aborted ? '已取消' : '用户拒绝了此操作',
+        ctx.signal.aborted ? 'cancelled' : 'permission_denied',
+      );
     }
   }
 
-  return tool.execute(args, ctx);
+  return normalizeToolResult(await tool.execute(args, ctx));
 }
 
 export async function* runAgentLoop(
@@ -255,7 +246,7 @@ export async function* runAgentLoop(
 
       let result: ToolResult;
       if (parsedArgs.error) {
-        result = { success: false, output: '', error: parsedArgs.error };
+        result = createToolError(parsedArgs.error, 'invalid_arguments');
       } else {
         const toolTimeout = createLinkedTimeoutSignal(signal, toolTimeoutMs);
         try {
@@ -273,17 +264,20 @@ export async function* runAgentLoop(
             toolTimeout.signal,
           );
         } catch (error) {
-          result = {
-            success: false,
-            output: '',
-            error: toolTimeout.didTimeout()
+          result = createToolError(
+            toolTimeout.didTimeout()
               ? '工具执行超时'
               : signal?.aborted
                 ? '已取消'
                 : error instanceof Error
                   ? error.message
                   : String(error),
-          };
+            toolTimeout.didTimeout()
+              ? 'timeout'
+              : signal?.aborted
+                ? 'cancelled'
+                : undefined,
+          );
         } finally {
           toolTimeout.dispose();
         }

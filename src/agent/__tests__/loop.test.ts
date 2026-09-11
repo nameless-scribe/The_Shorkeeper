@@ -135,7 +135,12 @@ describe('runAgentLoop lifecycle boundaries', () => {
       type: 'tool_call_end',
       runId: 'run-2',
       callId: 'call-1',
-      result: { success: false, output: '', error: '工具内部失败' },
+      result: {
+        success: false,
+        output: '',
+        error: '工具内部失败',
+        errorCategory: 'internal_error',
+      },
     });
     expect(events).toContainEqual({ type: 'text_delta', runId: 'run-2', delta: '已处理失败' });
     expect(phases).toContain('waiting_tool');
@@ -215,7 +220,12 @@ describe('runAgentLoop lifecycle boundaries', () => {
       type: 'tool_call_end',
       runId: 'run-timeout-tool',
       callId: 'call-timeout',
-      result: { success: false, output: '', error: '工具执行超时' },
+      result: {
+        success: false,
+        output: '',
+        error: '工具执行超时',
+        errorCategory: 'timeout',
+      },
     });
     expect(events).toContainEqual({ type: 'text_delta', runId: 'run-timeout-tool', delta: '超时已恢复' });
   });

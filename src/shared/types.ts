@@ -1,7 +1,7 @@
 import type { OpenAIToolCall } from '../agent/types';
 
 export type { AgUiEvent, AgentPresenceState, AgentPlanItem, AgentPlanItemStatus, CallState } from '../agent/types';
-export type { ToolResult } from '../tools/types';
+export type { ToolErrorCategory, ToolResult } from '../tools/types';
 
 export type ModelEvent =
   | { type: 'text_delta'; delta: string }

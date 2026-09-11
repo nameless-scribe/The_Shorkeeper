@@ -4,6 +4,7 @@ import {
   listScheduledTasksTool,
 } from '../tools/schedule/schedule-tools';
 import { listScheduledTasks } from '../db/scheduled-tasks';
+import { normalizeToolResult } from '../tools/result';
 import type { ScheduleReminderIntent } from './reminder-intent';
 
 export async function executeScheduleReminderIntent(
@@ -11,11 +12,11 @@ export async function executeScheduleReminderIntent(
   signal?: AbortSignal,
 ): Promise<string> {
   if (intent.action === 'list') {
-    const result = await listScheduledTasksTool.execute({}, {
+    const result = normalizeToolResult(await listScheduledTasksTool.execute({}, {
       sessionId: '',
       workspaceRoot: '',
       signal: signal ?? new AbortController().signal,
-    });
+    }));
     return result.success ? result.output : `查询失败：${result.error ?? '未知错误'}`;
   }
 
@@ -31,10 +32,10 @@ export async function executeScheduleReminderIntent(
       return `未找到名称或内容包含「${intent.nameHint}」的定时任务。可先让我列出当前任务。`;
     }
 
-    const result = await deleteScheduledTaskTool.execute(
+    const result = normalizeToolResult(await deleteScheduledTaskTool.execute(
       { id: target.id },
       { sessionId: '', workspaceRoot: '', signal: signal ?? new AbortController().signal },
-    );
+    ));
     return result.success ? result.output : `删除失败：${result.error ?? '未知错误'}`;
   }
 
@@ -56,11 +57,11 @@ export async function executeScheduleReminderIntent(
     payload.run_at = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
   }
 
-  const result = await createScheduledTaskTool.execute(payload, {
+  const result = normalizeToolResult(await createScheduledTaskTool.execute(payload, {
     sessionId: '',
     workspaceRoot: '',
     signal: signal ?? new AbortController().signal,
-  });
+  }));
 
   if (!result.success) {
     return `创建定时提醒失败：${result.error ?? '未知错误'}`;

@@ -241,7 +241,12 @@ export async function* runOrchestrator(
       if (event.type === 'tool_call_start') {
         telemetry.recordToolStart(event.callId, event.name);
       } else if (event.type === 'tool_call_end') {
-        telemetry.recordToolEnd(event.callId, event.result.success, event.result.error);
+        telemetry.recordToolEnd(
+          event.callId,
+          event.result.success,
+          event.result.error,
+          event.result.errorCategory,
+        );
       } else if (event.type === 'usage') {
         telemetry.recordUsage(event.promptTokens, event.completionTokens, event.cachedTokens);
       }

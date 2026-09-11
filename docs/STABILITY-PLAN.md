@@ -243,7 +243,7 @@ S2 分为 **5 个实施阶段 + 1 个总验收阶段**。每阶段都先补行�
 
 **固定场景**：普通对话、连续工具调用、工具失败、模型超时、用户取消、长会话压缩、定时任务触发、语音中断、应用退出恢复。
 
-**阶段结果（2026-09-11）**：`pnpm test:s2` 固定验收入口覆盖 16 个文件、69 项 S2 专项测试并全部通过；完整 Vitest 回归 94 个文件、375 项测试通过，`pnpm typecheck`、生产构建、Electron 44 runtime smoke 和打包后 native SQLite 探针通过。补充修复了长会话 checkpoint 重复摘要、摘要/记忆抽取输入无上限、超长 RAG 查询、模型流 reader、REST TTS 取消和 Embedding/HyDE 超时边界。活动数据库使用 `better-sqlite3`，`integrity_check` 为 `ok`、15 个 migration 全部 applied；现有 WARNING 仅包括一个历史损坏备份以及开发进程遗留的 WAL/SHM 提醒。
+**阶段结果（2026-09-11）**：`pnpm test:s2` 固定验收入口覆盖 16 个文件、70 项 S2 专项测试并全部通过；完整 Vitest 回归 95 个文件、380 项测试通过，`pnpm typecheck`、生产构建、Electron 44 runtime smoke 和打包后 native SQLite 探针通过。补充修复了长会话 checkpoint 重复摘要、摘要/记忆抽取输入无上限、超长 RAG 查询、模型流 reader、REST TTS 取消和 Embedding/HyDE 超时边界。活动数据库使用 `better-sqlite3`，`integrity_check` 为 `ok`、15 个 migration 全部 applied；现有 WARNING 仅包括一个历史损坏备份以及开发进程遗留的 WAL/SHM 提醒。
 
 **总验收**：
 
@@ -256,6 +256,14 @@ S2 分为 **5 个实施阶段 + 1 个总验收阶段**。每阶段都先补行�
 ### S3：工具、技能与权限稳定化
 
 **目标**：让技能扩展变得可控，避免工具越多越乱。
+
+**当前状态**：S3.1 已完成，S3.2-S3.6 尚未开始。工具结果已经有统一归一化入口和稳定错误类别；Agent 工具事件、运行诊断和定时提醒快捷路径均使用同一契约。后续阶段继续沿用 `pnpm test:s3` 作为增量验收入口。
+
+#### S3.1：工具结果与错误分类统一
+
+**阶段结果（2026-09-11）**：`ToolResult` 已统一支持 `success`、`output`、`error`、`errorCategory`、`metadata` 和 `artifacts`；新增 malformed result 归一化、错误分类和稳定工具错误构造器。Agent 主执行链和定时提醒快捷路径均经过归一化，运行诊断额外保留 `toolErrorCategory`，不会再只依赖错误文本判断工具失败原因。
+
+**验收**：`pnpm test:s3` 的 S3.1 测试通过；工具失败、超时、权限拒绝、路径越界和外部服务错误均能保留稳定分类，失败结果不会被标记为成功。
 
 **任务**：
 
