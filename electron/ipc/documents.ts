@@ -11,8 +11,8 @@ import { testEmbeddingConnection } from '../../src/rag/embedding';
 export function registerDocumentsIpc() {
   ipcMain.handle('documents:list', () => listDocuments());
 
-  ipcMain.handle('documents:delete', (_event, id: string) => {
-    const ok = deleteDocument(id);
+  ipcMain.handle('documents:delete', async (_event, id: string) => {
+    const ok = await deleteDocument(id);
     return { ok };
   });
 

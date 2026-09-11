@@ -1,35 +1,16 @@
-import { v4 as uuidv4 } from 'uuid';
-import { getDatabase } from '../../db';
+import {
+  createBookkeepingEntry,
+  listBookkeepingEntries,
+  type BookkeepingEntry,
+  type BookkeepingEntryType,
+} from '../../db/repositories/bookkeeping';
 import type { ToolDefinition } from '../types';
 
-type EntryType = 'income' | 'expense';
-
-interface BookkeepingRow {
-  id: string;
-  category: string;
-  amount: number;
-  currency: string;
-  note: string | null;
-  entry_type: string;
-  created_at: number;
-}
-
-function listEntries(limit = 50): BookkeepingRow[] {
-  return getDatabase()
-    .prepare(
-      `SELECT id, category, amount, currency, note, entry_type, created_at
-       FROM bookkeeping_entries
-       ORDER BY created_at DESC
-       LIMIT ?`,
-    )
-    .all(limit) as unknown as BookkeepingRow[];
-}
-
-function formatSummary(rows: BookkeepingRow[]): string {
+function formatSummary(rows: BookkeepingEntry[]): string {
   let income = 0;
   let expense = 0;
   for (const row of rows) {
-    if (row.entry_type === 'income') income += row.amount;
+    if (row.entryType === 'income') income += row.amount;
     else expense += row.amount;
   }
   return `收入合计：${income.toFixed(2)} CNY\n支出合计：${expense.toFixed(2)} CNY\n结余：${(income - expense).toFixed(2)} CNY\n记录数：${rows.length}`;
@@ -63,7 +44,7 @@ export const bookkeepingTool: ToolDefinition = {
   async execute(args, ctx) {
     const { action, entry_type, amount, category, note, limit = 20 } = args as {
       action?: string;
-      entry_type?: EntryType;
+      entry_type?: BookkeepingEntryType;
       amount?: number;
       category?: string;
       note?: string;
@@ -75,22 +56,13 @@ export const bookkeepingTool: ToolDefinition = {
         return { success: false, output: '', error: 'add 需要 entry_type 与正数 amount' };
       }
 
-      const id = uuidv4();
-      const now = Date.now();
-      getDatabase()
-        .prepare(
-          `INSERT INTO bookkeeping_entries (id, session_id, category, amount, currency, note, entry_type, created_at)
-           VALUES (?, ?, ?, ?, 'CNY', ?, ?, ?)`,
-        )
-        .run(
-          id,
-          ctx.sessionId,
-          category?.trim() || '未分类',
-          amount,
-          note?.trim() || null,
-          entry_type,
-          now,
-        );
+      createBookkeepingEntry({
+        sessionId: ctx.sessionId,
+        category: category ?? '未分类',
+        amount,
+        note,
+        entryType: entry_type,
+      });
 
       return {
         success: true,
@@ -99,20 +71,20 @@ export const bookkeepingTool: ToolDefinition = {
     }
 
     if (action === 'list') {
-      const rows = listEntries(Math.min(Math.max(limit, 1), 100));
+      const rows = listBookkeepingEntries(Math.min(Math.max(limit, 1), 100));
       if (!rows.length) {
         return { success: true, output: '暂无记账记录' };
       }
       const lines = rows.map((r) => {
-        const kind = r.entry_type === 'income' ? '收入' : '支出';
-        const date = new Date(r.created_at).toLocaleString('zh-CN');
+        const kind = r.entryType === 'income' ? '收入' : '支出';
+        const date = new Date(r.createdAt).toLocaleString('zh-CN');
         return `- [${date}] ${kind} ${r.amount.toFixed(2)} ${r.currency} · ${r.category}${r.note ? ` · ${r.note}` : ''}`;
       });
       return { success: true, output: lines.join('\n') };
     }
 
     if (action === 'summary') {
-      const rows = listEntries(500);
+      const rows = listBookkeepingEntries(500);
       return { success: true, output: formatSummary(rows) };
     }
 

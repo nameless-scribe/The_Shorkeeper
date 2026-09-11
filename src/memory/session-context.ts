@@ -1,62 +1,14 @@
-import { getDatabase } from '../db';
 import { listMessages } from '../db/repositories/messages';
+import {
+  getSessionSummary,
+  upsertSessionSummary,
+  type SessionSummary,
+} from '../db/repositories/session-summaries';
 import { completeChat } from '../models/complete-chat';
 import { getModelConfigSafe } from '../models/config';
 import { getPerformanceSettings } from '../config/performance';
 
-export interface SessionSummary {
-  sessionId: string;
-  summary: string;
-  compressedUpToMessageId: string | null;
-  updatedAt: number;
-}
-
-export function getSessionSummary(sessionId: string): SessionSummary | null {
-  const row = getDatabase()
-    .prepare(
-      `SELECT session_id, summary, compressed_up_to_message_id, updated_at
-       FROM session_summaries WHERE session_id = ?`,
-    )
-    .get(sessionId) as
-    | {
-        session_id: string;
-        summary: string;
-        compressed_up_to_message_id: string | null;
-        updated_at: number;
-      }
-    | undefined;
-
-  if (!row) return null;
-
-  return {
-    sessionId: row.session_id,
-    summary: row.summary,
-    compressedUpToMessageId: row.compressed_up_to_message_id,
-    updatedAt: row.updated_at,
-  };
-}
-
-function upsertSessionSummary(
-  sessionId: string,
-  summary: string,
-  compressedUpToMessageId: string,
-): void {
-  const now = Date.now();
-  getDatabase()
-    .prepare(
-      `INSERT INTO session_summaries (session_id, summary, compressed_up_to_message_id, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(session_id) DO UPDATE SET
-         summary = excluded.summary,
-         compressed_up_to_message_id = excluded.compressed_up_to_message_id,
-         updated_at = excluded.updated_at`,
-    )
-    .run(sessionId, summary, compressedUpToMessageId, now);
-
-  getDatabase()
-    .prepare(`UPDATE sessions SET compressed = 1, updated_at = ? WHERE id = ?`)
-    .run(now, sessionId);
-}
+export { getSessionSummary, type SessionSummary };
 
 function buildSummaryPrompt(existingSummary: string | null): string {
   return `你是会话摘要助手。将以下对话历史压缩为简洁中文摘要，保留关键事实、决定与用户偏好。

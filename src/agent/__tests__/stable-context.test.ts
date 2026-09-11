@@ -1,11 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-vi.mock('../../db', () => ({
-  getDatabase: vi.fn(() => ({
-    prepare: vi.fn(() => ({
-      get: vi.fn(() => ({ value: '测试人设' })),
-    })),
-  })),
+vi.mock('../../db/app-settings', () => ({
+  getSetting: vi.fn(() => '测试人设'),
 }));
 
 import {

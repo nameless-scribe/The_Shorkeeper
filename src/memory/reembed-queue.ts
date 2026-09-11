@@ -1,4 +1,4 @@
-import { getDatabase } from '../db';
+import { updateMemoryEmbeddingByKey } from '../db/repositories/long-term-memory';
 import { embedText } from '../rag/embedding';
 import { serializeEmbedding } from '../rag/vector';
 
@@ -16,9 +16,7 @@ export function queueMemoryReembed(memoryKey: string, content: string): void {
     try {
       const vec = await embedText(trimmed);
       const blob = serializeEmbedding(vec);
-      getDatabase()
-        .prepare(`UPDATE long_term_memory SET embedding = ? WHERE memory_key = ?`)
-        .run(blob, key);
+      updateMemoryEmbeddingByKey(key, blob);
     } catch (err) {
       console.warn('[memory] 异步 re-embed 失败:', key, err);
     }

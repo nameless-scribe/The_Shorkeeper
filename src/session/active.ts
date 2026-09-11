@@ -12,17 +12,16 @@ export const ACTIVE_SESSION_KEY = 'session.active_id';
 let activeSessionId: string | null = null;
 
 function persistActiveSessionId(id: string, db?: AppDatabase): void {
-  setSetting(ACTIVE_SESSION_KEY, id);
-  void db;
+  setSetting(ACTIVE_SESSION_KEY, id, db);
 }
 
-function readPersistedActiveSessionId(): string | null {
-  return getSetting(ACTIVE_SESSION_KEY);
+function readPersistedActiveSessionId(db?: AppDatabase): string | null {
+  return getSetting(ACTIVE_SESSION_KEY, db);
 }
 
 /** 应用启动时恢复上次会话，避免每次重启都新建空对话 */
 export function restoreActiveSession(db?: AppDatabase): Session {
-  const persisted = readPersistedActiveSessionId();
+  const persisted = readPersistedActiveSessionId(db);
   if (persisted) {
     const existing = getSession(persisted, db);
     if (existing && !existing.archived) {

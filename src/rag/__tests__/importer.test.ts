@@ -4,7 +4,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeDatabase, initDatabase, type AppDatabase } from '../../db';
 import { importDocumentFromPath } from '../importer';
-import { listDocuments } from '../documents';
+import { deleteDocument, listDocuments } from '../documents';
+import { embedText } from '../embedding';
 import { serializeEmbedding } from '../vector';
 
 vi.mock('../embedding', () => ({
@@ -46,6 +47,71 @@ describe('importDocumentFromPath', () => {
     expect(docs).toHaveLength(1);
     expect(docs[0].id).toBe(doc.id);
     expect(docs[0].summary).toBeTruthy();
+  });
+
+  it('removes the copied knowledge file when embedding fails', async () => {
+    const source = path.join(tempDir, 'failed.md');
+    await fs.writeFile(source, '# Failed\n\n这份内容不应留下孤儿文件。', 'utf8');
+    vi.mocked(embedText).mockRejectedValueOnce(new Error('forced embedding failure'));
+
+    await expect(importDocumentFromPath(source)).rejects.toThrow('forced embedding failure');
+
+    expect(listDocuments()).toEqual([]);
+    const knowledgeFiles = await fs
+      .readdir(path.join(tempDir, 'knowledge'))
+      .catch(() => [] as string[]);
+    expect(knowledgeFiles).toEqual([]);
+  });
+
+  it('waits for knowledge file cleanup when the database insert fails', async () => {
+    const source = path.join(tempDir, 'db-failure.md');
+    await fs.writeFile(source, '# Database failure\n\n这份内容不应留下孤儿文件。', 'utf8');
+    db.exec(`
+      CREATE TRIGGER reject_document_insert
+      BEFORE INSERT ON documents
+      BEGIN
+        SELECT RAISE(ABORT, 'forced document failure');
+      END;
+    `);
+
+    await expect(importDocumentFromPath(source)).rejects.toThrow('forced document failure');
+
+    expect(listDocuments()).toEqual([]);
+    const knowledgeFiles = await fs
+      .readdir(path.join(tempDir, 'knowledge'))
+      .catch(() => [] as string[]);
+    expect(knowledgeFiles).toEqual([]);
+  });
+
+  it('quarantines the file before deleting its database record', async () => {
+    const source = path.join(tempDir, 'delete.md');
+    await fs.writeFile(source, '# Delete\n\n这份文档将被完整删除。', 'utf8');
+    const document = await importDocumentFromPath(source);
+    const knowledgePath = path.resolve(tempDir, document.filepath);
+
+    await expect(deleteDocument(document.id)).resolves.toBe(true);
+
+    expect(listDocuments()).toEqual([]);
+    await expect(fs.stat(knowledgePath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('restores a quarantined file when the database delete rolls back', async () => {
+    const source = path.join(tempDir, 'delete-rollback.md');
+    await fs.writeFile(source, '# Keep\n\n数据库删除失败时必须恢复文件。', 'utf8');
+    const document = await importDocumentFromPath(source);
+    const knowledgePath = path.resolve(tempDir, document.filepath);
+    db.exec(`
+      CREATE TRIGGER reject_document_delete
+      BEFORE DELETE ON documents
+      BEGIN
+        SELECT RAISE(ABORT, 'forced delete failure');
+      END;
+    `);
+
+    await expect(deleteDocument(document.id)).rejects.toThrow('forced delete failure');
+
+    expect(listDocuments().map((item) => item.id)).toContain(document.id);
+    await expect(fs.stat(knowledgePath)).resolves.toBeDefined();
   });
 });
 

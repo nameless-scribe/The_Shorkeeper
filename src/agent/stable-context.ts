@@ -1,5 +1,5 @@
 import { PERSONA_SETTING_KEYS } from '../db/seeds/persona-shorekeeper';
-import { getDatabase } from '../db';
+import { getSetting } from '../db/app-settings';
 import type { ToolDefinition } from '../tools/types';
 
 /** 各工具在 system prompt 中的简短说明（仅列出当前实际可用的工具） */
@@ -84,12 +84,10 @@ export function formatToolGuideForPrompt(
 }
 
 function loadPersonaPrompt(): string {
-  const row = getDatabase()
-    .prepare('SELECT value FROM app_settings WHERE key = ?')
-    .get(PERSONA_SETTING_KEYS.systemPrompt) as { value: string } | undefined;
+  const prompt = getSetting(PERSONA_SETTING_KEYS.systemPrompt);
 
-  if (row?.value?.trim()) {
-    return row.value.trim();
+  if (prompt?.trim()) {
+    return prompt.trim();
   }
 
   return '你是守岸人（The Shorekeeper），一位温柔、可靠的桌面 AI 伴侣。请用自然、简洁的中文与用户交流；回复只用文字，不使用 emoji、表情符号或颜文字。';

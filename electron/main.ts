@@ -124,7 +124,7 @@ app.whenReady().then(async () => {
       type: 'error',
       title: 'The Shorekeeper — 数据库错误',
       message: '数据库初始化失败，部分功能不可用。',
-      detail: `${message}\n\n请检查数据目录权限，或删除损坏的数据库文件后重启应用。`,
+      detail: `${message}\n\n请退出应用后检查数据库健康状态和目录权限。请勿直接删除主库；必要时应从已校验备份恢复。`,
       buttons: ['继续（功能受限）', '退出'],
       defaultId: 0,
       cancelId: 1,

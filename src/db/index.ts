@@ -15,6 +15,76 @@ const initSqlJs = require('sql.js/dist/sql-wasm.js') as (
 
 export { getDatabaseDir, getDatabasePath, getWorkspaceDir };
 
+export interface DatabaseStatement {
+  all(...params: unknown[]): Record<string, unknown>[];
+  get(...params: unknown[]): Record<string, unknown> | undefined;
+  run(...params: unknown[]): void;
+}
+
+/** Minimum synchronous contract implemented by sql.js and future native adapters. */
+export interface AppDatabase {
+  beginBatch(): void;
+  endBatch(): void;
+  transaction<T>(operation: () => T): T;
+  exec(sql: string): void;
+  prepare(sql: string): DatabaseStatement;
+}
+
+/** sql.js only reads the main database image and must never ignore committed WAL data. */
+export function assertNoPendingWal(dbPath: string): void {
+  const walPath = `${dbPath}-wal`;
+  if (fs.existsSync(walPath) && fs.statSync(walPath).size > 0) {
+    throw new Error(
+      `检测到非空 WAL 文件，无法安全读取或复制数据库: ${walPath}。请先关闭 SQLite 写入程序并完成 checkpoint。`,
+    );
+  }
+}
+
+let temporaryFileSequence = 0;
+
+function uniqueSiblingPath(targetPath: string, label: string): string {
+  temporaryFileSequence += 1;
+  return `${targetPath}.${label}-${process.pid}-${Date.now()}-${temporaryFileSequence}`;
+}
+
+/** Write a complete SQLite image without exposing a partially written main file. */
+export function writeDatabaseFileAtomically(dbPath: string, data: Uint8Array): void {
+  const dir = path.dirname(dbPath);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const temporaryPath = uniqueSiblingPath(dbPath, 'tmp');
+  let fileDescriptor: number | undefined;
+  try {
+    fileDescriptor = fs.openSync(temporaryPath, 'wx');
+    fs.writeFileSync(fileDescriptor, data);
+    fs.fsyncSync(fileDescriptor);
+    fs.closeSync(fileDescriptor);
+    fileDescriptor = undefined;
+    fs.renameSync(temporaryPath, dbPath);
+  } catch (error) {
+    if (fileDescriptor !== undefined) {
+      fs.closeSync(fileDescriptor);
+    }
+    if (fs.existsSync(temporaryPath)) {
+      fs.unlinkSync(temporaryPath);
+    }
+    throw error;
+  }
+}
+
+/** Create an immutable point-in-time copy before changing database schema. */
+export function createDatabaseBackup(
+  dbPath: string,
+  reason = 'pre-migration',
+): string | null {
+  if (!fs.existsSync(dbPath)) return null;
+  assertNoPendingWal(dbPath);
+
+  const backupPath = uniqueSiblingPath(dbPath, `${reason}.bak`);
+  writeDatabaseFileAtomically(backupPath, fs.readFileSync(dbPath));
+  return backupPath;
+}
+
 const INIT_SQL = `
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY NOT NULL,
@@ -44,14 +114,14 @@ function getWasmPath(file = 'sql-wasm.wasm'): string {
   return resolveSqlWasmPath(file);
 }
 
-export class SqliteDb {
-  private persistQueue: Promise<void> = Promise.resolve();
+export class SqliteDb implements AppDatabase {
   private closed = false;
   private persistDeferred = 0;
+  private transactionActive = false;
 
   constructor(
     private readonly sql: import('sql.js').SqlJsStatic,
-    private readonly db: import('sql.js').SqlJsDatabase,
+    private db: import('sql.js').SqlJsDatabase,
     private readonly dbPath: string,
   ) {}
 
@@ -60,17 +130,66 @@ export class SqliteDb {
   }
 
   endBatch(): void {
-    if (this.persistDeferred > 0) {
-      this.persistDeferred -= 1;
+    this.finishBatch(true);
+  }
+
+  transaction<T>(operation: () => T): T {
+    if (this.transactionActive) {
+      throw new Error('Nested database transactions are not supported.');
     }
-    if (this.persistDeferred === 0) {
-      this.persist();
+    this.beginBatch();
+    let transactionOpen = false;
+    try {
+      this.db.run('BEGIN IMMEDIATE');
+      transactionOpen = true;
+      this.transactionActive = true;
+      const result = operation();
+      this.db.run('COMMIT');
+      transactionOpen = false;
+      this.transactionActive = false;
+      try {
+        this.finishBatch(true);
+      } catch (persistError) {
+        this.restorePersistedState(persistError);
+        throw persistError;
+      }
+      return result;
+    } catch (error) {
+      this.transactionActive = false;
+      if (transactionOpen) {
+        try {
+          this.db.run('ROLLBACK');
+        } catch (rollbackError) {
+          console.error('[db] transaction rollback 失败:', rollbackError);
+        }
+      }
+      if (this.persistDeferred > 0) {
+        this.finishBatch(false);
+      }
+      throw error;
+    }
+  }
+
+  supportsFts5(tokenizer: 'unicode61' | 'trigram' = 'unicode61'): boolean {
+    const probeName = `shorekeeper_fts_probe_${Date.now()}_${temporaryFileSequence++}`;
+    try {
+      this.db.run(
+        `CREATE VIRTUAL TABLE temp.${probeName} USING fts5(content, tokenize='${tokenizer}')`,
+      );
+      this.db.run(`DROP TABLE temp.${probeName}`);
+      return true;
+    } catch {
+      try {
+        this.db.run(`DROP TABLE IF EXISTS temp.${probeName}`);
+      } catch {
+        // The probe table was never created.
+      }
+      return false;
     }
   }
 
   exec(sql: string): void {
-    this.db.run(sql);
-    this.maybePersist();
+    this.runMutation(() => this.db.run(sql));
   }
 
   prepare(sql: string) {
@@ -99,16 +218,45 @@ export class SqliteDb {
         }
       },
       run: (...params: unknown[]) => {
-        const stmt = this.db.prepare(sql);
-        try {
-          if (params.length) stmt.bind(params);
-          stmt.step();
-        } finally {
-          stmt.free();
-        }
-        this.maybePersist();
+        this.runMutation(() => {
+          const stmt = this.db.prepare(sql);
+          try {
+            if (params.length) stmt.bind(params);
+            stmt.step();
+          } finally {
+            stmt.free();
+          }
+        });
       },
     };
+  }
+
+  private runMutation(operation: () => void): void {
+    const restoreOnFailure = this.persistDeferred === 0;
+    try {
+      operation();
+      this.maybePersist();
+    } catch (error) {
+      if (restoreOnFailure) this.restorePersistedState(error);
+      throw error;
+    }
+  }
+
+  private restorePersistedState(originalError: unknown): void {
+    try {
+      const restored = new this.sql.Database(
+        fs.existsSync(this.dbPath) ? fs.readFileSync(this.dbPath) : undefined,
+      );
+      restored.run('PRAGMA foreign_keys = ON');
+      const replaced = this.db;
+      this.db = restored;
+      replaced.close();
+    } catch (restoreError) {
+      throw new AggregateError(
+        [originalError, restoreError],
+        '数据库落盘失败，且内存状态无法恢复。',
+      );
+    }
   }
 
   private maybePersist(): void {
@@ -117,9 +265,18 @@ export class SqliteDb {
     }
   }
 
-  /** 等待异步 persist 队列落盘（批量脚本退出前调用） */
+  private finishBatch(persistWhenComplete: boolean): void {
+    if (this.persistDeferred <= 0) {
+      throw new Error('Database batch is not active.');
+    }
+    this.persistDeferred -= 1;
+    if (persistWhenComplete && this.persistDeferred === 0) {
+      this.persist();
+    }
+  }
+
+  /** Ensure the latest in-memory image is durably visible to a new process. */
   async flushPersist(): Promise<void> {
-    await this.persistQueue;
     if (!this.closed) {
       this.persistSync();
     }
@@ -141,24 +298,12 @@ export class SqliteDb {
 
   private persistSync(): void {
     if (this.closed) return;
-
-    const dir = path.dirname(this.dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(this.dbPath, Buffer.from(this.db.export()));
+    writeDatabaseFileAtomically(this.dbPath, this.db.export());
   }
 
   persist(): void {
     if (this.closed) return;
-
-    this.persistQueue = this.persistQueue
-      .then(() => {
-        this.persistSync();
-      })
-      .catch((err) => {
-        console.error('[db] persist 失败:', err);
-      });
+    this.persistSync();
   }
 }
 
@@ -184,6 +329,7 @@ function loadDatabaseBuffer(
   dbPath: string,
 ): Buffer | undefined {
   if (!fs.existsSync(dbPath)) return undefined;
+  assertNoPendingWal(dbPath);
 
   const buffer = fs.readFileSync(dbPath);
   try {
@@ -198,6 +344,18 @@ function loadDatabaseBuffer(
   }
 }
 
+function hasTable(db: import('sql.js').SqlJsDatabase, tableName: string): boolean {
+  const statement = db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+  );
+  try {
+    statement.bind([tableName]);
+    return statement.step();
+  } finally {
+    statement.free();
+  }
+}
+
 export async function openDatabase(dbPath: string = getDatabasePath()): Promise<SqliteDb> {
   ensureDataDirs();
   const SQL = await initSqlJs({ locateFile: getWasmPath });
@@ -205,10 +363,32 @@ export async function openDatabase(dbPath: string = getDatabasePath()): Promise<
   const db = new SQL.Database(fileBuffer);
   db.run('PRAGMA foreign_keys = ON');
   const wrapped = new SqliteDb(SQL, db, dbPath);
-  wrapped.exec(INIT_SQL);
-  runMigrations(wrapped);
-  if (ensurePersonaUpToDate(wrapped)) {
-    console.info('[seed] 人设已升级至', SHOREKEEPER_PERSONA.version);
+
+  let migrationBackupPath: string | null | undefined;
+  const backupBeforeSchemaChange = () => {
+    if (migrationBackupPath === undefined) {
+      migrationBackupPath = createDatabaseBackup(dbPath);
+      if (migrationBackupPath) {
+        console.info(`[db] 迁移前备份已创建: ${migrationBackupPath}`);
+      }
+    }
+  };
+
+  wrapped.beginBatch();
+  try {
+    const baseSchemaMissing = ['sessions', 'messages', 'app_settings'].some(
+      (tableName) => !hasTable(db, tableName),
+    );
+    if (fileBuffer && baseSchemaMissing) {
+      backupBeforeSchemaChange();
+    }
+    wrapped.exec(INIT_SQL);
+    runMigrations(wrapped, { beforeMigrate: backupBeforeSchemaChange });
+    if (ensurePersonaUpToDate(wrapped)) {
+      console.info('[seed] 人设已升级至', SHOREKEEPER_PERSONA.version);
+    }
+  } finally {
+    wrapped.endBatch();
   }
   return wrapped;
 }
@@ -218,8 +398,13 @@ export async function initDatabase(dbPath: string = getDatabasePath()): Promise<
   if (!initPromise) {
     initPromise = openDatabase(dbPath);
   }
-  dbInstance = await initPromise;
-  return dbInstance;
+  try {
+    dbInstance = await initPromise;
+    return dbInstance;
+  } catch (error) {
+    initPromise = null;
+    throw error;
+  }
 }
 
 export function getDatabase(): SqliteDb {
@@ -244,5 +429,3 @@ export async function closeDatabaseAsync(): Promise<void> {
     initPromise = null;
   }
 }
-
-export type AppDatabase = SqliteDb;

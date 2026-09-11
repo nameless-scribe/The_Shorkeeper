@@ -149,10 +149,12 @@ export function updateSessionTitle(id: string, title: string, db: AppDatabase = 
 }
 
 export function deleteSession(id: string, db: AppDatabase = getDatabase()): void {
-  db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
-  db.prepare(`DELETE FROM session_summaries WHERE session_id = ?`).run(id);
-  db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
-  clearSessionExtractionState(id);
+  db.transaction(() => {
+    db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
+    db.prepare(`DELETE FROM session_summaries WHERE session_id = ?`).run(id);
+    db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
+    clearSessionExtractionState(id, db);
+  });
 }
 
 export interface DeleteEmptySessionsOptions {

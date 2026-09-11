@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getWorkspaceDir } from '../config/paths';
@@ -62,53 +63,72 @@ export async function importTextAsKnowledge(
 
   await fs.mkdir(getKnowledgeDir(), { recursive: true });
   const safeName = sanitizeKnowledgeFilename(filename);
-  const destPath = path.join(getKnowledgeDir(), `${Date.now()}_${safeName}`);
+  const destPath = path.join(getKnowledgeDir(), `${Date.now()}_${randomUUID()}_${safeName}`);
   assertPathWithinKnowledge(destPath);
   await fs.writeFile(destPath, normalized, 'utf8');
 
   const relativePath = path.relative(getWorkspaceDir(), destPath).replace(/\\/g, '/');
   const ext = path.extname(safeName).toLowerCase();
   const mimeType = ext === '.md' ? 'text/markdown' : 'text/plain';
+  let importedDocument: DocumentInfo;
+  try {
+    const docEmbedInput = `${safeName}\n${summary}`;
+    const docVec = await embedText(docEmbedInput);
+    const docEmbedding = serializeEmbedding(docVec);
 
-  const docEmbedInput = `${safeName}\n${summary}`;
-  const docVec = await embedText(docEmbedInput);
-  const docEmbedding = serializeEmbedding(docVec);
+    const BATCH = 10;
+    const embeddedChunks: Array<{
+      content: string;
+      embedding: Uint8Array;
+      ftsText: string;
+    }> = [];
+    let embeddingDim = 0;
 
-  const BATCH = 10;
-  const embeddedChunks: Array<{ content: string; embedding: Uint8Array; ftsText: string }> = [];
-  let embeddingDim = 0;
-
-  for (let i = 0; i < textChunks.length; i += BATCH) {
-    const batch = textChunks.slice(i, i + BATCH);
-    const vectors = await embedTexts(batch.map((c) => c.embedText));
-    for (let j = 0; j < batch.length; j++) {
-      embeddingDim = vectors[j].length;
-      embeddedChunks.push({
-        content: batch[j].content,
-        ftsText: batch[j].embedText,
-        embedding: serializeEmbedding(vectors[j]),
+    for (let i = 0; i < textChunks.length; i += BATCH) {
+      const batch = textChunks.slice(i, i + BATCH);
+      const vectors = await embedTexts(batch.map((c) => c.embedText));
+      for (let j = 0; j < batch.length; j++) {
+        embeddingDim = vectors[j].length;
+        embeddedChunks.push({
+          content: batch[j].content,
+          ftsText: batch[j].embedText,
+          embedding: serializeEmbedding(vectors[j]),
+        });
+      }
+      onProgress?.({
+        phase: 'embedding',
+        done: Math.min(i + batch.length, textChunks.length),
+        total: textChunks.length,
       });
     }
-    onProgress?.({
-      phase: 'embedding',
-      done: Math.min(i + batch.length, textChunks.length),
-      total: textChunks.length,
+
+    importedDocument = insertDocumentWithChunks({
+      filename: safeName,
+      filepath: relativePath,
+      mimeType,
+      chunks: embeddedChunks,
+      contentHash,
+      embeddingModel: getEmbeddingModelName(),
+      embeddingDim,
+      summary,
+      outline,
+      docEmbedding,
     });
+
+  } catch (error) {
+    try {
+      await fs.unlink(destPath);
+    } catch (cleanupError) {
+      if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new AggregateError(
+          [error, cleanupError],
+          `文档导入失败，且知识文件无法清理: ${destPath}`,
+        );
+      }
+    }
+    throw error;
   }
 
-  const doc = insertDocumentWithChunks({
-    filename: safeName,
-    filepath: relativePath,
-    mimeType,
-    chunks: embeddedChunks,
-    contentHash,
-    embeddingModel: getEmbeddingModelName(),
-    embeddingDim,
-    summary,
-    outline,
-    docEmbedding,
-  });
-
-  onProgress?.({ phase: 'done', document: doc });
-  return doc;
+  onProgress?.({ phase: 'done', document: importedDocument });
+  return importedDocument;
 }
