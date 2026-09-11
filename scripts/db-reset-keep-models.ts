@@ -25,6 +25,7 @@ import {
   MODEL_PROFILES_KEY,
   MODEL_PROTOCOL_KEY,
 } from '../src/models/config.js';
+import { readDatabaseEngineMarker } from '../src/db/engine-state.js';
 
 config({ path: path.join(process.cwd(), '.env') });
 
@@ -117,6 +118,10 @@ function clearWorkspaceDir(workspaceDir: string): number {
 }
 
 const dbPath = getDatabasePath();
+if (readDatabaseEngineMarker(dbPath)) {
+  console.error('当前数据库已切换到 better-sqlite3。请先执行 pnpm db:native rollback --yes，再使用重建数据库命令。');
+  process.exit(1);
+}
 const workspaceDir = getWorkspaceDir();
 let preserved: PreservedModelSettings = {
   profiles: null,

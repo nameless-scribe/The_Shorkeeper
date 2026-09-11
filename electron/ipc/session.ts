@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { getDatabasePath } from '../../src/config/paths';
+import { resolveDatabaseRuntime } from '../../src/db/engine-state';
 import { getModelConfigSafe, getModelSettingsInfo } from '../../src/models/config';
 import {
   deleteEmptySessions,
@@ -41,7 +42,7 @@ export function registerSessionIpc() {
       profileName: settings.configuredInApp ? settings.name : null,
       baseUrl: config?.baseUrl ?? settings.baseUrl ?? '',
       apiConfigured: Boolean(config),
-      databasePath: getDatabasePath(),
+      databasePath: resolveDatabaseRuntime(getDatabasePath()).databasePath,
     };
   });
 

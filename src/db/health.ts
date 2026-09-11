@@ -38,9 +38,11 @@ export interface DatabaseHealthOptions {
   migrationsDir?: string;
   requiredTables?: readonly string[];
   backupStaleAfterDays?: number;
+  backupPaths?: readonly string[];
 }
 
 export interface DatabaseHealthReport {
+  engine?: 'sql.js' | 'better-sqlite3';
   generatedAt: string;
   status: DatabaseHealthStatus;
   databasePath: string;
@@ -363,6 +365,7 @@ export function formatDatabaseHealthReport(report: DatabaseHealthReport): string
     : '无';
   const lines = [
     `数据库健康状态: ${report.status.toUpperCase()}`,
+    ...(report.engine ? [`引擎: ${report.engine}`] : []),
     `路径: ${report.databasePath}`,
     `文件: ${report.exists ? formatBytes(report.fileSizeBytes) : '不存在'}`,
     `SQLite: ${report.sqliteVersion ?? '不可用'}`,

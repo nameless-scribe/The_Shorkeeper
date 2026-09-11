@@ -1,6 +1,6 @@
 # The Shorekeeper 稳定化计划
 
-> 版本：0.1.5
+> 版本：0.1.9
 > 日期：2026-09-11
 > 状态：执行中
 > 目标：在继续扩展私人助理能力前，先把数据库、Agent 运行时、工具/技能、知识库与工作区、人设助理化路线稳定下来，并为后期部署私人云端小模型保留清晰的接入边界。
@@ -137,6 +137,37 @@ The Shorekeeper 已经具备私人助理的主要底座：流式对话、工具�
 
 - 有明确数据库路线结论。
 - 无论是否迁移，都有备份、恢复、migration 安全策略。
+
+### S1.5：原生 SQLite 生产迁移（进行中）
+
+**目标**：在知识库和高频写入规模增长前，将生产数据库运行时从 `sql.js` 安全切换到 `better-sqlite3`，同时保留可验证、可回滚的迁移路径。
+
+**已完成（2026-09-11）**：
+
+- 新增正式 `BetterSqliteDatabase` adapter，复用现有 `AppDatabase` 与 Repository 边界；migration 不再依赖具体的 `SqliteDb` 实现。
+- 建立 sql.js / better-sqlite3 双 adapter 合约测试，覆盖 schema、事务回滚、会话、摘要、记账、画像、长期记忆、Worldbook、RAG、FTS 和 Embedding BLOB。
+- 原生 SQLite PoC 改为复用正式 adapter，Node 运行时验证继续通过。
+- 现阶段默认运行时仍为 `sql.js`；正式 adapter 默认拒绝直接打开已有数据库，防止在迁移与回滚工具完成前误改真实主库。
+- 新增 `pnpm db:native rehearse`：健康检查、SHA-256 原库备份、副本迁移、业务表逐行摘要、FTS 完整性、外键、WAL checkpoint 和原子回滚探针均自动验收。
+- **真实主库副本演练通过（2026-09-11）**：源库 396.0 KiB、14 个业务表摘要一致，3 个 skipped FTS migration 在 native 副本补齐，10 条 Worldbook 完成索引，回滚探针通过；源库 SHA-256 保持不变。
+- `better-sqlite3@13.0.3` 已移入生产依赖并加入 electron-builder `files` / `asarUnpack`；关闭不兼容 Electron 44 的冗余 `@electron/rebuild`，固定使用已通过 Node/Electron 双运行时验证的 Node-API 预编译文件。
+- Windows x64 NSIS 和 `win-unpacked` 重新打包通过；打包后的 exe 从 `app.asar` 加载解包的 `win32-x64.node`，Electron 44 / ABI 149、WAL、SQLite 3.53.4 和 trigram FTS 探针通过。
+- 隔离 NSIS 生命周期测试通过：临时目录首次安装、同版本覆盖升级和静默卸载均成功；安装前后 native 探针通过，外部 SQLite SHA-256 不变，卸载注册项、快捷方式和临时目录无残留。
+- 引擎状态切换已实现：原 sql.js 主库保持不动，native 副本使用 `shorekeeper.native.db`，最后原子写入 `.engine.json` 标记；启动遇到损坏标记会阻断，不会静默回退。
+- `pnpm db:native status|cutover --yes|rollback --yes` 已在临时数据库通过；真实主库当前仍未激活 marker。
+
+**待完成**：
+
+- 已实现需要显式确认的生产原子切换和回滚命令；待用户确认后执行真实主库激活。
+- 完成真实切换后的运行时验收：正常启动不得再隐式回退到 sql.js，回滚必须保留 native 安全备份。
+- 使用预期知识库规模验证启动、持续写入、FTS、checkpoint、备份和恢复耗时。
+
+**验收**：
+
+- 真实主库只在自动备份和副本校验通过后切换。
+- 切换前后关键表计数、BLOB 数据、migration 状态和 `integrity_check` 一致或符合预期变化。
+- 安装包内 native 模块可加载，异常退出后的 WAL 恢复、备份和回滚演练通过。
+- 切换结果可观测，运行时不会静默使用错误的数据库引擎。
 
 ### S2：Agent 运行时稳定化
 
@@ -388,7 +419,7 @@ The Shorekeeper 桌面端
 ### P1：短期强化
 
 - **已完成（2026-09-10）**：数据库备份与健康检查。
-- 原生 SQLite 运行时 PoC（已完成）；后续补 native 数据层生产安装包 PoC。
+- 原生 SQLite 运行时 PoC、正式 adapter、双引擎 Repository 合约、副本迁移、回滚和生产安装包生命周期验证（已完成）；生产引擎切换待执行。
 - **已完成（2026-09-10）**：升级已停止维护的 Electron 34，并完成自动化运行时与 native ABI 回归；麦克风、播放设备和完整界面流程仍需人工验收。
 - 工具结果和错误格式统一。
 - **已完成（2026-09-11）**：RAG 导入回滚、重建和隔离删除生命周期已完成。
@@ -408,19 +439,19 @@ The Shorekeeper 桌面端
 
 ## 6. 数据库路线建议
 
-当前不建议立刻硬迁移数据库。推荐先按下面路径推进：
+根据当前高频使用和知识库扩展计划，原生 SQLite 生产迁移已进入 S1.5。迁移采用分阶段切换，不直接用 native adapter 打开并改写真实主库。
 
-1. **保留 `sql.js`，完成审计和备份**
-   这是最小风险路线，不打断当前项目。
+1. **保留 `sql.js` 作为切换前运行时**
+   审计、健康检查、备份和恢复已经完成；在副本迁移与回滚验收前，应用继续使用当前主库。
 
-2. **抽象 DB Repository**
-   让业务逻辑少依赖 `sql.js` 具体 API，为迁移留出口。
+2. **完成双 adapter 数据边界**
+   Repository 抽象、正式 better-sqlite3 adapter 和双引擎合约测试已经完成。
 
-3. **做 `better-sqlite3` PoC**
-   Windows + Node/Electron 运行时验证已通过；后续再验证 native 数据层的 electron-builder 安装包，不先碰业务主线。
+3. **迁移并验证数据库副本**
+   自动备份、副本迁移、native FTS 补齐、业务表/BLOB 摘要和回滚演练已经通过。
 
-4. **根据审计结果决定迁移**
-   如果知识库和使用频率明显增长，迁移到原生 SQLite；否则继续增强 `sql.js` 的可靠性。
+4. **完成安装包验证后原子切换**
+   native 依赖、Electron 打包、升级覆盖和异常恢复全部通过后，才将生产入口切换到 better-sqlite3；切换失败立即恢复原 sql.js 主库副本。
 
 ---
 

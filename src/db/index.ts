@@ -6,6 +6,10 @@ import { resolveSqlWasmPath } from './runtime-paths';
 import { runMigrations } from './migrate';
 import { ensurePersonaUpToDate } from './seed';
 import { SHOREKEEPER_PERSONA } from './seeds';
+import { INIT_SQL } from './schema';
+import type { AppDatabase, ManagedDatabase } from './contracts';
+import { openNativeDatabase } from './native-adapter';
+import { resolveDatabaseRuntime } from './engine-state';
 
 const require = createRequire(import.meta.url);
 // sql.js 为 CJS 包，在 Electron ESM 主进程中用 require 加载更稳定
@@ -14,21 +18,8 @@ const initSqlJs = require('sql.js/dist/sql-wasm.js') as (
 ) => Promise<import('sql.js').SqlJsStatic>;
 
 export { getDatabaseDir, getDatabasePath, getWorkspaceDir };
-
-export interface DatabaseStatement {
-  all(...params: unknown[]): Record<string, unknown>[];
-  get(...params: unknown[]): Record<string, unknown> | undefined;
-  run(...params: unknown[]): void;
-}
-
-/** Minimum synchronous contract implemented by sql.js and future native adapters. */
-export interface AppDatabase {
-  beginBatch(): void;
-  endBatch(): void;
-  transaction<T>(operation: () => T): T;
-  exec(sql: string): void;
-  prepare(sql: string): DatabaseStatement;
-}
+export { INIT_SQL } from './schema';
+export type { AppDatabase, DatabaseStatement, ManagedDatabase } from './contracts';
 
 /** sql.js only reads the main database image and must never ignore committed WAL data. */
 export function assertNoPendingWal(dbPath: string): void {
@@ -84,31 +75,6 @@ export function createDatabaseBackup(
   writeDatabaseFileAtomically(backupPath, fs.readFileSync(dbPath));
   return backupPath;
 }
-
-const INIT_SQL = `
-CREATE TABLE IF NOT EXISTS sessions (
-  id TEXT PRIMARY KEY NOT NULL,
-  title TEXT DEFAULT '新对话' NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-  id TEXT PRIMARY KEY NOT NULL,
-  session_id TEXT NOT NULL,
-  role TEXT NOT NULL,
-  content TEXT NOT NULL,
-  token_count INTEGER,
-  created_at INTEGER NOT NULL,
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
-
-CREATE TABLE IF NOT EXISTS app_settings (
-  key TEXT PRIMARY KEY NOT NULL,
-  value TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-`;
 
 function getWasmPath(file = 'sql-wasm.wasm'): string {
   return resolveSqlWasmPath(file);
@@ -307,8 +273,8 @@ export class SqliteDb implements AppDatabase {
   }
 }
 
-let dbInstance: SqliteDb | null = null;
-let initPromise: Promise<SqliteDb> | null = null;
+let dbInstance: ManagedDatabase | null = null;
+let initPromise: Promise<ManagedDatabase> | null = null;
 
 export function ensureDataDirs(): void {
   for (const dir of [getDatabaseDir(), getWorkspaceDir(), getAppearanceDir()]) {
@@ -393,10 +359,19 @@ export async function openDatabase(dbPath: string = getDatabasePath()): Promise<
   return wrapped;
 }
 
-export async function initDatabase(dbPath: string = getDatabasePath()): Promise<SqliteDb> {
+export async function initDatabase(dbPath: string = getDatabasePath()): Promise<ManagedDatabase> {
   if (dbInstance) return dbInstance;
   if (!initPromise) {
-    initPromise = openDatabase(dbPath);
+    const runtime = resolveDatabaseRuntime(dbPath);
+    initPromise = runtime.engine === 'better-sqlite3'
+      ? Promise.resolve(openNativeDatabase(runtime.databasePath, {
+        allowExisting: true,
+        beforeMigrate: () => {
+          const backup = createDatabaseBackup(runtime.databasePath, 'pre-migration');
+          if (backup) console.info(`[db] native 迁移前备份已创建: ${backup}`);
+        },
+      }))
+      : openDatabase(runtime.databasePath);
   }
   try {
     dbInstance = await initPromise;
@@ -407,7 +382,7 @@ export async function initDatabase(dbPath: string = getDatabasePath()): Promise<
   }
 }
 
-export function getDatabase(): SqliteDb {
+export function getDatabase(): ManagedDatabase {
   if (!dbInstance) {
     throw new Error('Database not initialized. Call initDatabase() first.');
   }

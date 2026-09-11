@@ -20,3 +20,6 @@ CREATE TRIGGER IF NOT EXISTS worldbook_entries_au AFTER UPDATE ON worldbook_entr
   INSERT INTO worldbook_fts(worldbook_fts, rowid, keys, content) VALUES ('delete', old.rowid, old.keys, old.content);
   INSERT INTO worldbook_fts(rowid, keys, content) VALUES (new.rowid, new.keys, new.content);
 END;
+
+-- Populate the index when this optional migration is applied after data already exists.
+INSERT INTO worldbook_fts(worldbook_fts) VALUES ('rebuild');

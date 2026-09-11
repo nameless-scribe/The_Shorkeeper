@@ -1,4 +1,4 @@
-import type { AppDatabase } from './index';
+import type { AppDatabase } from './contracts';
 import {
   SHOREKEEPER_PERSONA,
   PERSONA_SETTING_KEYS,

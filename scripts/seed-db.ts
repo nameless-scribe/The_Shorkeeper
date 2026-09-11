@@ -1,14 +1,15 @@
-import { openDatabase, getDatabasePath } from '../src/db/index.js';
+import { initDatabase, getDatabasePath } from '../src/db/index.js';
+import { resolveDatabaseRuntime } from '../src/db/engine-state.js';
 import { runMigrations } from '../src/db/migrate.js';
 import { seedShorekeeper } from '../src/db/seed.js';
 import { SHOREKEEPER_WORLDBOOK } from '../src/db/seeds/index.js';
 
-const db = await openDatabase();
+const db = await initDatabase();
 const applied = runMigrations(db);
 const result = seedShorekeeper(db);
 await db.closeAsync();
 
-console.log('数据库:', getDatabasePath());
+console.log('数据库:', resolveDatabaseRuntime(getDatabasePath()).databasePath);
 if (applied.length) {
   console.log('已应用 migration:', applied.join(', '));
 } else {

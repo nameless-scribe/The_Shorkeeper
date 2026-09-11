@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { SqliteDb } from './index';
+import type { AppDatabase } from './contracts';
 import { resolveMigrationsDir } from './runtime-paths';
 
 export type MigrationStatus = 'applied' | 'skipped' | 'partial';
@@ -12,6 +12,10 @@ export interface RunMigrationsOptions {
     fts5: boolean;
     trigram: boolean;
   };
+}
+
+export interface MigrationDatabase extends AppDatabase {
+  supportsFts5(tokenizer?: 'unicode61' | 'trigram'): boolean;
 }
 
 interface MigrationRow {
@@ -29,14 +33,14 @@ const FTS_REQUIREMENTS: Record<
   '0014_rag_fts_trigram.sql': { table: 'document_chunks_fts', tokenizer: 'trigram' },
 };
 
-function tableSql(db: SqliteDb, tableName: string): string | undefined {
+function tableSql(db: MigrationDatabase, tableName: string): string | undefined {
   const row = db
     .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
     .get(tableName) as { sql?: string } | undefined;
   return row?.sql;
 }
 
-function ftsMigrationIsPresent(db: SqliteDb, file: string): boolean {
+function ftsMigrationIsPresent(db: MigrationDatabase, file: string): boolean {
   const requirement = FTS_REQUIREMENTS[file];
   if (!requirement) return true;
 
@@ -45,7 +49,7 @@ function ftsMigrationIsPresent(db: SqliteDb, file: string): boolean {
   return requirement.tokenizer !== 'trigram' || /tokenize\s*=\s*['"]trigram['"]/i.test(sql);
 }
 
-function ensureMigrationLedger(db: SqliteDb, beforeMigrate: () => void): void {
+function ensureMigrationLedger(db: MigrationDatabase, beforeMigrate: () => void): void {
   const ledgerExists = Boolean(tableSql(db, 'schema_migrations'));
   if (!ledgerExists) {
     beforeMigrate();
@@ -78,7 +82,7 @@ function ensureMigrationLedger(db: SqliteDb, beforeMigrate: () => void): void {
 }
 
 function recordMigration(
-  db: SqliteDb,
+  db: MigrationDatabase,
   file: string,
   status: MigrationStatus,
   detail: string | null = null,
@@ -94,7 +98,7 @@ function recordMigration(
 }
 
 function getCapabilities(
-  db: SqliteDb,
+  db: MigrationDatabase,
   supplied?: RunMigrationsOptions['capabilities'],
 ): NonNullable<RunMigrationsOptions['capabilities']> {
   if (supplied) return supplied;
@@ -112,7 +116,10 @@ function requirementSupported(
 }
 
 /** 按文件名顺序执行尚未应用的 SQL migration */
-export function runMigrations(db: SqliteDb, options: RunMigrationsOptions = {}): string[] {
+export function runMigrations(
+  db: MigrationDatabase,
+  options: RunMigrationsOptions = {},
+): string[] {
   let migrationStarted = false;
   const beforeMigrate = () => {
     if (migrationStarted) return;

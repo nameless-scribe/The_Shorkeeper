@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { config } from 'dotenv';
 import { getDatabasePath } from '../src/config/paths.js';
+import { resolveDatabaseRuntime } from '../src/db/engine-state.js';
 import {
   createManualDatabaseBackup,
   listDatabaseBackups,
@@ -12,7 +13,8 @@ import {
 config({ path: path.join(process.cwd(), '.env') });
 
 const [command = 'list', ...args] = process.argv.slice(2);
-const dbPath = getDatabasePath();
+const runtime = resolveDatabaseRuntime(getDatabasePath());
+const dbPath = runtime.databasePath;
 const confirmed = args.includes('--yes');
 
 function formatBytes(bytes: number): string {
@@ -26,8 +28,18 @@ function optionValue(name: string): string | undefined {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
+function listActiveBackups() {
+  const paths = runtime.engine === 'better-sqlite3'
+    ? [runtime.databasePath, runtime.baseDatabasePath]
+    : [runtime.databasePath];
+  return [...new Map(
+    paths.flatMap((backupPath) => listDatabaseBackups(backupPath)).map((backup) => [backup.path, backup]),
+  ).values()].sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+}
+
 function printBackups(): void {
-  const backups = listDatabaseBackups(dbPath);
+  const backups = listActiveBackups();
+  console.log('引擎:', runtime.engine);
   console.log('数据库:', dbPath);
   if (backups.length === 0) {
     console.log('未找到备份。');

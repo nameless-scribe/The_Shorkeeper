@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createDatabaseBackup, writeDatabaseFileAtomically } from './index';
+import { openNativeDatabase } from './native-adapter';
 import { resolveSqlWasmPath } from './runtime-paths';
 
 const require = createRequire(import.meta.url);
@@ -10,7 +11,14 @@ const initSqlJs = require('sql.js/dist/sql-wasm.js') as (
   config?: { locateFile?: (file: string) => string },
 ) => Promise<import('sql.js').SqlJsStatic>;
 
-export type DatabaseBackupKind = 'manual' | 'pre-migration' | 'pre-restore' | 'legacy' | 'corrupt';
+export type DatabaseBackupKind =
+  | 'manual'
+  | 'pre-migration'
+  | 'pre-native'
+  | 'pre-native-rollback'
+  | 'pre-restore'
+  | 'legacy'
+  | 'corrupt';
 
 export interface DatabaseBackupInfo {
   path: string;
@@ -31,6 +39,8 @@ export interface DatabaseFileValidation {
 function backupKind(dbBasename: string, filename: string): DatabaseBackupKind | null {
   if (filename.startsWith(`${dbBasename}.manual.bak-`)) return 'manual';
   if (filename.startsWith(`${dbBasename}.pre-migration.bak-`)) return 'pre-migration';
+  if (filename.startsWith(`${dbBasename}.pre-native.bak-`)) return 'pre-native';
+  if (filename.startsWith(`${dbBasename}.pre-native-rollback.bak-`)) return 'pre-native-rollback';
   if (filename.startsWith(`${dbBasename}.pre-restore.bak-`)) return 'pre-restore';
   if (filename.startsWith(`${dbBasename}.bak-`)) return 'legacy';
   if (filename.startsWith(`${dbBasename}.corrupt-`) && filename.endsWith('.bak')) {
@@ -59,6 +69,7 @@ export async function validateDatabaseFile(filePath: string): Promise<DatabaseFi
   }
 
   const data = fs.readFileSync(filePath);
+  const sha256 = createHash('sha256').update(data).digest('hex');
   const SQL = await initSqlJs({ locateFile: resolveSqlWasmPath });
   let db: import('sql.js').SqlJsDatabase | undefined;
   try {
@@ -71,14 +82,44 @@ export async function validateDatabaseFile(filePath: string): Promise<DatabaseFi
     return {
       path: filePath,
       sizeBytes: data.byteLength,
-      sha256: createHash('sha256').update(data).digest('hex'),
+      sha256,
       sqliteVersion,
       integrityMessages,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.startsWith('SQLite 完整性检查失败:')) throw error;
-    throw new Error(`无法读取 SQLite 数据库: ${message}`, { cause: error });
+    db?.close();
+    try {
+      const native = openNativeDatabase(filePath, {
+        allowExisting: true,
+        initialize: false,
+        readonly: true,
+      });
+      try {
+        const integrityMessages = native
+          .prepare('PRAGMA integrity_check')
+          .all()
+          .map((row) => String(Object.values(row)[0]));
+        if (integrityMessages.length !== 1 || integrityMessages[0] !== 'ok') {
+          throw new Error(`SQLite 完整性检查失败: ${integrityMessages.join('; ') || '无结果'}`);
+        }
+        const sqliteVersion = String(native.prepare('SELECT sqlite_version() AS version').get()?.version ?? 'unknown');
+        return {
+          path: filePath,
+          sizeBytes: data.byteLength,
+          sha256,
+          sqliteVersion,
+          integrityMessages,
+        };
+      } finally {
+        native.close();
+      }
+    } catch (nativeError) {
+      const sqlMessage = error instanceof Error ? error.message : String(error);
+      const nativeMessage = nativeError instanceof Error ? nativeError.message : String(nativeError);
+      throw new Error(`无法读取 SQLite 数据库: sql.js=${sqlMessage}; native=${nativeMessage}`, {
+        cause: nativeError,
+      });
+    }
   } finally {
     db?.close();
   }

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { performance } from 'node:perf_hooks';
-import type { AppDatabase, DatabaseStatement } from '../src/db';
+import { BetterSqliteDatabase } from '../src/db/native-adapter';
 import {
   deleteDocumentData,
   getChunkSearchRows,
@@ -16,6 +16,7 @@ import { deserializeEmbedding, serializeEmbedding } from '../src/rag/vector';
 interface NativeStatement {
   all(...params: unknown[]): unknown[];
   get(...params: unknown[]): unknown;
+  iterate(...params: unknown[]): IterableIterator<unknown>;
   run(...params: unknown[]): unknown;
 }
 
@@ -23,6 +24,7 @@ interface NativeDatabase {
   backup(destinationPath: string): Promise<unknown>;
   close(): void;
   exec(sql: string): void;
+  serialize(): Buffer;
   pragma(sql: string, options?: { simple?: boolean }): unknown;
   prepare(sql: string): NativeStatement;
   transaction<T>(operation: () => T): () => T;
@@ -32,41 +34,6 @@ type NativeDatabaseConstructor = new (filename: string) => NativeDatabase;
 
 const require = createRequire(import.meta.url);
 const BetterSqlite3 = require('better-sqlite3') as NativeDatabaseConstructor;
-
-function normalizeParameter(value: unknown): unknown {
-  if (value instanceof Uint8Array && !Buffer.isBuffer(value)) {
-    return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
-  }
-  return value;
-}
-
-class BetterSqliteAppDatabase implements AppDatabase {
-  constructor(readonly native: NativeDatabase) {}
-
-  beginBatch(): void {}
-
-  endBatch(): void {}
-
-  transaction<T>(operation: () => T): T {
-    return this.native.transaction(operation)();
-  }
-
-  exec(sql: string): void {
-    this.native.exec(sql);
-  }
-
-  prepare(sql: string): DatabaseStatement {
-    const statement = this.native.prepare(sql);
-    const normalize = (params: unknown[]) => params.map(normalizeParameter);
-    return {
-      all: (...params) => statement.all(...normalize(params)) as Record<string, unknown>[],
-      get: (...params) => statement.get(...normalize(params)) as Record<string, unknown> | undefined,
-      run: (...params) => {
-        statement.run(...normalize(params));
-      },
-    };
-  }
-}
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -88,7 +55,7 @@ async function main(): Promise<void> {
   const databasePath = path.join(temporaryDirectory, 'poc.db');
   const backupPath = path.join(temporaryDirectory, 'poc.backup.db');
   const native = new BetterSqlite3(databasePath);
-  const db = new BetterSqliteAppDatabase(native);
+  const db = new BetterSqliteDatabase(native);
 
   try {
     native.pragma('foreign_keys = ON');
@@ -255,7 +222,7 @@ async function main(): Promise<void> {
       ),
     );
   } finally {
-    native.close();
+    db.close();
     removeTemporaryDirectory(temporaryDirectory);
   }
 }

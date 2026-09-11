@@ -17,6 +17,9 @@ importers:
       '@ricky0123/vad-web':
         specifier: ^0.0.30
         version: 0.0.30
+      better-sqlite3:
+        specifier: 13.0.3
+        version: 13.0.3
       docx:
         specifier: ^9.7.1
         version: 9.7.1
@@ -93,9 +96,6 @@ importers:
       autoprefixer:
         specifier: ^10.4.20
         version: 10.5.2(postcss@8.5.15)
-      better-sqlite3:
-        specifier: 13.0.3
-        version: 13.0.3
       electron:
         specifier: 44.3.0
         version: 44.3.0
