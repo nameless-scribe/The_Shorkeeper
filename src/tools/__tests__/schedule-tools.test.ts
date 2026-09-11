@@ -73,6 +73,14 @@ describe('schedule format', () => {
 });
 
 describe('create_scheduled_task', () => {
+  it('declares background automation as a confirmable permission', () => {
+    expect(createScheduledTaskTool.requiresPermission).toEqual(['automation']);
+  });
+
+  it('exposes an idempotency key for safe retries', () => {
+    expect(createScheduledTaskTool.parameters.properties?.idempotency_key).toBeDefined();
+  });
+
   it('rejects invalid cron for recurring', async () => {
     const result = await createScheduledTaskTool.execute(
       {

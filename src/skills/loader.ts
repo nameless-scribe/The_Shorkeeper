@@ -141,8 +141,12 @@ export function discoverSkills(): Skill[] {
 }
 
 export function formatSkillsForPrompt(skills: Skill[]): string | null {
-  if (!skills.length) return null;
-  return skills
+  const unique = new Map<string, Skill>();
+  for (const skill of skills) {
+    if (!unique.has(skill.id)) unique.set(skill.id, skill);
+  }
+  if (!unique.size) return null;
+  return [...unique.values()]
     .map(
       (s) =>
         `<skill id="${s.id}" name="${s.name}">\n${s.systemPromptFragment}\n</skill>`,

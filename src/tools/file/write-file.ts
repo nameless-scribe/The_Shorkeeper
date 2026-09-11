@@ -1,8 +1,6 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import type { ToolDefinition } from '../types';
-import { buildFileArtifact, withFileArtifact } from './artifact';
-import { resolveWorkspacePath } from './workspace-path';
+import { withFileArtifact, writeWorkspaceFileAtomically } from './artifact';
 
 export const writeFileTool: ToolDefinition = {
   name: 'write_file',
@@ -33,10 +31,11 @@ export const writeFileTool: ToolDefinition = {
     }
 
     try {
-      const absolute = resolveWorkspacePath(ctx.workspaceRoot, filePath);
-      await fs.mkdir(path.dirname(absolute), { recursive: true });
-      await fs.writeFile(absolute, content, 'utf-8');
-      const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
+      const artifact = await writeWorkspaceFileAtomically(
+        ctx.workspaceRoot,
+        filePath,
+        (temporaryPath) => fs.writeFile(temporaryPath, content, 'utf-8'),
+      );
       return withFileArtifact(
         {
           success: true,

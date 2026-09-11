@@ -84,6 +84,7 @@ export type PermissionFlag =
   | 'filesystem:write'
   | 'network'
   | 'mcp'
+  | 'automation'
   | 'shell';
 
 export interface PermissionPolicy {
@@ -94,4 +95,12 @@ export interface PermissionPolicy {
   };
   network: boolean;
   mcp: boolean;
+  automation: {
+    allowed: boolean;
+    requireConfirm: boolean;
+  };
+  shell: {
+    allowed: boolean;
+    requireConfirm: boolean;
+  };
 }

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getWorkspaceDir } from '../config/paths';
+import { isPathWithinWorkspaceRoots } from '../tools/file/workspace-path';
 import { buildPermissionPolicy } from './policy-loader';
 import type { PermissionDecision, PermissionPolicy } from './types';
 import type { ToolDefinition } from '../tools/types';
@@ -15,32 +16,33 @@ export function defaultPermissionPolicy(): PermissionPolicy {
   return buildPermissionPolicy();
 }
 
-function isPathWithinRoots(targetPath: string, roots: string[]): boolean {
-  const resolved = path.resolve(targetPath);
-  return roots.some((root) => {
-    const normalizedRoot = path.resolve(root);
-    return (
-      resolved === normalizedRoot ||
-      resolved.startsWith(normalizedRoot + path.sep)
-    );
-  });
-}
-
 export function checkFilesystemRead(
   filePath: string,
   policy: PermissionPolicy,
 ): PermissionDecision {
-  for (const root of policy.filesystem.allowedRoots) {
-    try {
-      const resolved = path.resolve(root, filePath);
-      if (isPathWithinRoots(resolved, policy.filesystem.allowedRoots)) {
-        return 'allow';
-      }
-    } catch {
-      continue;
-    }
-  }
-  return 'deny';
+  return isPathWithinWorkspaceRoots(filePath, policy.filesystem.allowedRoots)
+    ? 'allow'
+    : 'deny';
+}
+
+const PATH_ARGUMENT_KEYS = [
+  'path',
+  'output_path',
+  'source_path',
+  'file_path',
+  'sourceFile',
+  'relativePath',
+] as const;
+
+function extractFilesystemPaths(args: unknown): string[] {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return ['.'];
+
+  const record = args as Record<string, unknown>;
+  const paths = PATH_ARGUMENT_KEYS
+    .map((key) => record[key])
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  return paths.length > 0 ? paths : ['.'];
 }
 
 export function checkPermission(
@@ -50,26 +52,29 @@ export function checkPermission(
 ): PermissionDecision {
   for (const flag of tool.requiresPermission) {
     if (flag === 'filesystem:read') {
-      const filePath =
-        args && typeof args === 'object' && 'path' in args
-          ? String((args as { path?: string }).path ?? '.')
-          : '.';
-      const decision = checkFilesystemRead(filePath, policy);
-      if (decision === 'deny') return 'deny';
+      if (extractFilesystemPaths(args).some((filePath) => checkFilesystemRead(filePath, policy) === 'deny')) {
+        return 'deny';
+      }
     }
 
     if (flag === 'filesystem:write') {
       if (!policy.filesystem.writeAllowed) return 'deny';
-      const filePath =
-        args && typeof args === 'object' && 'path' in args
-          ? String((args as { path?: string }).path ?? '.')
-          : '.';
-      if (checkFilesystemRead(filePath, policy) === 'deny') return 'deny';
+      if (extractFilesystemPaths(args).some((filePath) => checkFilesystemRead(filePath, policy) === 'deny')) {
+        return 'deny';
+      }
       if (policy.filesystem.requireConfirmOnWrite) return 'confirm';
     }
 
     if (flag === 'network' && !policy.network) return 'deny';
     if (flag === 'mcp' && !policy.mcp) return 'deny';
+    if (flag === 'automation') {
+      if (!policy.automation?.allowed) return 'deny';
+      if (policy.automation.requireConfirm) return 'confirm';
+    }
+    if (flag === 'shell') {
+      if (!policy.shell?.allowed) return 'deny';
+      if (policy.shell.requireConfirm) return 'confirm';
+    }
   }
 
   return 'allow';
@@ -93,4 +98,16 @@ export async function confirmPermission(
   signal?: AbortSignal,
 ): Promise<boolean> {
   return permissionConfirmer(toolName, args, signal);
+}
+
+/** Resolve a tool's permission for callers that execute tools outside the main loop. */
+export async function resolveToolPermission(
+  tool: ToolDefinition,
+  policy: PermissionPolicy,
+  args: unknown,
+  signal?: AbortSignal,
+): Promise<PermissionDecision> {
+  const decision = checkPermission(tool, policy, args);
+  if (decision !== 'confirm') return decision;
+  return (await confirmPermission(tool.name, args, signal)) ? 'allow' : 'deny';
 }

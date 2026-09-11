@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
-import { buildFileArtifact, withFileArtifact } from '../file/artifact';
+import { withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
 
 function buildItineraryMarkdown(input: {
@@ -99,10 +99,11 @@ export const travelPlanTool: ToolDefinition = {
     });
 
     try {
-      const absolute = resolveWorkspacePath(ctx.workspaceRoot, filePath);
-      await fs.mkdir(path.dirname(absolute), { recursive: true });
-      await fs.writeFile(absolute, content, 'utf-8');
-      const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
+      const artifact = await writeWorkspaceFileAtomically(
+        ctx.workspaceRoot,
+        filePath,
+        (temporaryPath) => fs.writeFile(temporaryPath, content, 'utf-8'),
+      );
       return withFileArtifact(
         {
           success: true,

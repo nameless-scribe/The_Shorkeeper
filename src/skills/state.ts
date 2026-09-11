@@ -9,16 +9,26 @@ export interface SkillInfo extends Skill {
 }
 
 export function getEnabledSkillIds(): string[] {
-  return getJsonSetting<string[]>(ENABLED_KEY) ?? [];
+  const raw = getJsonSetting<unknown>(ENABLED_KEY);
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((id): id is string => typeof id === 'string' && id.trim().length > 0))];
 }
 
 export function setEnabledSkillIds(ids: string[]): void {
-  setJsonSetting(ENABLED_KEY, ids);
+  setJsonSetting(
+    ENABLED_KEY,
+    [...new Set(ids.filter((id) => typeof id === 'string' && id.trim().length > 0))],
+  );
 }
 
 export function getEnabledSkills(): Skill[] {
   const ids = new Set(getEnabledSkillIds());
-  return discoverSkills().filter((s) => ids.has(s.id));
+  const seen = new Set<string>();
+  return discoverSkills().filter((skill) => {
+    if (!ids.has(skill.id) || seen.has(skill.id)) return false;
+    seen.add(skill.id);
+    return true;
+  });
 }
 
 export function getActiveSkills(userMessage: string): Skill[] {
@@ -34,6 +44,9 @@ export function listSkillsWithState(): SkillInfo[] {
 }
 
 export function toggleSkill(id: string, enabled: boolean): void {
+  const skill = discoverSkills().find((item) => item.id === id);
+  if (!skill) return;
+
   const ids = new Set(getEnabledSkillIds());
   if (enabled) ids.add(id);
   else ids.delete(id);

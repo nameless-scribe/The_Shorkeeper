@@ -6,6 +6,10 @@ import {
 import { listScheduledTasks } from '../db/scheduled-tasks';
 import { normalizeToolResult } from '../tools/result';
 import type { ScheduleReminderIntent } from './reminder-intent';
+import {
+  defaultPermissionPolicy,
+  resolveToolPermission,
+} from '../agent/permissions';
 
 export async function executeScheduleReminderIntent(
   intent: Exclude<ScheduleReminderIntent, { triggered: false }>,
@@ -32,8 +36,17 @@ export async function executeScheduleReminderIntent(
       return `未找到名称或内容包含「${intent.nameHint}」的定时任务。可先让我列出当前任务。`;
     }
 
+    const args = { id: target.id };
+    const permission = await resolveToolPermission(
+      deleteScheduledTaskTool,
+      defaultPermissionPolicy(),
+      args,
+      signal,
+    );
+    if (permission === 'deny') return '已取消删除定时任务。';
+
     const result = normalizeToolResult(await deleteScheduledTaskTool.execute(
-      { id: target.id },
+      args,
       { sessionId: '', workspaceRoot: '', signal: signal ?? new AbortController().signal },
     ));
     return result.success ? result.output : `删除失败：${result.error ?? '未知错误'}`;
@@ -56,6 +69,21 @@ export async function executeScheduleReminderIntent(
     const pad = (n: number) => String(n).padStart(2, '0');
     payload.run_at = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
   }
+  payload.idempotency_key = [
+    'natural-reminder',
+    intent.scheduleKind,
+    intent.name.trim(),
+    intent.message.trim(),
+    intent.cron ?? intent.runAt ?? '',
+  ].join(':');
+
+  const permission = await resolveToolPermission(
+    createScheduledTaskTool,
+    defaultPermissionPolicy(),
+    payload,
+    signal,
+  );
+  if (permission === 'deny') return '已取消创建定时提醒。';
 
   const result = normalizeToolResult(await createScheduledTaskTool.execute(payload, {
     sessionId: '',

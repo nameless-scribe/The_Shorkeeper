@@ -44,6 +44,20 @@ describe('skills loader', () => {
     expect(block).toContain('</skill>');
   });
 
+  it('does not inject the same skill twice', () => {
+    const item = {
+      id: 'duplicate',
+      name: 'Duplicate',
+      description: '',
+      version: '1.0.0',
+      systemPromptFragment: 'body',
+      trigger: 'manual' as const,
+      priority: 0,
+    };
+
+    expect(formatSkillsForPrompt([item, item])?.match(/<skill /g)).toHaveLength(1);
+  });
+
   it('caches discoverSkills until invalidated', () => {
     invalidateSkillsCache();
     const first = discoverSkills();

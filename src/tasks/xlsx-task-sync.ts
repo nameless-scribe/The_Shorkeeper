@@ -1,6 +1,7 @@
 import { getUserTask, type UserTaskInfo } from '../db/user-tasks';
 import { parseXlsxFile } from '../tools/doc/parse-xlsx';
 import { loadExcelJS } from '../tools/doc/exceljs-loader';
+import { writeWorkspaceFileAtomically } from '../tools/file/artifact';
 import { resolveWorkspacePath } from '../tools/file/workspace-path';
 import { getWorkspaceDir } from '../config/paths';
 import path from 'node:path';
@@ -54,6 +55,10 @@ export async function syncUserTaskStatusToXlsx(taskId: string): Promise<string |
     excelRow.getCell(colIdx + 1).value = cell;
   });
   excelRow.commit();
-  await workbook.xlsx.writeFile(absolute);
+  await writeWorkspaceFileAtomically(
+    workspaceRoot,
+    task.sourceFile,
+    (temporaryPath) => workbook.xlsx.writeFile(temporaryPath),
+  );
   return task.sourceFile;
 }

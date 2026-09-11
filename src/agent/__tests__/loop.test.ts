@@ -30,6 +30,8 @@ const policy: PermissionPolicy = {
   },
   network: false,
   mcp: false,
+  automation: { allowed: true, requireConfirm: true },
+  shell: { allowed: false, requireConfirm: true },
 };
 
 async function* modelEvents(events: ModelEvent[]): AsyncGenerator<ModelEvent> {

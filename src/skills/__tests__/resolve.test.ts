@@ -68,4 +68,13 @@ describe('resolveActiveSkills', () => {
     const active = resolveActiveSkills('分析表格数据', enabled);
     expect(active.map((s) => s.id)).toEqual(['task-execution', 'excel']);
   });
+
+  it('deduplicates skills by id before activation', () => {
+    const first = skill({ id: 'workspace', trigger: 'manual', priority: 10 });
+    const duplicate = skill({ id: 'workspace', trigger: 'manual', priority: 1 });
+
+    expect(resolveActiveSkills('你好', [first, duplicate]).map((s) => s.id)).toEqual([
+      'workspace',
+    ]);
+  });
 });

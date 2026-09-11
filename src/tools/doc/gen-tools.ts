@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
-import { buildFileArtifact, withFileArtifact } from '../file/artifact';
+import { buildFileArtifact, withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
 import { parseXlsxFile } from './parse-xlsx';
 import { loadExcelJS } from './exceljs-loader';
@@ -12,10 +12,7 @@ async function writeWorkspaceFile(
   write: (absolute: string) => Promise<void>,
 ) {
   try {
-    const absolute = resolveWorkspacePath(ctx.workspaceRoot, filePath);
-    await fs.mkdir(path.dirname(absolute), { recursive: true });
-    await write(absolute);
-    const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
+    const artifact = await writeWorkspaceFileAtomically(ctx.workspaceRoot, filePath, write);
     return withFileArtifact({ success: true, output: `已生成 ${filePath}` }, artifact);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

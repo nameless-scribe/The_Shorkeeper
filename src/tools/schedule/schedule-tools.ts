@@ -33,7 +33,7 @@ export const createScheduledTaskTool: ToolDefinition = {
   description:
     '创建定时提醒。区分两种：recurring=每天/周期性重复；once=指定时间只提醒一次。action 固定为 reminder 系统通知。',
   category: 'life',
-  requiresPermission: [],
+  requiresPermission: ['automation'],
   parameters: {
     type: 'object',
     properties: {
@@ -53,6 +53,10 @@ export const createScheduledTaskTool: ToolDefinition = {
           'schedule_kind=once 时必填，ISO 本地时间，如 "2026-06-30T15:00:00" 表示 6 月 30 日 15:00',
       },
       message: { type: 'string', description: '到点弹出的提醒正文' },
+      idempotency_key: {
+        type: 'string',
+        description: '可选的重试幂等键；相同幂等键不会重复创建任务',
+      },
     },
     required: ['name', 'schedule_kind', 'message'],
   },
@@ -74,6 +78,9 @@ export const createScheduledTaskTool: ToolDefinition = {
         : typeof raw.runAt === 'string'
           ? raw.runAt
           : undefined;
+    const idempotencyKey = typeof raw.idempotency_key === 'string'
+      ? raw.idempotency_key.trim()
+      : '';
 
     if (!name?.trim() || !message?.trim()) {
       return { success: false, output: '', error: '缺少 name 或 message 参数' };
@@ -115,6 +122,25 @@ export const createScheduledTaskTool: ToolDefinition = {
       }
     }
 
+    if (idempotencyKey) {
+      const existing = listScheduledTasks().find((task) => {
+        if (!task.enabled) return false;
+        try {
+          const payload = JSON.parse(task.actionPayload) as Record<string, unknown>;
+          return payload._shorekeeper_idempotency_key === idempotencyKey;
+        } catch {
+          return false;
+        }
+      });
+      if (existing) {
+        return {
+          success: true,
+          output: `定时任务已存在，未重复创建：「${existing.name}」（id: ${existing.id}）。`,
+          metadata: { idempotent: true, taskId: existing.id },
+        };
+      }
+    }
+
     try {
       const task = createScheduledTask({
         name: name.trim(),
@@ -122,7 +148,10 @@ export const createScheduledTaskTool: ToolDefinition = {
         cron: scheduleKind === 'recurring' ? cronExpr!.trim() : '',
         runAt,
         actionType: 'reminder',
-        actionPayload: JSON.stringify({ message: message.trim() }),
+        actionPayload: JSON.stringify({
+          message: message.trim(),
+          ...(idempotencyKey ? { _shorekeeper_idempotency_key: idempotencyKey } : {}),
+        }),
         enabled: true,
       });
 
@@ -157,7 +186,7 @@ export const deleteScheduledTaskTool: ToolDefinition = {
   name: 'delete_scheduled_task',
   description: '按 id 删除定时任务。删除前可先 list_scheduled_tasks 获取 id。',
   category: 'life',
-  requiresPermission: [],
+  requiresPermission: ['automation'],
   parameters: {
     type: 'object',
     properties: {

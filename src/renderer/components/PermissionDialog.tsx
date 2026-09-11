@@ -44,20 +44,29 @@ function ArgPreview({ args }: { args: unknown }) {
     );
   }
 
-  const path = typeof normalized.path === 'string' ? normalized.path : null;
+  const pathKeys = ['path', 'output_path', 'source_path', 'file_path', 'sourceFile', 'relativePath'] as const;
+  const paths = pathKeys
+    .map((key) => ({ key, value: normalized[key] }))
+    .filter((item): item is { key: (typeof pathKeys)[number]; value: string } =>
+      typeof item.value === 'string' && item.value.trim().length > 0,
+    );
   const content = typeof normalized.content === 'string' ? normalized.content : null;
   const contentLong = (content?.length ?? 0) > 600;
 
-  if (path || content) {
+  if (paths.length > 0 || content) {
     return (
       <div className="space-y-3">
-        {path && (
+        {paths.length > 0 && (
           <div>
             <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-keeper-ice/45">
-              目标文件
+              文件路径
             </div>
-            <div className="rounded-xl border border-keeper-cyan/30 bg-keeper-cyan/10 px-3 py-2.5 font-mono text-sm text-keeper-cyan">
-              {path}
+            <div className="space-y-1.5">
+              {paths.map(({ key, value }) => (
+                <div key={`${key}-${value}`} className="rounded-xl border border-keeper-cyan/30 bg-keeper-cyan/10 px-3 py-2.5 font-mono text-sm text-keeper-cyan">
+                  {key === 'output_path' ? '输出：' : key === 'source_path' ? '来源：' : ''}{value}
+                </div>
+              ))}
             </div>
           </div>
         )}

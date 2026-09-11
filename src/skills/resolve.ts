@@ -14,10 +14,17 @@ function messageMatchesKeywords(message: string, keywords: string[] | undefined)
 export function resolveActiveSkills(userMessage: string, enabled: Skill[]): Skill[] {
   const active = enabled.filter((skill) => {
     if (skill.trigger === 'manual') return true;
-    return messageMatchesKeywords(userMessage, skill.matchKeywords);
+    return messageMatchesKeywords(userMessage, skill.matchKeywords?.filter((keyword) => keyword.trim()));
   });
 
-  return [...active].sort((a, b) => {
+  const unique = new Map<string, Skill>();
+  for (const skill of active) {
+    // Skill ids are the lifecycle identity. Avoid injecting the same skill
+    // twice when duplicate metadata or a stale enabled list is encountered.
+    if (!unique.has(skill.id)) unique.set(skill.id, skill);
+  }
+
+  return [...unique.values()].sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
     return a.name.localeCompare(b.name, 'zh-CN');
   });

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
-import { buildFileArtifact, withFileArtifact } from '../file/artifact';
+import { withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
 import { loadMammoth, loadWordExtractor } from './doc-loaders';
 
@@ -159,11 +159,11 @@ export const convertToMarkdownTool: ToolDefinition = {
         markdown = plainTextToMarkdown(content, title, ext);
       }
 
-      const outAbsolute = resolveWorkspacePath(ctx.workspaceRoot, outPath);
-      await fs.mkdir(path.dirname(outAbsolute), { recursive: true });
-      await fs.writeFile(outAbsolute, markdown, 'utf-8');
-
-      const artifact = await buildFileArtifact(ctx.workspaceRoot, outPath);
+      const artifact = await writeWorkspaceFileAtomically(
+        ctx.workspaceRoot,
+        outPath,
+        (temporaryPath) => fs.writeFile(temporaryPath, markdown, 'utf-8'),
+      );
       return withFileArtifact(
         {
           success: true,
