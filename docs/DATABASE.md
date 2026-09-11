@@ -5,7 +5,9 @@
 | 用途 | 路径 |
 |------|------|
 | 数据库目录 | `D:\SQLlite` |
-| 主库文件 | `D:\SQLlite\shorekeeper.db` |
+| 活动主库 | `D:\SQLlite\shorekeeper.native.db`（better-sqlite3） |
+| sql.js 回滚源 | `D:\SQLlite\shorekeeper.db`（`SHOREKEEPER_DB_PATH` 指向此基路径） |
+| 引擎标记 | `D:\SQLlite\shorekeeper.db.engine.json` |
 | Agent 工作区 | `D:\SQLlite\workspace` |
 | 外观资源 | `D:\SQLlite\appearance\`（背景 `bg-*`、头像；`app_settings` 仅存文件名） |
 
@@ -13,23 +15,24 @@
 
 ## 运行时实现
 
-- 本项目使用 **sql.js**（WASM SQLite）+ 手写 migration，兼容 Electron Windows。
+- 生产运行时使用 **better-sqlite3**；活动库为 `shorekeeper.native.db`。`sql.js` 只保留为回滚源和双 adapter 测试。
+- 启动通过 `.engine.json` 选择引擎；标记损坏会阻断启动，不会静默回退。
 - 应用启动时 `initDatabase()` 自动建表并执行 `src/db/migrations/*.sql`。
-- `sql.js` 每次写操作同步确认落盘：先写入同目录临时文件并执行 `fsync`，再原子替换主库。落盘失败会返回给调用方，并从主库恢复内存状态。
-- 业务 SQL 集中在 `src/db` 与 `src/db/repositories`；Agent、记忆、RAG、渲染、调度和工具层通过结构化接口访问数据，不直接依赖 sql.js。
-- schema 变更前自动复制一份 `shorekeeper.db.pre-migration.bak-*`；每个 migration 的 SQL 和账本记录在同一事务中提交。
+- sql.js 回滚路径每次写操作仍走临时文件 + `fsync` 原子替换；native 路径使用 WAL。
+- 业务 SQL 集中在 `src/db` 与 `src/db/repositories`；Agent、记忆、RAG、渲染、调度和工具层通过 Repository 访问数据。
+- schema 变更前自动复制一份迁移前备份；每个 migration 的 SQL 和账本记录在同一事务中提交。
 - `schema_migrations.status` 区分 `applied`、`skipped`、`partial`。`partial` 会直接中止启动，不允许应用在不确定的 schema 上继续运行。
-- 应用运行时不得使用 Navicat、DB Browser 或 `sqlite3` 写入同一主库；`sql.js` 的下一次整库落盘可能覆盖外部修改。外部工具仅应在完全退出应用后使用。
+- 应用运行时不要用 Navicat、DB Browser 或 `sqlite3` 写入同一主库。完全退出后再用外部工具打开活动库 `shorekeeper.native.db`。
 
 ## 内存模式 vs 文件模式
 
 - **`:memory:`** — 仅存在于进程内存，退出后数据消失；单测临时库使用。
-- **文件模式** — 本项目使用 `D:\SQLlite\shorekeeper.db`，数据持久保存。
+- **文件模式** — 生产使用 `D:\SQLlite\shorekeeper.native.db`；`shorekeeper.db` 是 sql.js 回滚源。
 
 ## 初始化与迁移
 
 ```powershell
-cd e:\TheShorekeeper
+cd The_Shorkeeper
 
 # 确保库文件存在并应用 migration
 pnpm db:init
@@ -49,6 +52,8 @@ pnpm db:seed
 | `pnpm db:backup create` | 校验主库后创建手动备份并输出 SHA-256 |
 | `pnpm db:cleanup-sessions` | 删除无消息的空会话（保留当前活跃会话） |
 | `pnpm db:reset-keep-models` | 清空业务数据，保留应用内 API 模型配置 |
+| `pnpm db:native status` | 查看当前引擎标记与活动库 |
+| `pnpm db:native rehearse` | 只读副本迁移演练，不替换生产主库 |
 
 使用 `pnpm db:health -- --json` 可输出结构化 JSON。健康状态为 `critical` 时命令退出码为 1；检查过程直接读取数据库文件，不触发建表、migration 或持久化。
 
@@ -118,8 +123,10 @@ M3 之后新写入的记忆应带 `memory_key`；历史无 key 行可手动清�
 在 **Navicat**（连接类型选 SQLite）、DB Browser for SQLite、DBeaver 等中打开：
 
 ```
-D:\SQLlite\shorekeeper.db
+D:\SQLlite\shorekeeper.native.db
 ```
+
+sql.js 回滚源仍是 `D:\SQLlite\shorekeeper.db`。
 
 ## 备份
 
@@ -127,14 +134,16 @@ D:\SQLlite\shorekeeper.db
 
 ```
 D:\SQLlite\
+├── shorekeeper.native.db
 ├── shorekeeper.db
+├── shorekeeper.db.engine.json
 ├── workspace\
 └── appearance\
 ```
 
-仅复制 `shorekeeper.db` 也可保留聊天与设置，但不含工作区文件与自定义壁纸。
+仅复制活动主库也可保留聊天与设置，但不含工作区文件与自定义壁纸。建议同时备份 `.engine.json` 和 sql.js 回滚源。
 
-应用会在实际 schema 变更前自动创建数据库快照，但这不能替代整个数据目录的定期备份。手动复制仍建议在应用未运行时进行；当前 `sql.js` 路线不应直接套用依赖原生 SQLite 连接的在线 backup 命令。
+应用会在实际 schema 变更前自动创建数据库快照，但这不能替代整个数据目录的定期备份。手动复制仍建议在应用未运行时进行。
 
 ### 备份命令
 

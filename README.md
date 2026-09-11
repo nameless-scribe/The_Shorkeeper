@@ -10,7 +10,7 @@
 
 - Node.js **20+**
 - pnpm
-- Windows（开发与打包主路径）；数据库通过 **sql.js** 读写
+- Windows（开发与打包主路径）；生产数据库为 **better-sqlite3**（活动库 `shorekeeper.native.db`）
 
 ## 快速开始
 
@@ -71,7 +71,7 @@ pnpm dist
 
 **构建顺序：** `pnpm dist` 会先执行 `scripts/copy-vad-assets.mjs`（同步 VAD / ONNX 到 `public/vad/`），再 `vite build` 与 `electron-builder`。**请勿单独运行 `vite build`**，否则安装包内语音通话 VAD 可能无法初始化。开发模式 `pnpm dev` 同样会在启动前同步 VAD。
 
-**在其他 Windows 电脑使用：** 拷贝 `release/` 下的安装包（`.exe`）安装即可，无需 Node / pnpm。安装包含 sql.js（WASM）与数据库迁移脚本。若目标机没有 `D:` 盘，会自动回退到用户目录下的应用数据文件夹。
+**在其他 Windows 电脑使用：** 拷贝 `release/` 下的安装包（`.exe`）安装即可，无需 Node / pnpm。安装包含 better-sqlite3、sql.js 回滚能力与数据库迁移脚本。若目标机没有 `D:` 盘，会自动回退到用户目录下的应用数据文件夹。
 
 **打包白名单：** 仅 `dist/`、`dist-electron/`、`skills/`、`package.json` 及运行时依赖。**不会**打入开发机 `.env`、源码、`docs/`、本地数据库或 `workspace/`。API Key 需在目标机 **设置 → API 设置** 填写。
 
@@ -92,7 +92,8 @@ pnpm dist
 | 项 | 默认路径 |
 |----|----------|
 | 数据库目录 | `D:\SQLlite`（`SHOREKEEPER_DB_DIR`） |
-| 数据库文件 | `D:\SQLlite\shorekeeper.db`（`SHOREKEEPER_DB_PATH`） |
+| 活动主库 | `D:\SQLlite\shorekeeper.native.db` |
+| sql.js 回滚源 | `D:\SQLlite\shorekeeper.db`（`SHOREKEEPER_DB_PATH` 指向此基路径） |
 | 工作区 | `D:\SQLlite\workspace`（`SHOREKEEPER_WORKSPACE_DIR`） |
 | 外观资源 | `D:\SQLlite\appearance\`（自定义背景 / 头像；DB 仅存文件名） |
 
@@ -141,7 +142,7 @@ TheShorekeeper/
 │   ├── mcp/                  # MCP Client
 │   ├── skills/               # 技能加载与解析
 │   ├── voice/                # TTS / 通话会话
-│   ├── db/                   # sql.js、schema、migrations
+│   ├── db/                   # better-sqlite3 / sql.js adapter、schema、migrations
 │   └── renderer/             # React UI（?panel= 区分窗口）
 ├── skills/                   # 内置技能包（打入安装包）
 ├── scripts/                  # DB / VAD / 打包辅助脚本
@@ -190,14 +191,17 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | [MODELS.md](docs/MODELS.md) | 模型与 API |
 | [UI-THEME.md](docs/UI-THEME.md) | 主题与外观 |
 | [RAG-OPTIMIZATION.md](docs/RAG-OPTIMIZATION.md) | 知识库检索优化 |
-| [PLAN.md](docs/PLAN.md) | 里程碑计划 |
-| [STABILITY-PLAN.md](docs/STABILITY-PLAN.md) | 当前阶段稳定化计划 |
-| [superpowers/](docs/superpowers/README.md) | 语音等专项计划 |
+| [STABILITY-PLAN.md](docs/STABILITY-PLAN.md) | 稳定化计划（S0–S5 已收口） |
+| [S2-ACCEPTANCE.md](docs/S2-ACCEPTANCE.md) | Agent 运行时验收集 |
+| [S3-ACCEPTANCE.md](docs/S3-ACCEPTANCE.md) | 工具 / 技能 / 权限验收集 |
+| [S5-ACCEPTANCE.md](docs/S5-ACCEPTANCE.md) | 私人助理验收集 |
+| [RAG-RETRIEVAL-BASELINE.md](docs/RAG-RETRIEVAL-BASELINE.md) | RAG 检索质量基线 |
 
 ## 进度
 
 - **M1–M7**：已完成（脚手架、Agent、记忆、多窗、RAG、MCP/技能、工具与打包）
-- **语音**：TTS 朗读已落地；通话（STT → Agent → CosyVoice）见专项计划
+- **稳定化 S0–S5**：已收口（原生 SQLite、Agent 运行时、工具权限、RAG 生命周期、私人助理契约）
+- **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地
 
 ## License
 

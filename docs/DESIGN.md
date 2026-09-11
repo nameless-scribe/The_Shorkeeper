@@ -1,8 +1,8 @@
 # The Shorekeeper 设计文档
 
-> 版本：0.3.1  
-> 更新日期：2026-07-13  
-> 状态：**M1–M7 已完成**（含 RAG 优化、人设/外观/主题、插件与好感度、自动更新）；**语音** TTS 已落地、通话 C1–C5 已落地（实机验收见专项计划）。推送仓库时勿提交 `.env` / 真实 Key（见根目录 README「仓库安全」）。
+> 版本：0.3.2  
+> 更新日期：2026-09-11  
+> 状态：**M1–M7 已完成**；**稳定化 S0–S5 已收口**；**语音** TTS 与通话已落地。推送仓库时勿提交 `.env` / 真实 Key（见根目录 README「仓库安全」）。
 
 ---
 
@@ -138,19 +138,19 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 | UI 框架 | React 18 | 组件化面板 |
 | 样式 | Tailwind CSS | 主题、毛玻璃、渐变 |
 | 图表 | Recharts | Token 周趋势 |
-| 数据库 | SQLite（运行时 **sql.js**；设计原案 better-sqlite3） | 嵌入式主库 |
+| 数据库 | SQLite（生产 **better-sqlite3**；sql.js 仅作回滚与双 adapter 测试） | 嵌入式主库 |
 | Schema | `src/db/schema.ts` + 手写 SQL migration | 类型与迁移 |
 | 全文检索 | SQLite FTS5 | Worldbook 关键词 |
-| 向量检索 | sql.js BLOB + TS 余弦 + FTS5 RRF 混合（M5 + RAG 优化） | RAG、语义记忆 |
+| 向量检索 | Embedding BLOB + TS 余弦 + FTS5 RRF 混合 | RAG、语义记忆 |
 | 定时任务 | node-cron | 本地调度 |
-| TTS | edge-tts 或等价方案 | 文本转语音 |
+| TTS | 百炼 CosyVoice | 文本转语音 / 通话 |
 | MCP | @modelcontextprotocol/sdk | 外部工具扩展 |
 
 ### 4.2 数据库选型结论
 
-**主库：SQLite（sql.js + 手写 migration）**
+**主库：SQLite（生产 better-sqlite3 + 手写 migration）**
 
-理由：Electron 主进程友好、单文件备份、WASM 实现免 native 编译（Windows 兼容）。详见 [DATABASE.md](./DATABASE.md)。
+理由：单文件备份、WAL、FTS5/trigram 与 Embedding BLOB 均可用；sql.js 保留为回滚源和双 adapter 测试。详见 [DATABASE.md](./DATABASE.md)。
 
 分阶段扩展：
 
@@ -450,10 +450,9 @@ interface Skill {
 - 启动时连接已启用 Server，发现工具并注册
 - 设置页支持添加/测试/禁用 Server
 
-### 5.9 语音子系统（TTS）
+### 5.9 语音子系统（TTS / 通话）
 
-> 专项计划：[superpowers/plans/2026-07-01-voice.md](./superpowers/plans/2026-07-01-voice.md)  
-> **当前进度：V1 部分完成**（按需朗读 + 自动播放）；STT、声音复刻 UI、Orchestrator 侧 `tts_chunk` 广播待做。
+> **当前进度：TTS 朗读与通话已落地**（按需/自动朗读、复刻音色、独立通话窗；STT → Agent → CosyVoice）。
 
 **引擎**：阿里云百炼 **CosyVoice**（`src/voice/bailian-tts.ts`），替代 M6 阶段移除的 edge-tts。
 
@@ -859,11 +858,13 @@ TheShorekeeper/
 │   ├── DATABASE.md               # 数据库、migration、数据目录
 │   ├── MODELS.md                 # 模型与 API / Embedding 配置
 │   ├── UI-THEME.md               # 主题预设、壁纸、CSS 变量
-│   ├── PLAN.md                   # 里程碑实施计划（M1–M7）
-│   ├── STABILITY-PLAN.md         # M1-M7 后稳定化计划
-│   └── superpowers/              # 进行中的专项计划（语音 / RAG 等）
-│       ├── README.md
-│       └── plans/
+│   ├── 使用说明.md               # 日常使用说明
+│   ├── RAG-OPTIMIZATION.md       # 知识库检索优化
+│   ├── STABILITY-PLAN.md         # M1-M7 后稳定化计划（S0–S5 已收口）
+│   ├── S2-ACCEPTANCE.md          # Agent 运行时验收集
+│   ├── S3-ACCEPTANCE.md          # 工具 / 技能 / 权限验收集
+│   ├── S5-ACCEPTANCE.md          # 私人助理验收集
+│   └── RAG-RETRIEVAL-BASELINE.md # RAG 检索质量基线
 ├── electron/
 │   ├── main.ts                   # 应用入口：env、DB、IPC、托盘、调度、自动更新
 │   ├── preload.ts                # contextBridge API（window.shorekeeper）
@@ -907,7 +908,7 @@ TheShorekeeper/
 │   ├── session/                  # 活跃会话 id
 │   ├── workspace/                # 工作区导入、扩展名白名单
 │   ├── shared/                   # types, theme-styles, appearance-asset-url
-│   └── db/                       # sql.js、migrations（0000–0011）、repositories、seeds
+│   └── db/                       # better-sqlite3 / sql.js adapter、migrations、repositories、seeds
 ├── src/renderer/                 # React（main.tsx + ?panel= 路由）
 │   ├── ChatPage.tsx
 │   ├── components/               # MessageList, AgentWorkflowStrip, MessageSpeechButton, PermissionDialog, …
@@ -951,7 +952,7 @@ TheShorekeeper/
 |------|--------|
 | `dist/` 前端、`dist-electron/` 主进程 | `.env`、源码 `src/`、`docs/` |
 | `skills/`、`package.json` | 本地 `shorekeeper.db`、`workspace/` |
-| `extraResources`: sql.js WASM、migration `.sql` | `node_modules/` 全量 |
+| `extraResources`: migration `.sql`、sql.js WASM（回滚） | `node_modules/` 全量 |
 
 用户敏感配置存于 **本机** `app_settings`（SQLite）或 `userData/.env`，不随安装包分发。
 
@@ -979,7 +980,7 @@ TheShorekeeper/
 | **M6** | 扩展 | ✅ MCP、技能、Anthropic 协议 |
 | **M7** | 工具补齐 | ✅ 文档生成、记账、旅行规划；Token 优化与长会话压缩；Windows 打包 |
 | **M7+** | 人设 / 外观 / 主题 | ✅ 可编辑人设、9 套主题、自定义壁纸与头像（见 UI-THEME.md） |
-| **Voice V1** | TTS 按需/自动朗读 | 🔄 百炼 CosyVoice、语音设置页、🔊 按钮（见 voice 计划） |
+| **Voice** | TTS / 通话 | ✅ 百炼 CosyVoice、语音设置页、通话窗 |
 
 每个里程碑结束时应可独立运行、可测试。
 
@@ -990,7 +991,7 @@ TheShorekeeper/
 | 风险 | 影响 | 对策 |
 |------|------|------|
 | OpenAI / Anthropic 工具格式差异 | 工具循环失败 | 适配层统一 ToolCall 结构 |
-| better-sqlite3 与 Electron 版本 | 安装失败 | 已改用 sql.js（WASM），免 native 编译 |
+| better-sqlite3 与 Electron ABI | 打包后 native 加载失败 | 固定 `better-sqlite3@13.0.3`；sql.js 保留为回滚源 |
 | 上下文超长 | 成本高、超限 | 摘要压缩 + RAG 检索代替全量历史 |
 | MCP Server 不稳定 | 工具超时 | 超时、重试、禁用开关 |
 | 百炼 TTS endpoint 与 Chat 不同 | 语音不可用 | 设置 → 语音独立 endpoint；或 `VOICE_TTS_ENDPOINT` |
@@ -1013,8 +1014,6 @@ TheShorekeeper/
 ### 13.2 参考资源
 
 - [Model Context Protocol](https://modelcontextprotocol.io/)
-- [Drizzle ORM](https://orm.drizzle.team/)
-- [sqlite-vec](https://github.com/asg017/sqlite-vec)
 
 ### 13.3 文档修订记录
 
@@ -1025,6 +1024,7 @@ TheShorekeeper/
 | 0.2.0 | 2026-07-01 | 反映 M1–M7 实现：混合 RAG、好感度、博查搜索、插件系统、目录与表结构更新 |
 | 0.2.1 | 2026-07-01 | 目录结构扩充：IPC/主题/打包白名单；人设外观主题落地；文档与 superpowers 索引整理 |
 | 0.3.0 | 2026-07-02 | 语音 V1（百炼 TTS）、自动更新、Agent 工作流条；表结构补全（session_summaries、bookkeeping）；目录与 IPC 同步 |
+| 0.3.2 | 2026-09-11 | 同步 S0–S5：生产库改为 better-sqlite3；清理已完成的里程碑/专项计划文档 |
 
 ---
 
