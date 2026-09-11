@@ -32,7 +32,7 @@ vi.mock('../../memory/session-context', () => ({
 vi.mock('../../affection', () => ({ formatAffectionForPrompt: vi.fn(() => '羁绊状态') }));
 vi.mock('../../skills/loader', () => ({ formatSkillsForPrompt: vi.fn(() => null) }));
 vi.mock('../../rag/documents', () => ({
-  listDocuments: vi.fn(() => [{ id: 'doc-1', filename: 'manual.md' }]),
+  listIndexedDocuments: vi.fn(() => [{ id: 'doc-1', filename: 'manual.md' }]),
 }));
 vi.mock('../../rag/retriever', () => ({
   retrieveRelevantChunks: state.retrieve,

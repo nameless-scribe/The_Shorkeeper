@@ -40,6 +40,7 @@ describe('workspace import extensions', () => {
     expect(result.originalName).toBe('sample.xlsx');
     expect(result.relativePath).toBe('sample.xlsx');
     expect(workspaceFileToolHint('.xlsx')).toBe('read_xlsx');
+    await expect(fs.readFile(source, 'utf-8')).resolves.toBe('fake-xlsx');
   });
 
   it('renames duplicate imports with _N suffix', async () => {

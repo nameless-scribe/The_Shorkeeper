@@ -306,6 +306,14 @@ export interface UserTaskInfo {
   updatedAt: number;
 }
 
+export type DocumentStatus =
+  | 'importing'
+  | 'indexed'
+  | 'index_failed'
+  | 'needs_rebuild'
+  | 'superseded'
+  | 'deleted';
+
 export interface DocumentInfo {
   id: string;
   filename: string;
@@ -313,12 +321,25 @@ export interface DocumentInfo {
   mimeType: string | null;
   chunkCount: number;
   importedAt: number;
+  status: DocumentStatus;
+  statusError: string | null;
+  updatedAt: number;
+  indexedAt: number | null;
+  deletedAt: number | null;
+  sourcePath: string | null;
+  title: string;
+  titleKey: string;
+  version: number;
+  supersededBy: string | null;
+  chunkSize: number;
+  chunkOverlap: number;
 }
 
 export type ImportProgress =
   | { phase: 'reading' }
   | { phase: 'chunking'; chunkCount: number }
   | { phase: 'embedding'; done: number; total: number }
+  | { phase: 'retrying'; done: number; total: number; attempt: number; maxAttempts: number; error: string }
   | { phase: 'done'; document: DocumentInfo }
   | { phase: 'skipped'; document: DocumentInfo; reason: string };
 
@@ -326,7 +347,23 @@ export type ReindexProgress = {
   done: number;
   total: number;
   filename?: string;
+  failed?: number;
 };
+
+export interface ReindexResult {
+  indexed: number;
+  failed: number;
+}
+
+export interface KnowledgeIndexCompatibilityInfo {
+  storedDimensions: number[];
+  storedModels: string[];
+  storedChunkConfigs: Array<{ size: number; overlap: number }>;
+  hasMismatch: boolean;
+  modelMismatch: boolean;
+  dimensionMismatch: boolean;
+  chunkConfigMismatch: boolean;
+}
 
 export interface PermissionRequestPayload {
   requestId: string;

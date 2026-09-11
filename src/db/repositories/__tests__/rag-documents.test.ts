@@ -8,6 +8,7 @@ import {
   findDocumentByContentHash,
   getAdjacentChunks,
   getDocument,
+  getDocumentIncludingDeleted,
   getStoredEmbeddingDimensions,
   hasDocumentChunksFts,
   insertDocumentWithChunks,
@@ -16,6 +17,7 @@ import {
   loadAllDocumentEmbeddings,
   loadFtsSourceRows,
   rebuildFtsIndex,
+  recoverInterruptedDocumentImports,
   replaceDocumentChunks,
   searchDocumentChunkFtsRanks,
   updateDocumentMeta,
@@ -100,6 +102,13 @@ describe('RAG documents repository', () => {
     expect(deleteDocumentData(document.id, db)).toBe(true);
     expect(deleteDocumentData(document.id, db)).toBe(false);
     expect(listDocuments(db)).toEqual([]);
+    expect(getDocumentIncludingDeleted(document.id, db)).toEqual(
+      expect.objectContaining({ status: 'deleted', chunkCount: 0 }),
+    );
+    updateDocumentMeta(document.id, { status: 'index_failed', statusError: 'late failure' }, db);
+    expect(getDocumentIncludingDeleted(document.id, db)).toEqual(
+      expect.objectContaining({ status: 'deleted', statusError: null }),
+    );
     expect(loadAllChunkEmbeddingRecords(db)).toEqual([]);
   });
 
@@ -107,6 +116,52 @@ describe('RAG documents repository', () => {
     expect(hasDocumentChunksFts(db)).toBe(false);
     expect(searchDocumentChunkFtsRanks('"测试"', 5, undefined, db)).toBeNull();
     expect(rebuildFtsIndex([], db)).toBe(false);
+  });
+
+  it('marks interrupted imports as needing rebuild on startup recovery', () => {
+    const document = insertDocumentWithChunks(
+      {
+        filename: 'interrupted.md',
+        filepath: 'knowledge/interrupted.md',
+        mimeType: 'text/markdown',
+        chunks: [],
+        status: 'importing',
+      },
+      db,
+    );
+
+    expect(recoverInterruptedDocumentImports(db)).toBe(1);
+    expect(recoverInterruptedDocumentImports(db)).toBe(0);
+    expect(getDocument(document.id, db)).toEqual(
+      expect.objectContaining({
+        status: 'needs_rebuild',
+        statusError: '上次导入被中断，请重新构建索引',
+      }),
+    );
+  });
+
+  it('does not expose superseded versions through the active document lookup', () => {
+    const document = insertDocumentWithChunks(
+      {
+        filename: 'history.md',
+        filepath: 'knowledge/history.md',
+        mimeType: 'text/markdown',
+        chunks: [],
+      },
+      db,
+    );
+
+    updateDocumentMeta(document.id, { status: 'superseded' }, db);
+
+    expect(getDocument(document.id, db)).toBeUndefined();
+    expect(getDocumentIncludingDeleted(document.id, db)).toEqual(
+      expect.objectContaining({ id: document.id, status: 'superseded' }),
+    );
+    updateDocumentMeta(document.id, { status: 'index_failed', statusError: 'stale task' }, db);
+    expect(getDocumentIncludingDeleted(document.id, db)).toEqual(
+      expect.objectContaining({ id: document.id, status: 'superseded', statusError: null }),
+    );
+    expect(listDocuments(db)).toEqual([]);
   });
 
   it('rolls back the document and all chunks when insertion fails midway', () => {

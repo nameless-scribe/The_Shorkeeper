@@ -31,6 +31,8 @@ function formatProgress(progress: ImportProgress | null): string {
       return `分块完成，共 ${progress.chunkCount} 段`;
     case 'embedding':
       return `向量化 ${progress.done}/${progress.total}…`;
+    case 'retrying':
+      return `向量服务暂时失败，正在重试 ${progress.attempt}/${progress.maxAttempts}（${progress.done}/${progress.total}）…`;
     case 'done':
       return `导入完成：${progress.document.filename}`;
     case 'skipped':
@@ -43,7 +45,25 @@ function formatProgress(progress: ImportProgress | null): string {
 function formatReindexProgress(progress: ReindexProgress | null): string {
   if (!progress) return '';
   if (progress.total === 0) return '无文档需要重建';
-  return `重建向量 ${progress.done}/${progress.total}${progress.filename ? ` · ${progress.filename}` : ''}`;
+  const failed = progress.failed ? ` · 失败 ${progress.failed}` : '';
+  return `重建向量 ${progress.done}/${progress.total}${progress.filename ? ` · ${progress.filename}` : ''}${failed}`;
+}
+
+function formatDocumentStatus(doc: DocumentInfo): string {
+  switch (doc.status) {
+    case 'importing':
+      return '导入中';
+    case 'indexed':
+      return '已索引';
+    case 'index_failed':
+      return '索引失败';
+    case 'needs_rebuild':
+      return '需要重建';
+    case 'superseded':
+      return '历史版本';
+    default:
+      return doc.status;
+  }
 }
 
 function formatDate(ms: number): string {
@@ -71,10 +91,12 @@ export function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [reindexingDocId, setReindexingDocId] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [reindexProgress, setReindexProgress] = useState<ReindexProgress | null>(null);
   const [embeddingMismatch, setEmbeddingMismatch] = useState(false);
   const [storedDimensions, setStoredDimensions] = useState<number[]>([]);
+  const [indexMismatchReasons, setIndexMismatchReasons] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -83,6 +105,19 @@ export function DocumentsPage() {
     const mismatch = await window.shorekeeper.documents.embeddingMismatch();
     setEmbeddingMismatch(mismatch.hasMismatch);
     setStoredDimensions(mismatch.storedDimensions);
+    const reasons: string[] = [];
+    if (mismatch.modelMismatch) {
+      reasons.push(`模型记录：${mismatch.storedModels.join('、') || '缺失'}`);
+    }
+    if (mismatch.dimensionMismatch) {
+      reasons.push(`向量维度：${mismatch.storedDimensions.join('、') || '缺失'}`);
+    }
+    if (mismatch.chunkConfigMismatch) {
+      reasons.push(
+        `分块配置：${mismatch.storedChunkConfigs.map((item) => `${item.size}/${item.overlap}`).join('、')}`,
+      );
+    }
+    setIndexMismatchReasons(reasons);
     setLoading(false);
   }, []);
 
@@ -163,6 +198,7 @@ export function DocumentsPage() {
       setEmbeddingSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      await refresh();
     } finally {
       setEmbeddingSaving(false);
     }
@@ -188,8 +224,11 @@ export function DocumentsPage() {
     setReindexing(true);
     setReindexProgress(null);
     try {
-      await window.shorekeeper.documents.reindex();
+      const result = await window.shorekeeper.documents.reindex();
       await refresh();
+      if (result.failed > 0) {
+        setError(`重建完成，但有 ${result.failed} 个文档失败，可在文档列表中单独重试。`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -200,6 +239,20 @@ export function DocumentsPage() {
   const handleDelete = async (id: string) => {
     await window.shorekeeper.documents.delete(id);
     await refresh();
+  };
+
+  const handleReindexOne = async (id: string) => {
+    setError(null);
+    setReindexingDocId(id);
+    try {
+      await window.shorekeeper.documents.reindexOne(id);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      await refresh();
+    } finally {
+      setReindexingDocId(null);
+    }
   };
 
   if (loading || !embedding) return <SettingsLoading />;
@@ -214,8 +267,11 @@ export function DocumentsPage() {
 
       {embeddingMismatch && (
         <p className="rounded-xl border border-amber-400/30 bg-amber-950/30 px-3 py-2 text-[11px] leading-relaxed text-amber-200/90">
-          知识库中存在多种向量维度（{storedDimensions.join('、')}），检索可能失效。请确认 Embedding
-          模型配置后点击「重建全部向量」。
+          知识库索引配置与当前设置不一致
+          {indexMismatchReasons.length
+            ? `（${indexMismatchReasons.join('；')}）`
+            : storedDimensions.length ? `（维度 ${storedDimensions.join('、')}）` : ''}
+          ，检索可能失效。请确认 Embedding 模型配置后点击「重建全部向量」。
         </p>
       )}
 
@@ -389,12 +445,22 @@ export function DocumentsPage() {
             {documents.map((doc) => (
               <SettingsListCard
                 key={doc.id}
-                title={doc.filename}
-                meta={`${doc.chunkCount} 块 · ${formatDate(doc.importedAt)}`}
+                title={`${doc.title} · v${doc.version}`}
+                meta={`${doc.filename} · ${formatDocumentStatus(doc)} · ${doc.chunkCount} 块 · ${formatDate(doc.importedAt)}${doc.statusError ? ` · ${doc.statusError}` : ''}`}
                 actions={
-                  <SettingsActionLink onClick={() => void handleDelete(doc.id)} danger>
-                    删除
-                  </SettingsActionLink>
+                  <>
+                    {doc.status !== 'indexed' && (
+                      <SettingsActionLink
+                        onClick={() => void handleReindexOne(doc.id)}
+                        disabled={reindexingDocId === doc.id || reindexing}
+                      >
+                        {reindexingDocId === doc.id ? '重建中…' : '重试索引'}
+                      </SettingsActionLink>
+                    )}
+                    <SettingsActionLink onClick={() => void handleDelete(doc.id)} danger>
+                      删除
+                    </SettingsActionLink>
+                  </>
                 }
               />
             ))}

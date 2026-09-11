@@ -275,20 +275,23 @@ export function SettingsActionLink({
   children,
   onClick,
   danger,
+  disabled,
 }: {
   children: ReactNode;
   onClick: () => void;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={`text-xs transition ${
         danger
           ? 'text-red-300/70 hover:text-red-300'
           : 'text-keeper-ice/55 hover:text-keeper-cyan'
-      }`}
+      } disabled:cursor-not-allowed disabled:opacity-40`}
     >
       {children}
     </button>

@@ -1,5 +1,5 @@
 import type { ToolDefinition } from '../types';
-import { listDocuments } from '../../rag/documents';
+import { listIndexedDocuments } from '../../rag/documents';
 import {
   formatDocumentCatalogForPrompt,
   formatRagChunksForTool,
@@ -27,7 +27,7 @@ export const searchKnowledgeTool: ToolDefinition = {
   },
   async execute(args) {
     const { query, limit } = args as { query?: string; limit?: number };
-    const documents = listDocuments();
+    const documents = listIndexedDocuments();
 
     if (!documents.length) {
       return { success: true, output: '知识库中暂无导入文档（设置 → 泰提斯终端 → 导入 MD/TXT）。' };

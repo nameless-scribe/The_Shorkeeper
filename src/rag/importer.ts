@@ -15,7 +15,7 @@ export async function importDocumentFromPath(
 ): Promise<import('./documents').DocumentInfo> {
   onProgress?.({ phase: 'reading' });
 
-  const resolved = path.resolve(sourcePath);
+  const resolved = await fs.realpath(path.resolve(sourcePath));
   const stat = await fs.stat(resolved);
   if (!stat.isFile()) throw new Error('不是有效文件');
   if (stat.size > MAX_FILE_SIZE) throw new Error('文件超过 10MB');
@@ -25,13 +25,16 @@ export async function importDocumentFromPath(
 
   if (TEXT_EXT.has(ext)) {
     const text = await fs.readFile(resolved, 'utf8');
-    return importTextAsKnowledge(text, filename, onProgress);
+    return importTextAsKnowledge(text, filename, onProgress, { sourcePath: resolved });
   }
 
   if (BINARY_EXT.has(ext)) {
     const markdown = await convertBinaryToMarkdown(resolved);
     const mdFilename = filename.replace(/\.[^.]+$/, '.md');
-    return importTextAsKnowledge(markdown, mdFilename, onProgress);
+    return importTextAsKnowledge(markdown, mdFilename, onProgress, {
+      sourcePath: resolved,
+      title: path.basename(filename, ext),
+    });
   }
 
   throw new Error('仅支持 .md / .txt / .docx / .doc / .pdf');

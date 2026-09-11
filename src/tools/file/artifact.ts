@@ -1,9 +1,10 @@
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { WorkspaceAttachment } from '../../shared/types';
 import type { ToolResult } from '../types';
 import { resolveWorkspacePath } from './workspace-path';
+import { isImportantWorkspacePath, workspaceBackupPath } from '../../workspace/rules';
 
 export async function buildFileArtifact(
   workspaceRoot: string,
@@ -25,6 +26,16 @@ export function withFileArtifact(
   return { ...result, artifacts: [artifact] };
 }
 
+async function fileDigest(filePath: string): Promise<string> {
+  const contents = await fs.readFile(filePath);
+  return createHash('sha256').update(contents).digest('hex');
+}
+
+export interface AtomicWriteOptions {
+  /** Retain a durable copy under .shorekeeper-backups before replacing the file. */
+  preserveBackup?: boolean;
+}
+
 /**
  * Write a workspace file through a temporary sibling and recover the previous
  * file if validation or replacement fails. The writer may produce text,
@@ -34,6 +45,7 @@ export async function writeWorkspaceFileAtomically(
   workspaceRoot: string,
   relativePath: string,
   writer: (temporaryPath: string) => Promise<void>,
+  options?: AtomicWriteOptions,
 ): Promise<WorkspaceAttachment> {
   const absolute = resolveWorkspacePath(workspaceRoot, relativePath);
   const directory = path.dirname(absolute);
@@ -45,15 +57,32 @@ export async function writeWorkspaceFileAtomically(
   const backupPath = path.join(directory, `.${basename}.shorekeeper-${randomUUID()}.bak`);
   let backupCreated = false;
   let committed = false;
+  let durableBackupPath: string | null = null;
 
   try {
     await fs.mkdir(directory, { recursive: true });
+    if (options?.preserveBackup ?? isImportantWorkspacePath(relativePath)) {
+      try {
+        await fs.stat(absolute);
+        durableBackupPath = workspaceBackupPath(
+          workspaceRoot,
+          relativePath,
+          `${Date.now()}-${randomUUID()}`,
+        );
+        await fs.mkdir(path.dirname(durableBackupPath), { recursive: true });
+        await fs.copyFile(absolute, durableBackupPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        durableBackupPath = null;
+      }
+    }
     await writer(temporaryPath);
 
     const temporaryStat = await fs.stat(temporaryPath);
     if (!temporaryStat.isFile()) {
       throw new Error('生成结果不是普通文件');
     }
+    const temporaryDigest = await fileDigest(temporaryPath);
 
     try {
       await fs.rename(absolute, backupPath);
@@ -68,6 +97,9 @@ export async function writeWorkspaceFileAtomically(
 
     if (artifact.size !== temporaryStat.size) {
       throw new Error('生成文件校验失败：文件大小发生变化');
+    }
+    if (await fileDigest(absolute) !== temporaryDigest) {
+      throw new Error('生成文件校验失败：写入后读回内容不一致');
     }
     if (backupCreated) await fs.rm(backupPath, { force: true });
     return artifact;

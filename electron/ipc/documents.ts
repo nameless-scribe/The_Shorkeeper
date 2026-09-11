@@ -1,14 +1,21 @@
 import { dialog, ipcMain } from 'electron';
 import {
   deleteDocument,
-  checkEmbeddingDimensionMismatch,
+  checkKnowledgeIndexCompatibility,
   listDocuments,
+  recoverInterruptedDocumentImports,
 } from '../../src/rag/documents';
 import { importDocumentFromPath } from '../../src/rag/importer';
-import { reindexAllDocuments } from '../../src/rag/reindex';
+import { reindexAllDocuments, reindexDocument } from '../../src/rag/reindex';
 import { testEmbeddingConnection } from '../../src/rag/embedding';
+import { getEmbeddingModelName } from '../../src/models/embedding-config';
 
 export function registerDocumentsIpc() {
+  const recovered = recoverInterruptedDocumentImports();
+  if (recovered > 0) {
+    console.warn(`[rag] 已将 ${recovered} 个中断的导入标记为需要重建。`);
+  }
+
   ipcMain.handle('documents:list', () => listDocuments());
 
   ipcMain.handle('documents:delete', async (_event, id: string) => {
@@ -26,15 +33,19 @@ export function registerDocumentsIpc() {
     } catch {
       /* 无 embedding 配置时仅报告 stored 多维度 */
     }
-    return checkEmbeddingDimensionMismatch(currentDim);
+    return checkKnowledgeIndexCompatibility(getEmbeddingModelName(), currentDim);
   });
 
   ipcMain.handle('documents:reindex', async (event) => {
     const sender = event.sender;
-    await reindexAllDocuments((progress) => {
+    const result = await reindexAllDocuments((progress) => {
       sender.send('documents:reindexProgress', progress);
     });
-    return { ok: true };
+    return { ok: result.failed === 0, ...result };
+  });
+
+  ipcMain.handle('documents:reindexOne', async (_event, id: string) => {
+    return reindexDocument(id);
   });
 
   ipcMain.handle('documents:import', async (event) => {

@@ -1,6 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, type AppDatabase, type DatabaseStatement } from '../index';
 
+export type DocumentStatus =
+  | 'importing'
+  | 'indexed'
+  | 'index_failed'
+  | 'needs_rebuild'
+  | 'superseded'
+  | 'deleted';
+
 export interface DocumentInfo {
   id: string;
   filename: string;
@@ -13,6 +21,18 @@ export interface DocumentInfo {
   embeddingDim?: number | null;
   summary?: string | null;
   outline?: string | null;
+  status: DocumentStatus;
+  statusError: string | null;
+  updatedAt: number;
+  indexedAt: number | null;
+  deletedAt: number | null;
+  sourcePath: string | null;
+  title: string;
+  titleKey: string;
+  version: number;
+  supersededBy: string | null;
+  chunkSize: number;
+  chunkOverlap: number;
 }
 
 export interface RagChunkInput {
@@ -32,6 +52,14 @@ export interface InsertDocumentInput {
   summary?: string | null;
   outline?: string | null;
   docEmbedding?: Uint8Array | null;
+  status?: DocumentStatus;
+  statusError?: string | null;
+  sourcePath?: string | null;
+  title?: string;
+  titleKey?: string;
+  version?: number;
+  chunkSize?: number;
+  chunkOverlap?: number;
 }
 
 export interface DocumentMetaPatch {
@@ -40,11 +68,23 @@ export interface DocumentMetaPatch {
   docEmbedding?: Uint8Array | null;
   embeddingModel?: string | null;
   embeddingDim?: number | null;
+  status?: DocumentStatus;
+  statusError?: string | null;
+  indexedAt?: number | null;
+  deletedAt?: number | null;
 }
 
 export interface ReplaceDocumentChunksMeta extends DocumentMetaPatch {
   embeddingModel?: string;
   embeddingDim?: number;
+  supersedeDocumentIds?: string[];
+  chunkSize?: number;
+  chunkOverlap?: number;
+}
+
+export interface DocumentVersionPlan {
+  version: number;
+  previousDocumentIds: string[];
 }
 
 export interface DocumentEmbeddingRecord {
@@ -107,10 +147,25 @@ interface DocumentRow {
   embedding_dim?: number | null;
   summary?: string | null;
   outline?: string | null;
+  status?: DocumentStatus | null;
+  status_error?: string | null;
+  updated_at?: number | null;
+  indexed_at?: number | null;
+  deleted_at?: number | null;
+  source_path?: string | null;
+  title?: string | null;
+  title_key?: string | null;
+  document_version?: number | null;
+  superseded_by?: string | null;
+  chunk_size?: number | null;
+  chunk_overlap?: number | null;
 }
 
 const DOCUMENT_SELECT =
-  'id, filename, filepath, mime_type, chunk_count, imported_at, content_hash, embedding_model, embedding_dim, summary, outline';
+  `id, filename, filepath, mime_type, chunk_count, imported_at, content_hash,
+   embedding_model, embedding_dim, summary, outline, status, status_error,
+   updated_at, indexed_at, deleted_at, source_path, title, title_key,
+   document_version, superseded_by, chunk_size, chunk_overlap`;
 
 function toOptionalBlob(value: unknown): Uint8Array | null {
   if (value == null) return null;
@@ -142,6 +197,21 @@ function rowToDocument(row: DocumentRow): DocumentInfo {
     embeddingDim: row.embedding_dim == null ? null : Number(row.embedding_dim),
     summary: row.summary == null ? null : String(row.summary),
     outline: row.outline == null ? null : String(row.outline),
+    status: row.status ?? 'indexed',
+    statusError: row.status_error == null ? null : String(row.status_error),
+    updatedAt: Number(row.updated_at ?? row.imported_at),
+    indexedAt: row.indexed_at == null ? null : Number(row.indexed_at),
+    deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),
+    sourcePath: row.source_path == null ? null : String(row.source_path),
+    title: row.title == null ? String(row.filename) : String(row.title),
+    titleKey:
+      row.title_key == null
+        ? String(row.filename).toLocaleLowerCase()
+        : String(row.title_key),
+    version: Number(row.document_version ?? 1),
+    supersededBy: row.superseded_by == null ? null : String(row.superseded_by),
+    chunkSize: Number(row.chunk_size ?? 800),
+    chunkOverlap: Number(row.chunk_overlap ?? 64),
   };
 }
 
@@ -150,9 +220,68 @@ export function findDocumentByContentHash(
   db: AppDatabase = getDatabase(),
 ): DocumentInfo | undefined {
   const row = db
-    .prepare(`SELECT ${DOCUMENT_SELECT} FROM documents WHERE content_hash = ? LIMIT 1`)
+    .prepare(
+      `SELECT ${DOCUMENT_SELECT} FROM documents
+       WHERE content_hash = ?
+         AND status IN ('importing', 'indexed', 'index_failed', 'needs_rebuild')
+       ORDER BY imported_at DESC LIMIT 1`,
+    )
     .get(hash) as unknown as DocumentRow | undefined;
   return row ? rowToDocument(row) : undefined;
+}
+
+export function getDocumentVersionPlan(
+  identity: { sourcePath?: string | null; titleKey: string },
+  db: AppDatabase = getDatabase(),
+): DocumentVersionPlan {
+  const where = identity.sourcePath
+    ? 'source_path = ?'
+    : 'source_path IS NULL AND title_key = ?';
+  const identityValue = identity.sourcePath ?? identity.titleKey;
+  const rows = db
+    .prepare(
+      `SELECT id, status, document_version
+       FROM documents
+       WHERE ${where} AND status <> 'deleted'
+       ORDER BY document_version DESC, imported_at DESC`,
+    )
+    .all(identityValue) as Array<{
+    id: string;
+    status: DocumentStatus;
+    document_version: number;
+  }>;
+  const highestVersion = rows.reduce(
+    (highest, row) => Math.max(highest, Number(row.document_version ?? 1)),
+    0,
+  );
+  return {
+    version: highestVersion + 1,
+    previousDocumentIds: rows
+      .filter((row) => row.status !== 'superseded')
+      .map((row) => String(row.id)),
+  };
+}
+
+export function getPreviousDocumentVersionIds(
+  documentId: string,
+  db: AppDatabase = getDatabase(),
+): string[] {
+  const document = getDocumentIncludingDeleted(documentId, db);
+  if (!document) return [];
+  const where = document.sourcePath
+    ? 'source_path = ?'
+    : 'source_path IS NULL AND title_key = ?';
+  const identityValue = document.sourcePath ?? document.titleKey;
+  const rows = db
+    .prepare(
+      `SELECT id FROM documents
+       WHERE ${where}
+         AND id <> ?
+         AND document_version < ?
+         AND status NOT IN ('deleted', 'superseded')`,
+    )
+    .all(identityValue, documentId, document.version) as Array<{ id: string }>;
+  return rows.map((row) => String(row.id));
 }
 
 export function getStoredEmbeddingDimensions(
@@ -161,7 +290,7 @@ export function getStoredEmbeddingDimensions(
   const rows = db
     .prepare(
       `SELECT DISTINCT embedding_dim AS dim FROM documents
-       WHERE embedding_dim IS NOT NULL AND embedding_dim > 0`,
+       WHERE status = 'indexed' AND embedding_dim IS NOT NULL AND embedding_dim > 0`,
     )
     .all() as Array<{ dim: number }>;
   return rows.map((row) => Number(row.dim));
@@ -169,12 +298,38 @@ export function getStoredEmbeddingDimensions(
 
 export function listDocuments(db: AppDatabase = getDatabase()): DocumentInfo[] {
   const rows = db
-    .prepare(`SELECT ${DOCUMENT_SELECT} FROM documents ORDER BY imported_at DESC`)
+    .prepare(
+      `SELECT ${DOCUMENT_SELECT} FROM documents
+       WHERE status NOT IN ('deleted', 'superseded') ORDER BY imported_at DESC`,
+    )
+    .all() as unknown as DocumentRow[];
+  return rows.map(rowToDocument);
+}
+
+export function listIndexedDocuments(db: AppDatabase = getDatabase()): DocumentInfo[] {
+  const rows = db
+    .prepare(
+      `SELECT ${DOCUMENT_SELECT} FROM documents
+       WHERE status = 'indexed' ORDER BY imported_at DESC`,
+    )
     .all() as unknown as DocumentRow[];
   return rows.map(rowToDocument);
 }
 
 export function getDocument(
+  id: string,
+  db: AppDatabase = getDatabase(),
+): DocumentInfo | undefined {
+  const row = db
+    .prepare(
+      `SELECT ${DOCUMENT_SELECT} FROM documents
+       WHERE id = ? AND status NOT IN ('deleted', 'superseded')`,
+    )
+    .get(id) as unknown as DocumentRow | undefined;
+  return row ? rowToDocument(row) : undefined;
+}
+
+export function getDocumentIncludingDeleted(
   id: string,
   db: AppDatabase = getDatabase(),
 ): DocumentInfo | undefined {
@@ -203,15 +358,16 @@ export function searchDocumentChunkFtsRanks(
   try {
     const docFilter =
       documentIds?.length ?
-        ` AND document_id IN (${documentIds.map(() => '?').join(',')})`
+        ` AND document_chunks_fts.document_id IN (${documentIds.map(() => '?').join(',')})`
       : '';
     const params =
       documentIds?.length ? [matchQuery, ...documentIds, limit] : [matchQuery, limit];
     const rows = db
       .prepare(
-        `SELECT chunk_id, bm25(document_chunks_fts) AS rank
+        `SELECT document_chunks_fts.chunk_id, bm25(document_chunks_fts) AS rank
          FROM document_chunks_fts
-         WHERE document_chunks_fts MATCH ?${docFilter}
+         JOIN documents d ON d.id = document_chunks_fts.document_id
+         WHERE document_chunks_fts MATCH ? AND d.status = 'indexed'${docFilter}
          ORDER BY rank
          LIMIT ?`,
       )
@@ -233,7 +389,7 @@ export function getChunkSearchRows(
       `SELECT dc.id AS chunk_id, dc.document_id, dc.content, dc.chunk_index, d.filename
        FROM document_chunks dc
        JOIN documents d ON d.id = dc.document_id
-       WHERE dc.id IN (${placeholders})`,
+       WHERE d.status = 'indexed' AND dc.id IN (${placeholders})`,
     )
     .all(...chunkIds) as Array<{
     chunk_id: string;
@@ -263,7 +419,13 @@ export function getAdjacentChunks(
   const rows = db
     .prepare(
       `SELECT chunk_index, content FROM document_chunks
-       WHERE document_id = ? AND chunk_index >= ? AND chunk_index <= ?
+       WHERE document_id = ?
+         AND EXISTS (
+           SELECT 1 FROM documents
+           WHERE documents.id = document_chunks.document_id
+             AND documents.status = 'indexed'
+         )
+         AND chunk_index >= ? AND chunk_index <= ?
        ORDER BY chunk_index ASC`,
     )
     .all(documentId, minIndex, maxIndex) as Array<{
@@ -295,12 +457,19 @@ export function deleteDocumentData(
   id: string,
   db: AppDatabase = getDatabase(),
 ): boolean {
-  if (!getDocument(id, db)) return false;
+  const document = getDocument(id, db);
+  if (!document || document.status === 'deleted') return false;
   const hasFts = hasDocumentChunksFts(db);
+  const now = Date.now();
   db.transaction(() => {
     if (hasFts) deleteChunksFtsForDocument(id, db);
     db.prepare('DELETE FROM document_chunks WHERE document_id = ?').run(id);
-    db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+    db.prepare(
+      `UPDATE documents
+       SET status = 'deleted', status_error = NULL, chunk_count = 0,
+           embedding = NULL, deleted_at = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(now, now, id);
   });
   return true;
 }
@@ -309,18 +478,32 @@ export function insertDocumentWithChunks(
   input: InsertDocumentInput,
   db: AppDatabase = getDatabase(),
 ): DocumentInfo {
+  const now = Date.now();
+  const status = input.status ?? 'indexed';
   const document: DocumentInfo = {
     id: uuidv4(),
     filename: input.filename,
     filepath: input.filepath,
     mimeType: input.mimeType,
     chunkCount: input.chunks.length,
-    importedAt: Date.now(),
+    importedAt: now,
     contentHash: input.contentHash ?? null,
     embeddingModel: input.embeddingModel ?? null,
     embeddingDim: input.embeddingDim ?? null,
     summary: input.summary ?? null,
     outline: input.outline ?? null,
+    status,
+    statusError: input.statusError ?? null,
+    updatedAt: now,
+    indexedAt: status === 'indexed' ? now : null,
+    deletedAt: status === 'deleted' ? now : null,
+    sourcePath: input.sourcePath ?? null,
+    title: input.title ?? input.filename,
+    titleKey: input.titleKey ?? (input.title ?? input.filename).toLocaleLowerCase(),
+    version: input.version ?? 1,
+    supersededBy: null,
+    chunkSize: input.chunkSize ?? 800,
+    chunkOverlap: input.chunkOverlap ?? 64,
   };
   const hasFts = hasDocumentChunksFts(db);
 
@@ -328,8 +511,11 @@ export function insertDocumentWithChunks(
     db.prepare(
       `INSERT INTO documents (
          id, filename, filepath, mime_type, chunk_count, imported_at,
-         content_hash, embedding_model, embedding_dim, summary, outline, embedding
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         content_hash, embedding_model, embedding_dim, summary, outline, embedding,
+         status, status_error, updated_at, indexed_at, deleted_at,
+         source_path, title, title_key, document_version, superseded_by,
+         chunk_size, chunk_overlap
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       document.id,
       document.filename,
@@ -343,6 +529,18 @@ export function insertDocumentWithChunks(
       document.summary,
       document.outline,
       input.docEmbedding ?? null,
+      document.status,
+      document.statusError,
+      document.updatedAt,
+      document.indexedAt,
+      document.deletedAt,
+      document.sourcePath,
+      document.title,
+      document.titleKey,
+      document.version,
+      document.supersededBy,
+      document.chunkSize,
+      document.chunkOverlap,
     );
 
     const insertChunk = db.prepare(
@@ -396,9 +594,48 @@ export function updateDocumentMeta(
     sets.push('embedding_dim = ?');
     params.push(meta.embeddingDim);
   }
+  if (meta.status !== undefined) {
+    sets.push('status = ?');
+    params.push(meta.status);
+  }
+  if (meta.statusError !== undefined) {
+    sets.push('status_error = ?');
+    params.push(meta.statusError);
+  }
+  if (meta.indexedAt !== undefined) {
+    sets.push('indexed_at = ?');
+    params.push(meta.indexedAt);
+  }
+  if (meta.deletedAt !== undefined) {
+    sets.push('deleted_at = ?');
+    params.push(meta.deletedAt);
+  }
   if (!sets.length) return;
+  sets.push('updated_at = ?');
+  params.push(Date.now());
   params.push(documentId);
-  db.prepare(`UPDATE documents SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  db.prepare(
+    `UPDATE documents SET ${sets.join(', ')}
+     WHERE id = ? AND status NOT IN ('deleted', 'superseded')`,
+  ).run(...params);
+}
+
+export function recoverInterruptedDocumentImports(
+  db: AppDatabase = getDatabase(),
+): number {
+  const interrupted = db
+    .prepare("SELECT COUNT(*) AS count FROM documents WHERE status = 'importing'")
+    .get() as { count?: number } | undefined;
+  const count = Number(interrupted?.count ?? 0);
+  if (!count) return 0;
+  db.prepare(
+    `UPDATE documents
+     SET status = 'needs_rebuild',
+         status_error = '上次导入被中断，请重新构建索引',
+         updated_at = ?
+     WHERE status = 'importing'`,
+  ).run(Date.now());
+  return count;
 }
 
 export function replaceDocumentChunks(
@@ -436,11 +673,27 @@ export function replaceDocumentChunks(
       }
     });
 
-    const updates = ['chunk_count = ?', 'embedding_model = ?', 'embedding_dim = ?'];
+    const updates = [
+      'chunk_count = ?',
+      'embedding_model = ?',
+      'embedding_dim = ?',
+      'chunk_size = ?',
+      'chunk_overlap = ?',
+      "status = 'indexed'",
+      'status_error = NULL',
+      'indexed_at = ?',
+      'deleted_at = NULL',
+      'updated_at = ?',
+    ];
+    const now = Date.now();
     const params: unknown[] = [
       chunks.length,
       meta?.embeddingModel ?? document.embeddingModel,
       meta?.embeddingDim ?? document.embeddingDim,
+      meta?.chunkSize ?? document.chunkSize,
+      meta?.chunkOverlap ?? document.chunkOverlap,
+      now,
+      now,
     ];
     if (meta?.summary !== undefined) {
       updates.push('summary = ?');
@@ -456,6 +709,19 @@ export function replaceDocumentChunks(
     }
     params.push(documentId);
     db.prepare(`UPDATE documents SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+    const previousIds = [...new Set(meta?.supersedeDocumentIds ?? [])]
+      .filter((id) => id !== documentId);
+    if (previousIds.length) {
+      const placeholders = previousIds.map(() => '?').join(',');
+      db.prepare(
+        `UPDATE documents
+         SET status = 'superseded', status_error = NULL,
+             superseded_by = ?, updated_at = ?
+         WHERE id IN (${placeholders})
+           AND status NOT IN ('deleted', 'superseded')`,
+      ).run(documentId, now, ...previousIds);
+    }
   });
 }
 
@@ -465,7 +731,7 @@ export function loadAllDocumentEmbeddings(
   const rows = db
     .prepare(
       `SELECT id, filename, summary, embedding FROM documents
-       WHERE embedding IS NOT NULL`,
+       WHERE status = 'indexed' AND embedding IS NOT NULL`,
     )
     .all() as Array<{
     id: string;
@@ -488,7 +754,8 @@ export function loadAllChunkEmbeddingRecords(
     .prepare(
       `SELECT c.id, c.document_id, c.chunk_index, c.content, c.embedding, d.filename
        FROM document_chunks c
-       JOIN documents d ON d.id = c.document_id`,
+       JOIN documents d ON d.id = c.document_id
+       WHERE d.status = 'indexed'`,
     )
     .all() as Array<{
     id: string;
@@ -515,7 +782,8 @@ export function loadFtsSourceRows(
     .prepare(
       `SELECT c.id AS chunk_id, c.document_id, c.content, d.filename
        FROM document_chunks c
-       JOIN documents d ON d.id = c.document_id`,
+       JOIN documents d ON d.id = c.document_id
+       WHERE d.status = 'indexed'`,
     )
     .all() as Array<{
     chunk_id: string;

@@ -70,4 +70,44 @@ describe('writeWorkspaceFileAtomically', () => {
     expect(backup).toBeDefined();
     await expect(fs.readFile(path.join(root, backup!), 'utf8')).resolves.toBe('old content');
   });
+
+  it('retains a durable backup and verifies important file replacement', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-atomic-'));
+    const importantDir = path.join(root, 'important');
+    await fs.mkdir(importantDir);
+    await fs.writeFile(path.join(importantDir, 'plan.md'), 'old plan', 'utf8');
+
+    await writeWorkspaceFileAtomically(
+      root,
+      'important/plan.md',
+      (temporaryPath) => fs.writeFile(temporaryPath, 'new plan', 'utf8'),
+    );
+
+    await expect(fs.readFile(path.join(importantDir, 'plan.md'), 'utf8')).resolves.toBe('new plan');
+    const backups = await fs.readdir(path.join(root, '.shorekeeper-backups'));
+    expect(backups).toHaveLength(1);
+    await expect(
+      fs.readFile(path.join(root, '.shorekeeper-backups', backups[0]), 'utf8'),
+    ).resolves.toBe('old plan');
+  });
+
+  it('rejects a backup directory symlink that escapes the workspace', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-atomic-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-outside-'));
+    const target = path.join(root, 'important', 'plan.md');
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, 'old plan', 'utf8');
+    await fs.symlink(outside, path.join(root, '.shorekeeper-backups'), 'junction');
+
+    await expect(
+      writeWorkspaceFileAtomically(
+        root,
+        'important/plan.md',
+        (temporaryPath) => fs.writeFile(temporaryPath, 'new plan', 'utf8'),
+      ),
+    ).rejects.toThrow('路径越界');
+
+    await expect(fs.readFile(target, 'utf8')).resolves.toBe('old plan');
+    await expect(fs.readdir(outside)).resolves.toEqual([]);
+  });
 });

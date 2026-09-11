@@ -1,4 +1,4 @@
-import { listDocuments, loadAllDocumentEmbeddings, type DocumentInfo } from './documents';
+import { listIndexedDocuments, loadAllDocumentEmbeddings, type DocumentInfo } from './documents';
 import { deserializeEmbedding } from './vector';
 
 export interface CachedDocEmbedding {
@@ -27,7 +27,7 @@ export function getCachedDocEmbeddings(): CachedDocEmbedding[] {
 }
 
 export function getDocumentCount(): number {
-  return listDocuments().length;
+  return listIndexedDocuments().length;
 }
 
 /** @internal test helper */

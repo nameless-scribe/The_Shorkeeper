@@ -21,6 +21,8 @@ import type {
   DocumentInfo,
   ImportProgress,
   ReindexProgress,
+  ReindexResult,
+  KnowledgeIndexCompatibilityInfo,
   ModelProtocol,
   ModelProfileInfo,
   ModelProfileInput,
@@ -165,8 +167,10 @@ const shorekeeperApi = {
     list: (): Promise<DocumentInfo[]> => ipcRenderer.invoke('documents:list'),
     import: (): Promise<DocumentInfo | null> => ipcRenderer.invoke('documents:import'),
     delete: (id: string) => ipcRenderer.invoke('documents:delete', id),
-    reindex: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('documents:reindex'),
-    embeddingMismatch: (): Promise<{ storedDimensions: number[]; hasMismatch: boolean }> =>
+    reindex: (): Promise<{ ok: boolean } & ReindexResult> => ipcRenderer.invoke('documents:reindex'),
+    reindexOne: (id: string): Promise<DocumentInfo> =>
+      ipcRenderer.invoke('documents:reindexOne', id),
+    embeddingMismatch: (): Promise<KnowledgeIndexCompatibilityInfo> =>
       ipcRenderer.invoke('documents:embeddingMismatch'),
     onImportProgress: (callback: (progress: ImportProgress) => void) => {
       const listener = (_: Electron.IpcRendererEvent, data: ImportProgress) => callback(data);

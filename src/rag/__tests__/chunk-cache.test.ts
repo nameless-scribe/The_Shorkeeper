@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getCachedChunkEmbeddings,
+  getChunkCacheVersion,
   invalidateChunkCache,
   resetChunkCacheForTest,
 } from '../chunk-cache';
@@ -42,8 +43,10 @@ describe('chunk-cache', () => {
   });
 
   it('reloads after invalidate', () => {
+    const initialVersion = getChunkCacheVersion();
     getCachedChunkEmbeddings();
     invalidateChunkCache();
+    expect(getChunkCacheVersion()).toBe(initialVersion + 1);
     getCachedChunkEmbeddings();
     expect(documents.loadAllChunkEmbeddings).toHaveBeenCalledTimes(2);
   });

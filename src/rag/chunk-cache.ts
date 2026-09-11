@@ -10,9 +10,15 @@ export interface CachedChunkEmbedding {
 }
 
 let cache: CachedChunkEmbedding[] | null = null;
+let cacheVersion = 0;
 
 export function invalidateChunkCache(): void {
   cache = null;
+  cacheVersion += 1;
+}
+
+export function getChunkCacheVersion(): number {
+  return cacheVersion;
 }
 
 export function getCachedChunkEmbeddings(): CachedChunkEmbedding[] {
@@ -25,4 +31,5 @@ export function getCachedChunkEmbeddings(): CachedChunkEmbedding[] {
 /** @internal test helper */
 export function resetChunkCacheForTest(): void {
   cache = null;
+  cacheVersion = 0;
 }

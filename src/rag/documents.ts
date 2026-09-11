@@ -7,9 +7,12 @@ import {
   getAdjacentChunks,
   getChunkSearchRows,
   getDocument,
+  getDocumentVersionPlan,
+  getPreviousDocumentVersionIds,
   getStoredEmbeddingDimensions,
   hasDocumentChunksFts,
   insertDocumentWithChunks as insertDocumentRecords,
+  listIndexedDocuments,
   listDocuments,
   loadAllChunkEmbeddingRecords,
   loadAllDocumentEmbeddings,
@@ -18,7 +21,9 @@ import {
   replaceDocumentChunks as replaceDocumentChunkRecords,
   searchDocumentChunkFtsRanks,
   updateDocumentMeta as updateDocumentMetaRecord,
+  recoverInterruptedDocumentImports as recoverInterruptedDocumentImportsRecord,
   type DocumentInfo,
+  type DocumentStatus,
   type DocumentMetaPatch,
   type FtsIndexRow,
   type RagChunkInput,
@@ -34,16 +39,23 @@ import {
 } from './sparse-search';
 import { deserializeEmbedding } from './vector';
 import { getKnowledgeDir, resolveKnowledgeFilePath } from './knowledge-path';
+import { CHUNK_OVERLAP, CHUNK_SIZE } from './chunker';
+import { getWorkspaceDir } from '../config/paths';
+import { resolveWorkspacePath } from '../tools/file/workspace-path';
 
 export {
   findDocumentByContentHash,
   getAdjacentChunks,
   getDocument,
+  getDocumentVersionPlan,
+  getPreviousDocumentVersionIds,
   getStoredEmbeddingDimensions,
   listDocuments,
+  listIndexedDocuments,
   loadAllDocumentEmbeddings,
   loadFtsSourceRows,
   type DocumentInfo,
+  type DocumentStatus,
 };
 
 export function computeContentHash(text: string): string {
@@ -68,6 +80,49 @@ export function checkEmbeddingDimensionMismatch(currentDim: number | null): {
     storedDimensions.length > 1 ||
     (storedDimensions.length === 1 && storedDimensions[0] !== currentDim);
   return { storedDimensions, hasMismatch, currentDimension: currentDim };
+}
+
+export function checkKnowledgeIndexCompatibility(
+  currentModel: string,
+  currentDim: number | null,
+): {
+  storedDimensions: number[];
+  storedModels: string[];
+  storedChunkConfigs: Array<{ size: number; overlap: number }>;
+  hasMismatch: boolean;
+  modelMismatch: boolean;
+  dimensionMismatch: boolean;
+  chunkConfigMismatch: boolean;
+} {
+  const docs = listIndexedDocuments();
+  const storedDimensions = [...new Set(
+    docs.map((doc) => doc.embeddingDim).filter((dim): dim is number => Boolean(dim && dim > 0)),
+  )];
+  const storedModels = [...new Set(
+    docs.map((doc) => doc.embeddingModel).filter((model): model is string => Boolean(model)),
+  )];
+  const storedChunkConfigs = [...new Map(
+    docs.map((doc) => [
+      `${doc.chunkSize}:${doc.chunkOverlap}`,
+      { size: doc.chunkSize, overlap: doc.chunkOverlap },
+    ]),
+  ).values()];
+  const modelMismatch = docs.some((doc) => doc.embeddingModel !== currentModel);
+  const dimensionMismatch = currentDim && currentDim > 0
+    ? docs.some((doc) => doc.embeddingDim !== currentDim)
+    : storedDimensions.length > 1;
+  const chunkConfigMismatch = docs.some(
+    (doc) => doc.chunkSize !== CHUNK_SIZE || doc.chunkOverlap !== CHUNK_OVERLAP,
+  );
+  return {
+    storedDimensions,
+    storedModels,
+    storedChunkConfigs,
+    hasMismatch: modelMismatch || dimensionMismatch || chunkConfigMismatch,
+    modelMismatch,
+    dimensionMismatch,
+    chunkConfigMismatch,
+  };
 }
 
 export function hasFtsTable(): boolean {
@@ -160,10 +215,10 @@ async function restoreQuarantinedFile(quarantinePath: string, originalPath: stri
 
 export async function deleteDocument(id: string): Promise<boolean> {
   const document = getDocument(id);
-  if (!document) return false;
+  if (!document || document.status === 'deleted') return false;
 
   const absolutePath = resolveKnowledgeFilePath(document.filepath);
-  const trashDir = path.join(getKnowledgeDir(), '.trash');
+  const trashDir = resolveWorkspacePath(getWorkspaceDir(), 'knowledge/.trash');
   const quarantinePath = path.join(
     trashDir,
     `${document.id}-${randomUUID()}`,
@@ -218,6 +273,14 @@ export function insertDocumentWithChunks(input: {
   summary?: string | null;
   outline?: string | null;
   docEmbedding?: Uint8Array | null;
+  status?: DocumentStatus;
+  statusError?: string | null;
+  sourcePath?: string | null;
+  title?: string;
+  titleKey?: string;
+  version?: number;
+  chunkSize?: number;
+  chunkOverlap?: number;
 }): DocumentInfo {
   const document = insertDocumentRecords(input);
 
@@ -228,7 +291,17 @@ export function insertDocumentWithChunks(input: {
 
 export function updateDocumentMeta(documentId: string, meta: DocumentMetaPatch): void {
   updateDocumentMetaRecord(documentId, meta);
+  if (meta.status !== undefined) invalidateChunkCache();
   invalidateDocCache();
+}
+
+export function recoverInterruptedDocumentImports(): number {
+  const count = recoverInterruptedDocumentImportsRecord();
+  if (count > 0) {
+    invalidateChunkCache();
+    invalidateDocCache();
+  }
+  return count;
 }
 
 export function replaceDocumentChunks(

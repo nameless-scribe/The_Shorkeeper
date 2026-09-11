@@ -6,7 +6,7 @@ import {
   formatRagForPrompt,
   retrieveRelevantChunks,
 } from '../rag/retriever';
-import { listDocuments } from '../rag/documents';
+import { listIndexedDocuments } from '../rag/documents';
 import { shouldAutoRetrieveRag, shouldInjectRagCatalog, getPerformanceSettings } from '../config/performance';
 import {
   formatSummaryForPrompt,
@@ -139,7 +139,7 @@ export async function buildSystemPromptParts(
   }
 
   try {
-    const documents = listDocuments();
+    const documents = listIndexedDocuments();
     const hasDocuments = documents.length > 0;
     const filenames = documents.map((d) => d.filename);
     if (shouldInjectRagCatalog(hasDocuments)) {

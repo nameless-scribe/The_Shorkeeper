@@ -63,6 +63,18 @@ export interface DocumentRow {
   content_hash?: string | null;
   embedding_model?: string | null;
   embedding_dim?: number | null;
+  status?: 'importing' | 'indexed' | 'index_failed' | 'needs_rebuild' | 'superseded' | 'deleted';
+  status_error?: string | null;
+  updated_at?: number | null;
+  indexed_at?: number | null;
+  deleted_at?: number | null;
+  source_path?: string | null;
+  title?: string | null;
+  title_key?: string | null;
+  document_version?: number;
+  superseded_by?: string | null;
+  chunk_size?: number;
+  chunk_overlap?: number;
 }
 
 export interface DocumentChunkRow {

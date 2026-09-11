@@ -4,3 +4,4 @@ allowBuilds:
   electron-winstaller: true
   # Transitive dep (onnxruntime-web); prebuilt artifacts work without postinstall.
   protobufjs: false
+  better-sqlite3: set this to true or false

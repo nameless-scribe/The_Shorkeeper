@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { embedTextMock } = vi.hoisted(() => ({
+const { embedTextMock, cacheState } = vi.hoisted(() => ({
   embedTextMock: vi.fn(async () => [1, 0, 0]),
+  cacheState: { version: 0 },
 }));
 
 vi.mock('../embedding', () => ({
@@ -9,6 +10,7 @@ vi.mock('../embedding', () => ({
 }));
 
 vi.mock('../chunk-cache', () => ({
+  getChunkCacheVersion: vi.fn(() => cacheState.version),
   getCachedChunkEmbeddings: vi.fn(() => [
     {
       id: 'c1',
@@ -67,6 +69,7 @@ import { retrieveRelevantChunks, formatDocumentCatalogForPrompt } from '../retri
 
 describe('retrieveRelevantChunks', () => {
   beforeEach(() => {
+    cacheState.version = 0;
     vi.clearAllMocks();
     getAdjacentChunks.mockReturnValue([
       { chunkIndex: 0, content: 'alpha beta content' },
@@ -102,6 +105,17 @@ describe('retrieveRelevantChunks', () => {
 
     expect(embedTextMock).toHaveBeenCalledWith('signal query', controller.signal);
   });
+
+  it('drops results if the document cache changes during retrieval', async () => {
+    embedTextMock.mockImplementationOnce(async () => {
+      cacheState.version += 1;
+      return [1, 0, 0];
+    });
+
+    await expect(
+      retrieveRelevantChunks('changed during retrieval', 5, { skipCache: true }),
+    ).resolves.toEqual([]);
+  });
 });
 
 describe('formatDocumentCatalogForPrompt', () => {
@@ -115,6 +129,18 @@ describe('formatDocumentCatalogForPrompt', () => {
         chunkCount: 3,
         importedAt: Date.now(),
         summary: '产品需求与登录模块说明',
+        status: 'indexed',
+        statusError: null,
+        updatedAt: Date.now(),
+        indexedAt: Date.now(),
+        deletedAt: null,
+        sourcePath: null,
+        title: '需求',
+        titleKey: '需求',
+        version: 1,
+        supersededBy: null,
+        chunkSize: 800,
+        chunkOverlap: 64,
       },
     ]);
     expect(catalog).toContain('需求.md — 产品需求与登录模块说明');

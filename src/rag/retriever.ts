@@ -1,6 +1,6 @@
 import { getPerformanceSettings } from '../config/performance';
 import { embedText } from './embedding';
-import { getCachedChunkEmbeddings } from './chunk-cache';
+import { getCachedChunkEmbeddings, getChunkCacheVersion } from './chunk-cache';
 import { getCachedDocEmbeddings, getDocumentCount } from './doc-cache';
 import {
   getAdjacentChunks,
@@ -31,6 +31,7 @@ const embeddingStore = new SqlJsEmbeddingStore();
 let lastRetrieveCache: {
   query: string;
   at: number;
+  chunkCacheVersion: number;
   chunks: RetrievedChunk[];
 } | null = null;
 
@@ -256,10 +257,12 @@ export async function retrieveRelevantChunks(
     !options?.skipCache &&
     lastRetrieveCache &&
     lastRetrieveCache.query === trimmed &&
+    lastRetrieveCache.chunkCacheVersion === getChunkCacheVersion() &&
     Date.now() - lastRetrieveCache.at < 60_000
   ) {
     return lastRetrieveCache.chunks.slice(0, limit);
   }
+  const retrievalCacheVersion = getChunkCacheVersion();
 
   const settings = getPerformanceSettings();
   const maxPerDocument = settings.ragMaxChunksPerDoc;
@@ -280,7 +283,13 @@ export async function retrieveRelevantChunks(
           ),
         }));
       }
-      lastRetrieveCache = { query: trimmed, at: Date.now(), chunks: sparseResults };
+      if (retrievalCacheVersion !== getChunkCacheVersion()) return [];
+      lastRetrieveCache = {
+        query: trimmed,
+        at: Date.now(),
+        chunkCacheVersion: retrievalCacheVersion,
+        chunks: sparseResults,
+      };
       return sparseResults;
     }
   }
@@ -300,7 +309,13 @@ export async function retrieveRelevantChunks(
     }
   }
 
-  lastRetrieveCache = { query: trimmed, at: Date.now(), chunks: result };
+  if (retrievalCacheVersion !== getChunkCacheVersion()) return [];
+  lastRetrieveCache = {
+    query: trimmed,
+    at: Date.now(),
+    chunkCacheVersion: retrievalCacheVersion,
+    chunks: result,
+  };
   return result;
 }
 
