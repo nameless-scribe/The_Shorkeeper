@@ -75,7 +75,11 @@ export function checkPermission(
   return 'allow';
 }
 
-type PermissionConfirmer = (toolName: string, args: unknown) => Promise<boolean>;
+type PermissionConfirmer = (
+  toolName: string,
+  args: unknown,
+  signal?: AbortSignal,
+) => Promise<boolean>;
 
 let permissionConfirmer: PermissionConfirmer = async () => false;
 
@@ -86,6 +90,7 @@ export function setPermissionConfirmer(confirmer: PermissionConfirmer): void {
 export async function confirmPermission(
   toolName: string,
   args: unknown,
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  return permissionConfirmer(toolName, args);
+  return permissionConfirmer(toolName, args, signal);
 }

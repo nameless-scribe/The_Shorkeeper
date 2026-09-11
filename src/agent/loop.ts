@@ -12,6 +12,10 @@ import { loadModelConfig } from '../models/config';
 import { streamChat } from '../models/stream-chat';
 import type { ToolRegistry } from '../tools/registry';
 import type { ToolContext, ToolResult } from '../tools/types';
+import { awaitWithAbort, createLinkedTimeoutSignal } from './abort';
+
+export const DEFAULT_MODEL_ROUND_TIMEOUT_MS = 120_000;
+export const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 120_000;
 
 export interface AgentLoopOptions {
   sessionId: string;
@@ -22,6 +26,21 @@ export interface AgentLoopOptions {
   policy?: PermissionPolicy;
   signal?: AbortSignal;
   cacheStablePrefix?: string;
+  onPhaseChange?: (phase: 'running' | 'waiting_tool') => void;
+  onModelRoundStart?: (round: number) => void;
+  onModelRoundEnd?: (
+    round: number,
+    status: 'succeeded' | 'failed' | 'cancelled',
+    errorMessage?: string,
+  ) => void;
+  onPermissionStart?: (toolName: string) => string | undefined;
+  onPermissionEnd?: (
+    activityId: string,
+    status: 'succeeded' | 'failed' | 'cancelled',
+    errorMessage?: string,
+  ) => void;
+  modelTimeoutMs?: number;
+  toolTimeoutMs?: number;
 }
 
 function parseToolArgs(raw: string): { args: unknown; error?: string } {
@@ -37,6 +56,7 @@ async function executeToolCall(
   ctx: ToolContext,
   registry: ToolRegistry,
   policy: PermissionPolicy,
+  hooks?: Pick<AgentLoopOptions, 'onPermissionStart' | 'onPermissionEnd'>,
 ): Promise<ToolResult> {
   const tool = registry.get(toolCall.function.name);
   if (!tool) {
@@ -68,12 +88,32 @@ async function executeToolCall(
   }
 
   if (decision === 'confirm') {
-    const approved = await confirmPermission(tool.name, args);
+    const activityId = hooks?.onPermissionStart?.(tool.name);
+    let approved: boolean;
+    try {
+      approved = await confirmPermission(tool.name, args, ctx.signal);
+    } catch (error) {
+      if (activityId) {
+        hooks?.onPermissionEnd?.(
+          activityId,
+          ctx.signal.aborted ? 'cancelled' : 'failed',
+          ctx.signal.aborted ? '已取消' : error instanceof Error ? error.message : String(error),
+        );
+      }
+      throw error;
+    }
+    if (activityId) {
+      hooks?.onPermissionEnd?.(
+        activityId,
+        approved ? 'succeeded' : ctx.signal.aborted ? 'cancelled' : 'failed',
+        approved ? undefined : ctx.signal.aborted ? '已取消' : '用户拒绝了此操作',
+      );
+    }
     if (!approved) {
       return {
         success: false,
         output: '',
-        error: '用户拒绝了此操作',
+        error: ctx.signal.aborted ? '已取消' : '用户拒绝了此操作',
       };
     }
   }
@@ -91,6 +131,8 @@ export async function* runAgentLoop(
     maxRounds = 10,
     policy = defaultPermissionPolicy(),
     signal,
+    modelTimeoutMs = DEFAULT_MODEL_ROUND_TIMEOUT_MS,
+    toolTimeoutMs = DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
   } = options;
 
   const config = loadModelConfig();
@@ -101,33 +143,80 @@ export async function* runAgentLoop(
 
   try {
   while (rounds < maxRounds) {
+    options.onPhaseChange?.('running');
     if (signal?.aborted) {
       yield ev.runError(runId, '已取消', sessionId);
       return;
     }
 
     rounds += 1;
+    options.onModelRoundStart?.(rounds);
     let roundContent: string | null = null;
     let roundToolCalls: OpenAIToolCall[] = [];
 
-    for await (const event of streamChat(messages, config, {
+    const modelTimeout = createLinkedTimeoutSignal(signal, modelTimeoutMs);
+    const modelStream = streamChat(messages, config, {
       tools,
-      signal,
+      signal: modelTimeout.signal,
       cacheStablePrefix: options.cacheStablePrefix,
-    })) {
-      if (event.type === 'text_delta') {
-        yield ev.textDelta(runId, event.delta);
-      } else if (event.type === 'reasoning_delta') {
-        yield ev.reasoningDelta(runId, event.delta);
-      } else if (event.type === 'usage') {
-        yield ev.usage(runId, event.promptTokens, event.completionTokens, event.cachedTokens);
-      } else if (event.type === 'round_complete') {
-        roundContent = event.content;
-        roundToolCalls = event.toolCalls;
-      } else if (event.type === 'error') {
-        yield ev.runError(runId, event.message, sessionId);
-        return;
+    });
+    let modelError: string | null = null;
+    const iterator = modelStream[Symbol.asyncIterator]();
+    try {
+      while (true) {
+        let step: IteratorResult<import('../shared/types').ModelEvent>;
+        try {
+          step = await awaitWithAbort(iterator.next(), modelTimeout.signal);
+        } catch (error) {
+          modelError = modelTimeout.didTimeout()
+            ? '模型请求超时'
+            : signal?.aborted
+              ? '已取消'
+              : error instanceof Error
+                ? error.message
+                : String(error);
+          break;
+        }
+        if (step.done) break;
+        const event = step.value;
+        if (event.type === 'text_delta') {
+          yield ev.textDelta(runId, event.delta);
+        } else if (event.type === 'reasoning_delta') {
+          yield ev.reasoningDelta(runId, event.delta);
+        } else if (event.type === 'usage') {
+          yield ev.usage(runId, event.promptTokens, event.completionTokens, event.cachedTokens);
+        } else if (event.type === 'round_complete') {
+          roundContent = event.content;
+          roundToolCalls = event.toolCalls;
+        } else if (event.type === 'error') {
+          modelError = modelTimeout.didTimeout()
+            ? '模型请求超时'
+            : signal?.aborted
+              ? '已取消'
+              : event.message;
+          break;
+        }
       }
+    } finally {
+      if (modelError) {
+        try {
+          const closing = iterator.return?.(undefined);
+          if (closing) void closing.catch(() => undefined);
+        } catch {
+          // Preserve the original model error.
+        }
+      }
+      modelTimeout.dispose();
+      options.onModelRoundEnd?.(
+        rounds,
+        modelError ? (signal?.aborted ? 'cancelled' : 'failed') : 'succeeded',
+        modelError ?? undefined,
+      );
+    }
+
+    if (modelError) {
+      yield ev.runError(runId, modelError, sessionId);
+      return;
     }
 
     if (!roundToolCalls.length) {
@@ -152,22 +241,60 @@ export async function* runAgentLoop(
     };
 
     for (const toolCall of roundToolCalls) {
+      if (signal?.aborted) {
+        yield ev.runError(runId, '已取消', sessionId);
+        return;
+      }
+
+      options.onPhaseChange?.('waiting_tool');
       const callId = toolCall.id || createCallId();
       const parsedArgs = parseToolArgs(toolCall.function.arguments);
       const toolName = toolCall.function.name;
 
       yield ev.toolCallStart(runId, callId, toolName, parsedArgs.args);
 
-      const result = parsedArgs.error
-        ? { success: false as const, output: '', error: parsedArgs.error }
-        : await executeToolCall(
-            { ...toolCall, id: callId },
-            toolCtx,
-            registry,
-            policy,
+      let result: ToolResult;
+      if (parsedArgs.error) {
+        result = { success: false, output: '', error: parsedArgs.error };
+      } else {
+        const toolTimeout = createLinkedTimeoutSignal(signal, toolTimeoutMs);
+        try {
+          result = await awaitWithAbort(
+            executeToolCall(
+              { ...toolCall, id: callId },
+              { ...toolCtx, signal: toolTimeout.signal },
+              registry,
+              policy,
+              {
+                onPermissionStart: options.onPermissionStart,
+                onPermissionEnd: options.onPermissionEnd,
+              },
+            ),
+            toolTimeout.signal,
           );
+        } catch (error) {
+          result = {
+            success: false,
+            output: '',
+            error: toolTimeout.didTimeout()
+              ? '工具执行超时'
+              : signal?.aborted
+                ? '已取消'
+                : error instanceof Error
+                  ? error.message
+                  : String(error),
+          };
+        } finally {
+          toolTimeout.dispose();
+        }
+      }
 
       yield ev.toolCallEnd(runId, callId, result);
+
+      if (signal?.aborted) {
+        yield ev.runError(runId, '已取消', sessionId);
+        return;
+      }
 
       if (toolName === 'update_agent_plan' && result.success) {
         yield ev.planUpdated(runId, getRunPlan(runId));
@@ -184,6 +311,8 @@ export async function* runAgentLoop(
         },
       ];
     }
+
+    options.onPhaseChange?.('running');
   }
 
   yield ev.runError(runId, `已达到最大工具轮次 (${maxRounds})`, sessionId);

@@ -133,6 +133,7 @@ export interface ArchiveConversationResult {
 async function findSemanticallySimilarDocument(
   summaryText: string,
   threshold: number,
+  signal?: AbortSignal,
 ): Promise<DocumentInfo | null> {
   const stored = loadAllChunkEmbeddings();
   if (!stored.length) return null;
@@ -144,7 +145,7 @@ async function findSemanticallySimilarDocument(
     }
   }
 
-  const queryVec = new Float32Array(await embedText(summaryText.slice(0, 500)));
+  const queryVec = new Float32Array(await embedText(summaryText.slice(0, 500), signal));
   let bestDocId: string | null = null;
   let bestScore = 0;
 
@@ -193,6 +194,7 @@ export async function archiveConversationToKnowledge(
     config,
     { signal, sessionId },
   );
+  if (signal?.aborted) throw new Error('已取消');
 
   const content = sanitizeMarkdown(markdown);
   if (!content) {
@@ -207,7 +209,7 @@ export async function archiveConversationToKnowledge(
     content.slice(0, 500);
 
   const threshold = getPerformanceSettings().ragArchiveDedupeThreshold;
-  const similar = await findSemanticallySimilarDocument(summarySection, threshold);
+  const similar = await findSemanticallySimilarDocument(summarySection, threshold, signal);
   if (similar) {
     return {
       document: similar,
@@ -216,7 +218,7 @@ export async function archiveConversationToKnowledge(
     };
   }
 
-  const document = await importTextAsKnowledge(content, filename);
+  const document = await importTextAsKnowledge(content, filename, undefined, { signal });
 
   return {
     document,

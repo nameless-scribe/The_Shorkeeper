@@ -17,8 +17,10 @@ import type {
   ModelSettingsPatch,
 } from '../../src/shared/types';
 import { emitInitialState } from '../state/presence';
+import { abortAllPendingSessionWork } from '../../src/agent/session-background';
 
 function notifyModelConfigChanged(): void {
+  abortAllPendingSessionWork();
   emitInitialState();
 }
 

@@ -1,4 +1,5 @@
 import { getSetting, setSetting } from '../db/app-settings';
+import { DEFAULT_CONTEXT_MAX_INPUT_TOKENS } from '../agent/context-budget';
 
 export type MemoryExtractMode = 'always' | 'manual' | 'every_n';
 
@@ -22,8 +23,11 @@ export interface PerformanceSettings {
   memoryExtractInterval: number;
   maxHistoryMessages: number;
   compressThreshold: number;
+  contextMaxInputTokens: number;
   memorySemanticInContext: boolean;
 }
+
+export { DEFAULT_CONTEXT_MAX_INPUT_TOKENS } from '../agent/context-budget';
 
 const DEFAULTS: PerformanceSettings = {
   ragEnabled: true,
@@ -42,6 +46,7 @@ const DEFAULTS: PerformanceSettings = {
   memoryExtractInterval: 3,
   maxHistoryMessages: 20,
   compressThreshold: 30,
+  contextMaxInputTokens: DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
   memorySemanticInContext: true,
 };
 
@@ -70,6 +75,21 @@ function envFloat(key: string, fallback: number): number {
   if (raw == null || raw === '') return fallback;
   const n = Number.parseFloat(raw);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeContextMaxInputTokens(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_CONTEXT_MAX_INPUT_TOKENS;
+  return Math.max(8000, Math.min(120_000, Math.floor(value)));
+}
+
+function normalizeInteger(
+  value: number,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(value)));
 }
 
 function parseMemoryExtractMode(raw: string | null): MemoryExtractMode {
@@ -135,15 +155,35 @@ export function getPerformanceSettings(): PerformanceSettings {
       : envBool('AUTO_MEMORY_EXTRACT', true)
         ? 'always'
         : 'manual',
-    memoryExtractInterval: getSetting('MEMORY_EXTRACT_INTERVAL') != null
-      ? Number.parseInt(getSetting('MEMORY_EXTRACT_INTERVAL')!, 10) || DEFAULTS.memoryExtractInterval
-      : envInt('MEMORY_EXTRACT_INTERVAL', DEFAULTS.memoryExtractInterval),
-    maxHistoryMessages: getSetting('MAX_HISTORY_MESSAGES') != null
-      ? Number.parseInt(getSetting('MAX_HISTORY_MESSAGES')!, 10) || DEFAULTS.maxHistoryMessages
-      : envInt('MAX_HISTORY_MESSAGES', DEFAULTS.maxHistoryMessages),
-    compressThreshold: getSetting('COMPRESS_THRESHOLD') != null
-      ? Number.parseInt(getSetting('COMPRESS_THRESHOLD')!, 10) || DEFAULTS.compressThreshold
-      : envInt('COMPRESS_THRESHOLD', DEFAULTS.compressThreshold),
+    memoryExtractInterval: normalizeInteger(
+      getSetting('MEMORY_EXTRACT_INTERVAL') != null
+        ? Number.parseInt(getSetting('MEMORY_EXTRACT_INTERVAL')!, 10)
+        : envInt('MEMORY_EXTRACT_INTERVAL', DEFAULTS.memoryExtractInterval),
+      1,
+      100,
+      DEFAULTS.memoryExtractInterval,
+    ),
+    maxHistoryMessages: normalizeInteger(
+      getSetting('MAX_HISTORY_MESSAGES') != null
+        ? Number.parseInt(getSetting('MAX_HISTORY_MESSAGES')!, 10)
+        : envInt('MAX_HISTORY_MESSAGES', DEFAULTS.maxHistoryMessages),
+      6,
+      60,
+      DEFAULTS.maxHistoryMessages,
+    ),
+    compressThreshold: normalizeInteger(
+      getSetting('COMPRESS_THRESHOLD') != null
+        ? Number.parseInt(getSetting('COMPRESS_THRESHOLD')!, 10)
+        : envInt('COMPRESS_THRESHOLD', DEFAULTS.compressThreshold),
+      20,
+      200,
+      DEFAULTS.compressThreshold,
+    ),
+    contextMaxInputTokens: normalizeContextMaxInputTokens(
+      getSetting('CONTEXT_MAX_INPUT_TOKENS') != null
+        ? Number.parseInt(getSetting('CONTEXT_MAX_INPUT_TOKENS')!, 10)
+        : envInt('CONTEXT_MAX_INPUT_TOKENS', DEFAULTS.contextMaxInputTokens),
+    ),
     memorySemanticInContext: getSetting('MEMORY_SEMANTIC_IN_CONTEXT') != null
       ? getSetting('MEMORY_SEMANTIC_IN_CONTEXT') === 'true'
       : envBool('MEMORY_SEMANTIC_IN_CONTEXT', DEFAULTS.memorySemanticInContext),
@@ -184,6 +224,9 @@ export function savePerformanceSettings(patch: Partial<PerformanceSettings>): Pe
   }
   if (patch.compressThreshold != null) {
     setSetting('COMPRESS_THRESHOLD', String(patch.compressThreshold));
+  }
+  if (patch.contextMaxInputTokens != null) {
+    setSetting('CONTEXT_MAX_INPUT_TOKENS', String(patch.contextMaxInputTokens));
   }
   if (patch.memorySemanticInContext != null) {
     setSetting('MEMORY_SEMANTIC_IN_CONTEXT', String(patch.memorySemanticInContext));

@@ -14,7 +14,7 @@
 
 `better-sqlite3@13.0.3` PoC 已用该接口直接注入用户画像与 RAG Repository。`Uint8Array` 写入与原生 `Buffer` 读回、RAG trigram FTS 检索、chunk 回读和事务删除均已验证，原生 adapter 不需要改领域调用方。
 
-本轮没有切换生产数据库引擎。主线继续使用 sql.js，Repository 边界使后续原生 SQLite 试点可以替换 adapter，而不需要重写业务层。
+生产数据库已完成从 sql.js 到 better-sqlite3 的切换。主线通过引擎标记选择 native adapter，Repository 边界确保切换不需要重写业务层；原 sql.js 主库保留为回滚源。
 
 ## 2. 第一阶段改动
 
@@ -63,9 +63,9 @@ RAG Repository 已完成以下核心验收：
 
 `SqliteDb` 当前同时承担 sql.js API 适配、事务、整库导出和同步耐久性确认。落盘失败会从未变更的主库重建内存状态。迁移原生 SQLite 时，业务 Repository 可以保留，但 WAL、备份和写入策略仍需要由 native adapter 替换。
 
-## 5. 原生 SQLite PoC 边界
+## 5. 原生 SQLite 迁移边界
 
-PoC 不接入主业务，只使用真实数据库副本和独立测试入口，至少验证：
+原生 adapter 已接入主业务并完成真实生产切换；当前仍需用大知识库副本补足容量和长期运行基准：
 
 1. `better-sqlite3` 在当前 Node/Electron 版本下安装、重建和加载。
 2. electron-builder Windows 安装包能够携带并加载 native 模块。
@@ -89,6 +89,5 @@ PoC 不接入主业务，只使用真实数据库副本和独立测试入口，�
 
 ## 7. 下一步
 
-1. 进入 S2，审计 Agent run 生命周期、取消、超时和错误恢复。
-2. 后续把 PoC adapter 提升为完整双 adapter 合约测试，不先切换生产入口。
-3. 使用真实大知识库副本验证 sql.js 同步落盘和文档隔离删除的性能。
+1. 进入 S2.3-S2.6，逐步收口运行时日志、错误分类、上下文预算和后台任务恢复。
+2. 进入 S4 前使用真实大知识库副本验证 native SQLite 的持续写入、FTS、checkpoint、备份和恢复性能。

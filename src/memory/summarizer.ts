@@ -4,6 +4,11 @@ import { getModelConfigSafe } from '../models/config';
 import { getPerformanceSettings } from '../config/performance';
 import { getSetting, setSetting } from '../db/app-settings';
 import {
+  DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
+  estimateTokens,
+  truncateToTokenBudget,
+} from '../agent/context-budget';
+import {
   getExtractedUpToMessageId,
   markExtractedUpToMessageId,
 } from './extraction-state';
@@ -99,7 +104,10 @@ function getLatestTurn(sessionId: string): Array<{ id: string; role: string; con
 }
 
 /** run_finished 后异步提取：仅分析本轮增量，按 key upsert */
-export async function extractMemoriesFromSession(sessionId: string): Promise<number> {
+export async function extractMemoriesFromSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<number> {
   const config = getModelConfigSafe();
   if (!config) return 0;
 
@@ -113,19 +121,28 @@ export async function extractMemoriesFromSession(sessionId: string): Promise<num
     return 0;
   }
 
-  const existingMemories = formatMemoriesForExtraction(listMemories(80));
-  const dialogue = formatTurnDialogue(turn);
+  const { contextMaxInputTokens = DEFAULT_CONTEXT_MAX_INPUT_TOKENS } = getPerformanceSettings();
+  const existingMemories = truncateToTokenBudget(
+    formatMemoriesForExtraction(listMemories(80)),
+    3000,
+  );
+  const systemPrompt = buildExtractionPrompt(existingMemories);
+  const dialogueBudget = Math.max(
+    512,
+    Math.min(12_000, contextMaxInputTokens - estimateTokens(systemPrompt) - 1024),
+  );
+  const dialogue = truncateToTokenBudget(formatTurnDialogue(turn), dialogueBudget);
 
   const reply = await completeChat(
     [
-      { role: 'system', content: buildExtractionPrompt(existingMemories) },
+      { role: 'system', content: systemPrompt },
       {
         role: 'user',
         content: `请从以下本轮对话中提取新事实或需更新的记忆：\n\n${dialogue}`,
       },
     ],
     config,
-    { sessionId },
+    { sessionId, signal },
   );
 
   const facts = parseStructuredFacts(reply);

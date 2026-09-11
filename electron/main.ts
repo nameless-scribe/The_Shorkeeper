@@ -20,7 +20,7 @@ import { registerPresenceIpc } from './ipc/presence';
 import { registerWindowIpc } from './ipc/window';
 import { registerTasksIpc } from './ipc/tasks';
 import { registerUserTasksIpc } from './ipc/user-tasks';
-import { initDatabase, closeDatabase } from '../src/db';
+import { initDatabase, closeDatabaseAsync } from '../src/db';
 import { setDatabaseReady } from '../src/db/state';
 import { restoreActiveSession } from '../src/session/active';
 import {
@@ -51,6 +51,13 @@ import { initAutoUpdater } from './update/auto-updater';
 import { configureAppIdentity } from './app-icon';
 import { showSplashWindow, closeSplashWindow } from './windows/splash';
 import { setPermissionConfirmer } from '../src/agent/permissions';
+import { shutdownPendingSessionWork } from '../src/agent/session-background';
+import {
+  abortAllSessionRuns,
+  awaitSessionRunsIdle,
+  beginSessionRunShutdown,
+} from '../src/agent/session-run-lock';
+import { cancelAllPendingPermissions } from './ipc/permission';
 import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron';
 import { broadcastTasksUpdated } from './tasks/events';
 
@@ -84,6 +91,25 @@ registerAppearanceAssetScheme();
 configureAppIdentity();
 
 const SPLASH_MIN_MS = 2200;
+const SHUTDOWN_GRACE_MS = 5000;
+let shutdownReady = false;
+let shutdownPromise: Promise<void> | null = null;
+
+async function settleRuntimeForShutdown(): Promise<void> {
+  beginSessionRunShutdown();
+  cancelAllPendingPermissions();
+  abortAllSessionRuns();
+
+  const [runsIdle, backgroundIdle] = await Promise.all([
+    awaitSessionRunsIdle(SHUTDOWN_GRACE_MS),
+    shutdownPendingSessionWork(SHUTDOWN_GRACE_MS),
+  ]);
+  if (!runsIdle || !backgroundIdle) {
+    console.warn('[shutdown] 部分 Agent 任务未在宽限期内结束，将继续关闭数据库');
+  }
+
+  await closeDatabaseAsync();
+}
 
 function attachTrayCloseBehavior(win: BrowserWindow): void {
   win.on('close', (event) => {
@@ -241,16 +267,27 @@ app.on('window-all-closed', () => {
     return;
   }
   if (process.platform !== 'darwin') {
-    stopScheduler();
-    closeDatabase();
     app.quit();
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   setAppQuitting();
   stopScheduler();
-  closeDatabase();
+  if (shutdownReady) return;
+
+  event.preventDefault();
+  if (shutdownPromise) return;
+
+  shutdownPromise = settleRuntimeForShutdown()
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[shutdown] 运行时清理失败: ${message}`);
+    })
+    .finally(() => {
+      shutdownReady = true;
+      app.quit();
+    });
 });
 
 app.on('activate', () => {

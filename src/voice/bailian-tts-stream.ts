@@ -124,6 +124,7 @@ export function createTtsStreamSession(
     finishResolve = resolve;
     finishReject = reject;
   });
+  void finishPromise.catch(() => undefined);
 
   const timeout = setTimeout(() => {
     fail(new Error('语音合成超时（60s）'));
@@ -139,7 +140,8 @@ export function createTtsStreamSession(
   };
 
   const fail = (err: Error) => {
-    if (aborted) return;
+    if (aborted || finished) return;
+    finished = true;
     cleanup();
     startedReject?.(err);
     startedResolve = null;

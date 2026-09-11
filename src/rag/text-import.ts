@@ -28,6 +28,7 @@ export type ImportProgress =
 
 export interface ImportTextOptions {
   skipHashDedup?: boolean;
+  signal?: AbortSignal;
 }
 
 export async function importTextAsKnowledge(
@@ -73,7 +74,7 @@ export async function importTextAsKnowledge(
   let importedDocument: DocumentInfo;
   try {
     const docEmbedInput = `${safeName}\n${summary}`;
-    const docVec = await embedText(docEmbedInput);
+    const docVec = await embedText(docEmbedInput, options?.signal);
     const docEmbedding = serializeEmbedding(docVec);
 
     const BATCH = 10;
@@ -86,7 +87,9 @@ export async function importTextAsKnowledge(
 
     for (let i = 0; i < textChunks.length; i += BATCH) {
       const batch = textChunks.slice(i, i + BATCH);
-      const vectors = await embedTexts(batch.map((c) => c.embedText));
+      const vectors = await embedTexts(batch.map((c) => c.embedText), {
+        signal: options?.signal,
+      });
       for (let j = 0; j < batch.length; j++) {
         embeddingDim = vectors[j].length;
         embeddedChunks.push({

@@ -128,6 +128,20 @@ export function PerformancePage() {
       </SettingsPanel>
 
       <SettingsPanel title="上下文窗口" icon="📊">
+        <SettingsField label="最大输入 Token 预算" hint="默认 24000；私人小模型可设为 8000–16000">
+          <input
+            type="number"
+            min={8000}
+            max={120000}
+            step={1000}
+            value={settings.contextMaxInputTokens}
+            onChange={(e) =>
+              void update({ contextMaxInputTokens: Number(e.target.value) || 24000 })
+            }
+            className={SETTINGS_INPUT_CLASS}
+          />
+        </SettingsField>
+
         <SettingsField label="送入模型的最近消息条数" hint="默认 20，范围 6–60">
           <input
             type="number"

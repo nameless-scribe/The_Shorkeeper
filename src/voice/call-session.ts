@@ -67,6 +67,7 @@ class CallSessionManager {
 
   private readonly sessions = new Map<string, CallSessionRecord>();
   private readonly turnContexts = new Map<string, CallTurnContext>();
+  private readonly runControllers = new Map<string, AbortController>();
   private readonly streamFailureCounts = new Map<string, number>();
 
   private static readonly STREAM_FAILURE_DEGRADE_THRESHOLD = 2;
@@ -201,7 +202,9 @@ class CallSessionManager {
     record: CallSessionRecord,
     ctx: CallTurnContext,
     options: TtsOptions | null,
+    signal: AbortSignal,
   ): Promise<void> {
+    if (signal.aborted) return;
     const finalText = ctx.assistantText.trim();
     if (!finalText || !hasSpeakableDialogue(finalText)) {
       record.state = 'listening';
@@ -213,9 +216,11 @@ class CallSessionManager {
 
     if (ctx.streamMode === 'rest-fallback' || !options) {
       try {
-        const result = await synthesizeVoiceChunk(finalText);
+        const result = await synthesizeVoiceChunk(finalText, signal);
+        if (signal.aborted || this.sessions.get(record.callId) !== record) return;
         this.emitAudioChunk(record, ctx, result.audio, result.mime);
       } catch (err) {
+        if (signal.aborted) return;
         const message = err instanceof Error ? err.message : String(err);
         record.state = 'listening';
         this.host.broadcast(ev.callState(record.callId, 'listening'));
@@ -228,10 +233,12 @@ class CallSessionManager {
 
     const tail = ctx.sentenceBuffer.flush();
     await this.pushSentences(record, ctx, tail, options);
+    if (signal.aborted) return;
 
     if (ctx.ttsStream) {
       try {
         await ctx.ttsStream.finish();
+        if (signal.aborted) return;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (!ctx.speakingStarted) {
@@ -275,10 +282,12 @@ class CallSessionManager {
       this.host.broadcast(ev.callState(callId, 'listening'));
       return { ok: false, error: '上一条消息仍在处理中' };
     }
+    this.runControllers.set(callId, controller);
 
     this.host.onRunStarted();
     let runId: string | null = null;
     let terminalError: string | null = null;
+    let presenceSettled = false;
     const turn = this.createTurnContext();
     this.turnContexts.set(callId, turn);
     const ttsOptions = buildTtsOptions();
@@ -319,11 +328,13 @@ class CallSessionManager {
         }
 
         if (agEvent.type === 'run_finished') {
-          await this.finalizeAssistantSpeech(record, turn, ttsOptions);
+          await this.finalizeAssistantSpeech(record, turn, ttsOptions, controller.signal);
           this.resetStreamFailures(callId);
           this.host.onRunFinished({ recordAffection: persistTranscript });
+          presenceSettled = true;
         } else if (agEvent.type === 'run_error') {
           this.host.onRunError();
+          presenceSettled = true;
           terminalError = agEvent.message;
         }
 
@@ -331,8 +342,10 @@ class CallSessionManager {
       }
 
       if (controller.signal.aborted) {
-        record.state = 'listening';
-        this.host.broadcast(ev.callState(callId, 'listening'));
+        if (this.sessions.get(callId) === record) {
+          record.state = 'listening';
+          this.host.broadcast(ev.callState(callId, 'listening'));
+        }
         return { ok: true };
       }
 
@@ -346,17 +359,26 @@ class CallSessionManager {
       return { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.host.onRunError();
-      if (runId) {
-        this.host.broadcast(ev.runError(runId, message, record.sessionId));
+      if (!presenceSettled) {
+        this.host.onRunError();
+        presenceSettled = true;
       }
-      record.state = 'listening';
-      this.host.broadcast(ev.callState(callId, 'listening'));
-      this.host.broadcast(ev.callError(callId, message));
+      if (this.sessions.get(callId) === record) {
+        if (runId) {
+          this.host.broadcast(ev.runError(runId, message, record.sessionId));
+        }
+        record.state = 'listening';
+        this.host.broadcast(ev.callState(callId, 'listening'));
+        this.host.broadcast(ev.callError(callId, message));
+      }
       return { ok: false, error: message };
     } finally {
+      if (!presenceSettled) this.host.onRunError();
       this.clearTurnContext(callId);
-      releaseSessionRun(record.sessionId);
+      if (this.runControllers.get(callId) === controller) {
+        this.runControllers.delete(callId);
+      }
+      releaseSessionRun(record.sessionId, controller);
     }
   }
 
@@ -382,11 +404,9 @@ class CallSessionManager {
       return { ok: false, error: '通话已结束' };
     }
 
-    const activeRun = getSessionRun(record.sessionId);
-    if (activeRun) {
-      activeRun.controller.abort();
-      this.host.onRunError();
-      releaseSessionRun(record.sessionId);
+    const controller = this.runControllers.get(callId);
+    if (controller) {
+      controller.abort();
     }
 
     this.clearTurnContext(callId);
@@ -403,16 +423,15 @@ class CallSessionManager {
 
     this.clearTurnContext(callId);
 
+    const controller = this.runControllers.get(callId);
     const activeRun = getSessionRun(record.sessionId);
-    if (activeRun) {
-      activeRun.controller.abort();
-      this.host.onRunError();
-      if (activeRun.runId) {
+    if (controller) {
+      controller.abort();
+      if (activeRun?.controller === controller && activeRun.runId) {
         this.host.broadcast(
           ev.runError(activeRun.runId, '通话已结束', record.sessionId),
         );
       }
-      releaseSessionRun(record.sessionId);
     }
 
     record.state = 'idle';

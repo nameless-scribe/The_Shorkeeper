@@ -259,6 +259,17 @@ export async function* streamChatAnthropic(
     }
     const message = err instanceof Error ? err.message : String(err);
     yield { type: 'error', message };
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // The stream may already be closed or aborted.
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // Ignore readers already detached by the runtime.
+    }
   }
 }
 

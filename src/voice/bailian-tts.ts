@@ -26,7 +26,11 @@ export class BailianTtsEngine implements TtsEngine {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  async synthesize(text: string, options: TtsOptions): Promise<TtsResult> {
+  async synthesize(
+    text: string,
+    options: TtsOptions,
+    signal?: AbortSignal,
+  ): Promise<TtsResult> {
     const trimmed = text.trim();
     if (!trimmed) {
       throw new Error('朗读文本为空');
@@ -64,7 +68,9 @@ export class BailianTtsEngine implements TtsEngine {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+        : AbortSignal.timeout(30_000),
     });
 
     const rawText = await res.text();
@@ -109,7 +115,9 @@ export class BailianTtsEngine implements TtsEngine {
 
     if (audio.url) {
       const audioRes = await this.fetchImpl(audio.url, {
-        signal: AbortSignal.timeout(30_000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+          : AbortSignal.timeout(30_000),
       });
       if (!audioRes.ok) {
         throw new Error(`下载合成音频失败（HTTP ${audioRes.status}）`);

@@ -66,11 +66,16 @@ import type {
   VoiceSttCallStreamAbortPayload,
   UpdateInfo,
 } from '../src/shared/types';
+import type { RunTelemetrySnapshot } from '../src/agent/run-observability';
 
 const shorekeeperApi = {
   agent: {
     send: (payload: AgentSendPayload) => ipcRenderer.invoke('agent:send', payload),
     abort: () => ipcRenderer.invoke('agent:abort'),
+    diagnostics: (
+      query?: { runId?: string; limit?: number },
+    ): Promise<RunTelemetrySnapshot[] | RunTelemetrySnapshot | null> =>
+      ipcRenderer.invoke('agent:diagnostics', query),
     onEvent: (callback: (event: unknown) => void) => {
       const listener = (_: Electron.IpcRendererEvent, data: unknown) => callback(data);
       ipcRenderer.on('agent:event', listener);

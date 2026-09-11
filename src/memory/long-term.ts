@@ -24,6 +24,7 @@ export function searchMemories(query: string, limit = 5): MemoryEntry[] {
 export async function searchMemoriesWithEmbedding(
   query: string,
   limit = 5,
+  signal?: AbortSignal,
 ): Promise<MemoryEntry[]> {
   const likeHits = searchMemories(query, limit);
   if (likeHits.length) return likeHits;
@@ -33,7 +34,7 @@ export async function searchMemoriesWithEmbedding(
   if (!withVec.length) return [];
 
   try {
-    const queryVec = new Float32Array(await embedText(query.trim()));
+    const queryVec = new Float32Array(await embedText(query.trim(), signal));
     const hits = topKBySimilarity(
       queryVec,
       withVec.map((s) => ({
@@ -47,6 +48,7 @@ export async function searchMemoriesWithEmbedding(
 
     return hits.map((hit) => hit.item);
   } catch (err) {
+    if (signal?.aborted) throw err;
     console.warn('[memory] 向量检索失败，回退 LIKE:', err);
     return [];
   }

@@ -23,6 +23,7 @@ function toInfo(settings: PerformanceSettings): PerformanceSettingsInfo {
     memoryExtractInterval: settings.memoryExtractInterval,
     maxHistoryMessages: settings.maxHistoryMessages,
     compressThreshold: settings.compressThreshold,
+    contextMaxInputTokens: settings.contextMaxInputTokens,
     memorySemanticInContext: settings.memorySemanticInContext,
   };
 }

@@ -2,6 +2,7 @@ import {
   getEmbeddingModelName,
   loadEmbeddingConfig,
 } from '../models/embedding-config';
+import { awaitWithAbort, createLinkedTimeoutSignal } from '../agent/abort';
 
 /** 本地 ONNX embedding（如 bge-small-zh-v1.5）需与 chunk 向量同一模型族；见 docs/RAG-OPTIMIZATION.md §4.8 */
 
@@ -15,36 +16,46 @@ interface EmbeddingsResponse {
 
 /** 百炼 DashScope embedding 单次 input 上限为 10 条 */
 const MAX_EMBEDDING_BATCH = 10;
+export const DEFAULT_EMBEDDING_TIMEOUT_MS = 30_000;
 
 async function requestEmbeddings(
   input: string[],
   options?: { signal?: AbortSignal },
 ): Promise<number[][]> {
   const config = loadEmbeddingConfig();
-  const response = await fetch(`${config.baseUrl}/embeddings`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      input,
-    }),
-    signal: options?.signal,
-  });
+  const timeout = createLinkedTimeoutSignal(options?.signal, DEFAULT_EMBEDDING_TIMEOUT_MS);
+  try {
+    const response = await awaitWithAbort(fetch(`${config.baseUrl}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        input,
+      }),
+      signal: timeout.signal,
+    }), timeout.signal);
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(formatEmbeddingApiError(response.status, text));
-  }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(formatEmbeddingApiError(response.status, text));
+    }
 
-  const data = (await response.json()) as EmbeddingsResponse;
-  const vectors = data.data?.map((d) => d.embedding).filter(Boolean) as number[][];
-  if (!vectors?.length || vectors.length !== input.length) {
-    throw new Error('Embeddings API 返回格式异常');
+    const data = (await response.json()) as EmbeddingsResponse;
+    const vectors = data.data?.map((d) => d.embedding).filter(Boolean) as number[][];
+    if (!vectors?.length || vectors.length !== input.length) {
+      throw new Error('Embeddings API 返回格式异常');
+    }
+    return vectors;
+  } catch (error) {
+    if (timeout.didTimeout()) throw new Error('Embedding 请求超时');
+    if (options?.signal?.aborted) throw new Error('已取消');
+    throw error;
+  } finally {
+    timeout.dispose();
   }
-  return vectors;
 }
 
 export async function embedTexts(

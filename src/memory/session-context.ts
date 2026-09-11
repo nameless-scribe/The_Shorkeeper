@@ -7,8 +7,27 @@ import {
 import { completeChat } from '../models/complete-chat';
 import { getModelConfigSafe } from '../models/config';
 import { getPerformanceSettings } from '../config/performance';
+import {
+  DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
+  estimateTokens,
+  truncateToTokenBudget,
+} from '../agent/context-budget';
 
 export { getSessionSummary, type SessionSummary };
+
+export type SessionCompressionReason =
+  | 'model_unavailable'
+  | 'below_threshold'
+  | 'already_compressed'
+  | 'empty_summary'
+  | 'compressed';
+
+export interface SessionCompressionResult {
+  compressed: boolean;
+  reason: SessionCompressionReason;
+  messageCount: number;
+  compressedMessageCount: number;
+}
 
 function buildSummaryPrompt(existingSummary: string | null): string {
   return `你是会话摘要助手。将以下对话历史压缩为简洁中文摘要，保留关键事实、决定与用户偏好。
@@ -20,28 +39,64 @@ ${existingSummary ? `\n已有摘要（请合并更新）：\n${existingSummary}\
 }
 
 /** 消息数超阈值时压缩早期对话为 summary */
-export async function maybeCompressSession(sessionId: string): Promise<boolean> {
-  const config = getModelConfigSafe();
-  if (!config) return false;
-
-  const { compressThreshold, maxHistoryMessages } = getPerformanceSettings();
+export async function compressSessionIfNeeded(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SessionCompressionResult> {
   const all = listMessages(sessionId).filter(
     (m) => m.role === 'user' || m.role === 'assistant',
   );
+  const config = getModelConfigSafe();
+  if (!config) {
+    return {
+      compressed: false,
+      reason: 'model_unavailable',
+      messageCount: all.length,
+      compressedMessageCount: 0,
+    };
+  }
 
-  if (all.length <= compressThreshold) return false;
+  const {
+    compressThreshold,
+    maxHistoryMessages,
+    contextMaxInputTokens = DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
+  } = getPerformanceSettings();
 
-  const keepCount = maxHistoryMessages;
+  if (all.length <= compressThreshold) {
+    return {
+      compressed: false,
+      reason: 'below_threshold',
+      messageCount: all.length,
+      compressedMessageCount: 0,
+    };
+  }
+
   const existing = getSessionSummary(sessionId);
   const compressedUpToId = existing?.compressedUpToMessageId;
-  let toCompress = all.slice(0, all.length - keepCount);
-  if (compressedUpToId) {
-    const idx = toCompress.findIndex((m) => m.id === compressedUpToId);
-    if (idx >= 0) {
-      toCompress = toCompress.slice(idx + 1);
-    }
+  const compressEnd = Math.max(0, all.length - maxHistoryMessages);
+  const checkpointIndex = compressedUpToId
+    ? all.findIndex((m) => m.id === compressedUpToId)
+    : -1;
+  const compressStart = checkpointIndex >= 0 ? checkpointIndex + 1 : 0;
+  let toCompress = all.slice(compressStart, compressEnd);
+  if (!toCompress.length) {
+    return {
+      compressed: false,
+      reason: 'already_compressed',
+      messageCount: all.length,
+      compressedMessageCount: 0,
+    };
   }
-  if (!toCompress.length) return false;
+
+  const existingSummary = existing?.summary
+    ? truncateToTokenBudget(existing.summary, 1000)
+    : null;
+  const systemPrompt = buildSummaryPrompt(existingSummary);
+  const sourceBudget = Math.max(
+    512,
+    Math.min(16_000, contextMaxInputTokens - estimateTokens(systemPrompt) - 1024),
+  );
+  toCompress = takeCompressionBatch(toCompress, sourceBudget);
 
   const dialogue = toCompress
     .map((m) => `${m.role === 'user' ? '用户' : '助手'}：${m.content}`)
@@ -49,18 +104,63 @@ export async function maybeCompressSession(sessionId: string): Promise<boolean> 
 
   const summary = await completeChat(
     [
-      { role: 'system', content: buildSummaryPrompt(existing?.summary ?? null) },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: `请摘要以下对话：\n\n${dialogue}` },
     ],
     config,
-    { sessionId },
+    { sessionId, signal },
   );
 
   const trimmed = summary.trim();
-  if (!trimmed) return false;
+  if (!trimmed) {
+    return {
+      compressed: false,
+      reason: 'empty_summary',
+      messageCount: all.length,
+      compressedMessageCount: toCompress.length,
+    };
+  }
 
   upsertSessionSummary(sessionId, trimmed, toCompress.at(-1)!.id);
-  return true;
+  return {
+    compressed: true,
+    reason: 'compressed',
+    messageCount: all.length,
+    compressedMessageCount: toCompress.length,
+  };
+}
+
+function takeCompressionBatch<T extends { role: string; content: string }>(
+  messages: T[],
+  maxTokens: number,
+): T[] {
+  const selected: T[] = [];
+  let used = 0;
+  for (const message of messages) {
+    const prefix = message.role === 'user' ? '用户：' : '助手：';
+    const tokens = estimateTokens(prefix) + estimateTokens(message.content) + 1;
+    if (used + tokens <= maxTokens) {
+      selected.push(message);
+      used += tokens;
+      continue;
+    }
+    if (selected.length === 0) {
+      const contentBudget = Math.max(1, maxTokens - estimateTokens(prefix) - 1);
+      selected.push({
+        ...message,
+        content: truncateToTokenBudget(message.content, contentBudget),
+      });
+    }
+    break;
+  }
+  return selected;
+}
+
+export async function maybeCompressSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return (await compressSessionIfNeeded(sessionId, signal)).compressed;
 }
 
 export function formatSummaryForPrompt(summary: SessionSummary | null): string | null {

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ev } from '../../agent/events';
+import {
+  acquireSessionRun,
+  isSessionRunActive,
+  releaseSessionRun,
+} from '../../agent/session-run-lock';
 import { createCallSessionManager, resetCallSessionManager } from '../call-session';
 
 const runOrchestrator = vi.fn();
@@ -164,7 +169,7 @@ describe('call-session', () => {
 
     await manager.submitUserText(started.callId, '测试');
 
-    expect(synthesizeVoiceChunk).toHaveBeenCalledWith('你好。');
+    expect(synthesizeVoiceChunk).toHaveBeenCalledWith('你好。', expect.any(AbortSignal));
     expect(broadcast).toHaveBeenCalledWith(ev.callSpeechEnd(started.callId));
   });
 
@@ -221,6 +226,12 @@ describe('call-session', () => {
     expect(manager.get(started.callId)).toBeUndefined();
 
     await pending;
+    expect(isSessionRunActive('session-1')).toBe(false);
+    expect(host.onRunError).toHaveBeenCalledTimes(1);
+    const callStates = broadcast.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'call_state' && event.callId === started.callId);
+    expect(callStates.at(-1)).toEqual(ev.callState(started.callId, 'idle'));
   });
 
   it('rejects user text when not listening', async () => {
@@ -276,8 +287,11 @@ describe('call-session', () => {
     expect(interrupted.ok).toBe(true);
     expect(abortSignal?.aborted).toBe(true);
     expect(manager.get(started.callId)?.state).toBe('listening');
+    expect(isSessionRunActive('session-1')).toBe(true);
 
     await pending;
+    expect(isSessionRunActive('session-1')).toBe(false);
+    expect(host.onRunError).toHaveBeenCalledTimes(1);
   });
 
   it('interrupt during speaking keeps session and returns to listening', async () => {
@@ -310,6 +324,52 @@ describe('call-session', () => {
     expect(interrupted.ok).toBe(true);
     expect(manager.get(started.callId)?.state).toBe('listening');
     expect(manager.get(started.callId)).toBeDefined();
+  });
+
+  it('does not cancel an unrelated text run while the call is listening', () => {
+    const manager = createCallSessionManager(host);
+    const started = manager.start('session-1');
+    if (!started.ok) throw new Error('start failed');
+    const textRun = acquireSessionRun('session-1')!;
+
+    expect(manager.interrupt(started.callId)).toEqual({ ok: true });
+    expect(textRun.signal.aborted).toBe(false);
+    expect(manager.end(started.callId)).toEqual({ ok: true });
+    expect(textRun.signal.aborted).toBe(false);
+
+    releaseSessionRun('session-1', textRun);
+  });
+
+  it('does not play a stale REST fallback result after interruption', async () => {
+    createTtsStreamSession.mockRejectedValue(new Error('ws down'));
+    let resolveSynthesis: ((value: { audio: ArrayBuffer; mime: string }) => void) | undefined;
+    synthesizeVoiceChunk.mockImplementation((_text, _signal) => new Promise((resolve) => {
+      resolveSynthesis = resolve;
+    }));
+    runOrchestrator.mockReturnValue(mockRun([
+      { type: 'run_started', runId: 'run-rest-interrupt', sessionId: 'session-1' },
+      { type: 'text_delta', runId: 'run-rest-interrupt', delta: '稍后播放。' },
+      { type: 'run_finished', runId: 'run-rest-interrupt' },
+    ]));
+
+    const manager = createCallSessionManager(host);
+    const started = manager.start('session-1');
+    if (!started.ok) throw new Error('start failed');
+
+    const pending = manager.submitUserText(started.callId, '请回答');
+    await vi.waitFor(() => expect(synthesizeVoiceChunk).toHaveBeenCalledOnce());
+    const signal = synthesizeVoiceChunk.mock.calls[0][1] as AbortSignal;
+
+    manager.interrupt(started.callId);
+    expect(signal.aborted).toBe(true);
+    resolveSynthesis?.({ audio: new Uint8Array([1]).buffer, mime: 'audio/mpeg' });
+    await pending;
+
+    expect(manager.get(started.callId)?.state).toBe('listening');
+    expect(broadcast).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'call_audio_chunk',
+      callId: started.callId,
+    }));
   });
 
   it('allows user text after interrupt', async () => {

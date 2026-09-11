@@ -33,7 +33,7 @@ async function executeReminder(task: ScheduledTaskInfo, payload: Record<string, 
   await showReminderPopup(task.name, body);
 }
 
-async function executeAgentPrompt(
+export async function executeAgentPrompt(
   task: ScheduledTaskInfo,
   payload: Record<string, unknown>,
 ): Promise<{ skipped: boolean }> {
@@ -74,7 +74,7 @@ async function executeAgentPrompt(
     onRunError();
     throw err;
   } finally {
-    releaseSessionRun(session.id);
+    releaseSessionRun(session.id, controller);
   }
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AgUiEvent, AgentPlanItem, WorkspaceAttachment } from '@/shared/types';
 import type { UiToolCall } from '../components/ToolCallCard';
 import { extractFilesFromToolCall, mergeAttachments } from '../components/file-attachment-utils';
+import { formatRunErrorForUser } from '../../agent/run-errors';
 
 export interface UiMessage {
   id: string;
@@ -333,7 +334,7 @@ export function useAgentEvents(
           ) {
             setIsRunning(false);
             currentRunIdRef.current = null;
-            setError(event.message);
+            setError(formatRunErrorForUser(event.message, event.runId));
             setMessages((prev) => prev.filter((m) => !m.streaming));
           }
           return;
@@ -342,7 +343,7 @@ export function useAgentEvents(
         setIsRunning(false);
         currentRunIdRef.current = null;
         runSessionIdRef.current = null;
-        setError(event.message);
+        setError(formatRunErrorForUser(event.message, event.runId));
         setMessages((prev) => prev.filter((m) => !m.streaming));
       }
     });
@@ -386,7 +387,7 @@ export function useAgentEvents(
     });
 
     if (result && !result.ok && result.error) {
-      setError(result.error);
+      setError(formatRunErrorForUser(result.error, result.runId ?? undefined));
       setIsRunning(false);
     }
   };

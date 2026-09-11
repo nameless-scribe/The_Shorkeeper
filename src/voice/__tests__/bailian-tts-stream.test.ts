@@ -114,6 +114,27 @@ describe('createTtsStreamSession', () => {
     await finishP;
   });
 
+  it('reports a terminal socket failure only once', async () => {
+    const { factory, getSocket } = makeFactory();
+    const onError = vi.fn();
+    const sessionPromise = createTtsStreamSession(
+      OPTS,
+      { onAudioChunk: vi.fn(), onError },
+      factory,
+    );
+    const socket = getSocket();
+
+    socket.fire('message', {
+      data: JSON.stringify({
+        header: { event: 'task-failed', error_code: 'CLIENT_ERROR', error_message: 'boom' },
+      }),
+    });
+    await expect(sessionPromise).rejects.toThrow('boom');
+    socket.fire('close');
+
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
   it('abort stops further chunks', async () => {
     const { factory, getSocket } = makeFactory();
     const chunks: number[] = [];

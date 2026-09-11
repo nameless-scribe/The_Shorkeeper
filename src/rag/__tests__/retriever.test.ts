@@ -1,7 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+const { embedTextMock } = vi.hoisted(() => ({
+  embedTextMock: vi.fn(async () => [1, 0, 0]),
+}));
+
 vi.mock('../embedding', () => ({
-  embedText: vi.fn(async () => [1, 0, 0]),
+  embedText: embedTextMock,
 }));
 
 vi.mock('../chunk-cache', () => ({
@@ -87,6 +91,16 @@ describe('retrieveRelevantChunks', () => {
     const first = await retrieveRelevantChunks('alpha', 5);
     const second = await retrieveRelevantChunks('alpha', 5);
     expect(second).toEqual(first);
+  });
+
+  it('passes the run abort signal into embedding retrieval', async () => {
+    const controller = new AbortController();
+    await retrieveRelevantChunks('signal query', 5, {
+      skipCache: true,
+      signal: controller.signal,
+    });
+
+    expect(embedTextMock).toHaveBeenCalledWith('signal query', controller.signal);
   });
 });
 

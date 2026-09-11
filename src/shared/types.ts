@@ -151,6 +151,7 @@ export interface PerformanceSettingsInfo {
   memoryExtractInterval: number;
   maxHistoryMessages: number;
   compressThreshold: number;
+  contextMaxInputTokens: number;
   memorySemanticInContext: boolean;
 }
 

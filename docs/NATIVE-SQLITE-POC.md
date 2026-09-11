@@ -1,13 +1,13 @@
 # better-sqlite3 原生 SQLite PoC
 
 > 日期：2026-09-11  
-> 状态：正式 adapter、副本迁移、NSIS 生命周期和切换命令已完成，生产主库尚未切换
+> 状态：正式 adapter、副本迁移、NSIS 生命周期、真实生产切换和运行验收均已完成
 
 ## 1. 结论
 
 `better-sqlite3@13.0.3` 已确定为原生 SQLite 生产迁移目标。Node.js 22 与 Electron 44 内置的 Node.js 24 均能直接加载同一平台包；WAL、FTS5、trigram、Embedding BLOB、事务回滚、在线备份和现有 Repository 注入均通过。
 
-正式 `BetterSqliteDatabase` adapter 已接入数据库抽象层，并与 sql.js 运行同一套 migration 和 Repository 合约测试。真实主库副本迁移、业务数据摘要、FTS 回填、原子回滚探针和打包后 native 加载均已通过。默认生产入口仍使用 `sql.js`，正式 adapter 也默认拒绝打开已有数据库；生产切换前还需完成隔离安装生命周期、显式切换命令和真实知识库负载测试。
+正式 `BetterSqliteDatabase` adapter 已接入数据库抽象层，并与 sql.js 运行同一套 migration 和 Repository 合约测试。真实主库副本迁移、业务数据摘要、FTS 回填、原子回滚探针、打包后 native 加载、真实生产切换和实际对话读写均已通过。当前生产入口通过 `.engine.json` 标记使用 `shorekeeper.native.db`，原 `shorekeeper.db` 保留为回滚源。
 
 ## 2. 版本矩阵
 
@@ -50,14 +50,13 @@ pnpm test:nsis-lifecycle
 
 ## 5. 尚未完成
 
-- 真实主库尚未执行 `cutover --yes`；执行前仍需关闭应用并再次确认备份与健康状态。
 - 尚未用真实大知识库测试启动、检索、checkpoint 和备份耗时。
 
 ## 6. 生产迁移门槛
 
 1. 生产依赖、`files`、`asarUnpack`、打包后加载、隔离安装、升级覆盖和卸载保留外部数据均已通过。
 2. 在真实数据库副本上完成升级、完整性校验、关键数据核对、原子切换和失败回滚演练。
-3. 已增加明确的引擎选择与切换标记；待真实主库激活后验收禁止静默回退。
+3. 已增加明确的引擎选择与切换标记；真实主库激活后验收确认禁止静默回退。
 4. 用预期知识库规模进行持续写入、FTS、Embedding 和备份基准测试。
 
 ## 7. 参考

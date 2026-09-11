@@ -2,7 +2,10 @@ import { getVoiceSettings } from '../config/voice';
 import { hasSpeakableCharacters, prepareChunkForTts } from './text-for-speech';
 import { getBailianTtsEngine } from './bailian-tts';
 
-export async function synthesizeVoiceChunk(text: string): Promise<{ audio: ArrayBuffer; mime: string }> {
+export async function synthesizeVoiceChunk(
+  text: string,
+  signal?: AbortSignal,
+): Promise<{ audio: ArrayBuffer; mime: string }> {
   const trimmed = prepareChunkForTts(text);
   if (!trimmed || !hasSpeakableCharacters(trimmed)) {
     throw new Error('朗读文本为空');
@@ -22,7 +25,7 @@ export async function synthesizeVoiceChunk(text: string): Promise<{ audio: Array
     format: 'mp3',
     languageHint:
       settings.sttLanguage === 'en' ? 'en' : settings.sttLanguage === 'zh' ? 'zh' : undefined,
-  });
+  }, signal);
 
   const audioBuffer = Buffer.from(result.audio);
   return {

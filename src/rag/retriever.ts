@@ -136,6 +136,7 @@ async function retrieveHybridInternal(
   limit: number,
   skipEmbed: boolean,
   queryVecOverride?: Float32Array,
+  signal?: AbortSignal,
 ): Promise<RetrievedChunk[]> {
   const settings = getPerformanceSettings();
   const minScore = settings.ragMinScore;
@@ -148,7 +149,7 @@ async function retrieveHybridInternal(
 
   const queryVec =
     queryVecOverride ??
-    (skipEmbed ? null : new Float32Array(await embedText(trimmed)));
+    (skipEmbed ? null : new Float32Array(await embedText(trimmed, signal)));
   if (!queryVec) return [];
 
   const routeDocIds = resolveDocRouteIds(
@@ -246,7 +247,7 @@ async function retrieveHybridInternal(
 export async function retrieveRelevantChunks(
   query: string,
   limit = 5,
-  options?: { skipCache?: boolean; skipHyde?: boolean },
+  options?: { skipCache?: boolean; skipHyde?: boolean; signal?: AbortSignal },
 ): Promise<RetrievedChunk[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
@@ -284,16 +285,17 @@ export async function retrieveRelevantChunks(
     }
   }
 
-  let result = await retrieveHybridInternal(trimmed, limit, false);
+  let result = await retrieveHybridInternal(trimmed, limit, false, undefined, options?.signal);
 
   if (!result.length && settings.ragHydeEnabled && !options?.skipHyde) {
     try {
-      const hydeQuery = await generateHydeQuery(trimmed);
+      const hydeQuery = await generateHydeQuery(trimmed, options?.signal);
       if (hydeQuery && hydeQuery !== trimmed) {
-        const hydeVec = new Float32Array(await embedText(hydeQuery));
-        result = await retrieveHybridInternal(trimmed, limit, true, hydeVec);
+        const hydeVec = new Float32Array(await embedText(hydeQuery, options?.signal));
+        result = await retrieveHybridInternal(trimmed, limit, true, hydeVec, options?.signal);
       }
     } catch {
+      if (options?.signal?.aborted) throw new Error('已取消');
       /* HyDE 失败时保持空结果 */
     }
   }

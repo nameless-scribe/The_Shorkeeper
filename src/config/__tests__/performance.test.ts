@@ -24,6 +24,7 @@ const baseSettings: PerformanceSettings = {
   memoryExtractInterval: 3,
   maxHistoryMessages: 20,
   compressThreshold: 30,
+  contextMaxInputTokens: 24_000,
   memorySemanticInContext: true,
 };
 

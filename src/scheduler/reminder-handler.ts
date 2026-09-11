@@ -8,12 +8,13 @@ import type { ScheduleReminderIntent } from './reminder-intent';
 
 export async function executeScheduleReminderIntent(
   intent: Exclude<ScheduleReminderIntent, { triggered: false }>,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (intent.action === 'list') {
     const result = await listScheduledTasksTool.execute({}, {
       sessionId: '',
       workspaceRoot: '',
-      signal: new AbortController().signal,
+      signal: signal ?? new AbortController().signal,
     });
     return result.success ? result.output : `查询失败：${result.error ?? '未知错误'}`;
   }
@@ -32,7 +33,7 @@ export async function executeScheduleReminderIntent(
 
     const result = await deleteScheduledTaskTool.execute(
       { id: target.id },
-      { sessionId: '', workspaceRoot: '', signal: new AbortController().signal },
+      { sessionId: '', workspaceRoot: '', signal: signal ?? new AbortController().signal },
     );
     return result.success ? result.output : `删除失败：${result.error ?? '未知错误'}`;
   }
@@ -58,7 +59,7 @@ export async function executeScheduleReminderIntent(
   const result = await createScheduledTaskTool.execute(payload, {
     sessionId: '',
     workspaceRoot: '',
-    signal: new AbortController().signal,
+    signal: signal ?? new AbortController().signal,
   });
 
   if (!result.success) {

@@ -15,6 +15,10 @@ import { runOrchestrator } from '../../src/agent/orchestrator';
 import { getModelConfigSafe } from '../../src/models/config';
 import { recordTokenUsage } from '../../src/db/token-usage';
 import {
+  getRunDiagnostic,
+  listRunDiagnostics,
+} from '../../src/agent/run-observability';
+import {
   broadcastAgentEvent,
   onRunError,
   onRunFinished,
@@ -36,19 +40,20 @@ export function registerAgentIpc() {
 
     onRunStarted();
 
-    const baseMessage = formatAttachmentsForMessage(
-      payload.message,
-      payload.attachments ?? [],
-    );
-    const userMessage = await enrichAttachmentsMessage(
-      baseMessage,
-      payload.attachments ?? [],
-    );
-
     let runId: string | null = null;
     let terminalError: string | null = null;
+    let presenceSettled = false;
 
     try {
+      const baseMessage = formatAttachmentsForMessage(
+        payload.message,
+        payload.attachments ?? [],
+      );
+      const userMessage = await enrichAttachmentsMessage(
+        baseMessage,
+        payload.attachments ?? [],
+      );
+
       for await (const agEvent of runOrchestrator(
         userMessage,
         resolvedSessionId,
@@ -76,8 +81,10 @@ export function registerAgentIpc() {
 
         if (agEvent.type === 'run_finished') {
           onRunFinished();
+          presenceSettled = true;
         } else if (agEvent.type === 'run_error') {
           onRunError();
+          presenceSettled = true;
           terminalError = agEvent.message;
         }
 
@@ -85,18 +92,22 @@ export function registerAgentIpc() {
       }
 
       if (terminalError) {
-        return { ok: false, error: terminalError };
+        return { ok: false, error: terminalError, runId };
       }
-      return { ok: true };
+      return { ok: true, runId };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      onRunError();
+      if (!presenceSettled) {
+        onRunError();
+        presenceSettled = true;
+      }
       broadcastAgentEvent(
         ev.runError(runId ?? 'unknown', message, resolvedSessionId),
       );
-      return { ok: false, error: message };
+      return { ok: false, error: message, runId };
     } finally {
-      releaseSessionRun(resolvedSessionId);
+      if (!presenceSettled) onRunError();
+      releaseSessionRun(resolvedSessionId, controller);
     }
   });
 
@@ -108,9 +119,19 @@ export function registerAgentIpc() {
         ev.runError(runId ?? 'unknown', '已取消', sessionId),
       );
     }
-    onRunError();
     return { ok: true };
   });
+
+  ipcMain.handle(
+    'agent:diagnostics',
+    (_event, query?: { runId?: unknown; limit?: unknown }) => {
+      if (typeof query?.runId === 'string' && query.runId.trim()) {
+        return getRunDiagnostic(query.runId.trim());
+      }
+      const limit = typeof query?.limit === 'number' ? query.limit : undefined;
+      return listRunDiagnostics(limit);
+    },
+  );
 }
 
 export { isSessionRunActive } from '../../src/agent/session-run-lock';
