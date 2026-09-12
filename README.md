@@ -69,6 +69,8 @@ pnpm dist
 
 安装包输出到 `release/`。首次打包会下载 NSIS 相关工具，耗时较长。
 
+面向用户发布的 Windows 安装包必须通过 `WIN_CSC_LINK`（或 `CSC_LINK`）与对应密码配置代码签名。未配置签名时仍可生成本地测试安装包，但构建会自动禁用在线更新，避免从通用更新源安装未经签名验证的程序。
+
 **构建顺序：** `pnpm dist` 会先执行 `scripts/copy-vad-assets.mjs`（同步 VAD / ONNX 到 `public/vad/`），再 `vite build` 与 `electron-builder`。**请勿单独运行 `vite build`**，否则安装包内语音通话 VAD 可能无法初始化。开发模式 `pnpm dev` 同样会在启动前同步 VAD。
 
 **在其他 Windows 电脑使用：** 拷贝 `release/` 下的安装包（`.exe`）安装即可，无需 Node / pnpm。安装包含 better-sqlite3、sql.js 回滚能力与数据库迁移脚本。若目标机没有 `D:` 盘，会自动回退到用户目录下的应用数据文件夹。

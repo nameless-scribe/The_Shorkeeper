@@ -1,6 +1,11 @@
 import { getJsonSetting, setJsonSetting } from '../db/app-settings';
 import type { EmbeddingSettingsInfo, EmbeddingSettingsPatch } from '../shared/types';
 import { getModelConfigSafe, loadModelConfig, maskApiKey } from './config';
+import {
+  isProtectedSecret,
+  protectSecret,
+  revealSecret,
+} from '../security/secret-storage';
 
 export const EMBEDDING_CONFIG_KEY = 'embedding.config';
 
@@ -56,16 +61,21 @@ function envEmbeddingBaseUrl(): string {
 function loadStored(): StoredEmbeddingConfig | null {
   const stored = getJsonSetting<StoredEmbeddingConfig>(EMBEDDING_CONFIG_KEY);
   if (!stored) return null;
-  return {
+  const config = {
     useChatApi: stored.useChatApi !== false,
     baseUrl: stored.baseUrl ? normalizeBaseUrl(stored.baseUrl) : '',
     model: stored.model?.trim() || envEmbeddingModel(),
-    apiKey: stored.apiKey?.trim() ?? '',
+    apiKey: stored.apiKey ? revealSecret(stored.apiKey.trim()) : '',
   };
+  if (stored.apiKey && !isProtectedSecret(stored.apiKey)) saveStored(config);
+  return config;
 }
 
 function saveStored(config: StoredEmbeddingConfig): void {
-  setJsonSetting(EMBEDDING_CONFIG_KEY, config);
+  setJsonSetting(EMBEDDING_CONFIG_KEY, {
+    ...config,
+    apiKey: protectSecret(config.apiKey),
+  });
 }
 
 export function getEmbeddingModelName(): string {

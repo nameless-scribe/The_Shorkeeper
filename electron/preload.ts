@@ -291,6 +291,7 @@ const shorekeeperApi = {
       ipcRenderer.invoke('workspace:getFileInfo', relativePath),
   },
   window: {
+    moveBy: (dx: number, dy: number) => ipcRenderer.send('window:moveBy', dx, dy),
     minimize: () => ipcRenderer.send('window:minimize'),
     close: () => ipcRenderer.send('window:close'),
     show: (kind: 'chat' | 'status' | 'schedule' | 'call') => ipcRenderer.invoke('window:show', kind),

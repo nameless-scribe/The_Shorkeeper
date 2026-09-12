@@ -6,6 +6,10 @@ import { resolveAppIconPath } from '../app-icon';
 import { getPreloadPath, getRendererIndexPath } from '../paths';
 import { clampBoundsToWorkArea } from './bounds';
 import { hideWindowToTray, showWindowFromTray } from '../tray';
+import {
+  attachRendererNavigationGuards,
+  getTrustedDevServerUrl,
+} from './security';
 
 export type WindowKind = 'chat' | 'status' | 'schedule' | 'call';
 
@@ -29,8 +33,9 @@ const DEFAULT_BOUNDS: Record<WindowKind, WindowBounds> = {
 };
 
 function loadWindowContent(win: BrowserWindow, kind: WindowKind): void {
-  if (process.env.VITE_DEV_SERVER_URL) {
-    const base = process.env.VITE_DEV_SERVER_URL;
+  const devServerUrl = getTrustedDevServerUrl();
+  if (devServerUrl) {
+    const base = devServerUrl;
     const url = kind === 'chat' ? base : `${base}?panel=${kind}`;
     win.loadURL(url);
     return;
@@ -119,6 +124,7 @@ export class WindowManager {
     }
 
     const win = new BrowserWindow(windowOptions);
+    attachRendererNavigationGuards(win);
     this.attachPersistence(win, kind);
     this.windows.set(kind, win);
 

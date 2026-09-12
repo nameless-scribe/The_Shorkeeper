@@ -1,5 +1,10 @@
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from './index';
+import {
+  protectSecretMap,
+  redactSecretMap,
+  revealSecretMap,
+} from '../security/secret-storage';
 
 export interface McpServerRow {
   id: string;
@@ -45,12 +50,20 @@ function parseJsonObject(raw: string): Record<string, string> {
 }
 
 function rowToInfo(row: McpServerRow): McpServerInfo {
+  const storedEnv = parseJsonObject(row.env);
+  const env = revealSecretMap(storedEnv);
+  const protectedEnv = protectSecretMap(env);
+  if (JSON.stringify(protectedEnv) !== JSON.stringify(storedEnv)) {
+    getDatabase()
+      .prepare('UPDATE mcp_servers SET env = ? WHERE id = ?')
+      .run(JSON.stringify(protectedEnv), row.id);
+  }
   return {
     id: row.id,
     name: row.name,
     command: row.command,
     args: parseJsonArray(row.args),
-    env: parseJsonObject(row.env),
+    env,
     enabled: row.enabled === 1,
   };
 }
@@ -58,6 +71,14 @@ function rowToInfo(row: McpServerRow): McpServerInfo {
 export function listMcpServers(): McpServerInfo[] {
   const rows = getDatabase().prepare(`${SELECT} ORDER BY name ASC`).all() as unknown as McpServerRow[];
   return rows.map(rowToInfo);
+}
+
+export function redactMcpServerInfo(server: McpServerInfo): McpServerInfo {
+  return { ...server, env: redactSecretMap(server.env) };
+}
+
+export function listMcpServersForRenderer(): McpServerInfo[] {
+  return listMcpServers().map(redactMcpServerInfo);
 }
 
 export function listEnabledMcpServers(): McpServerInfo[] {
@@ -89,7 +110,7 @@ export function createMcpServer(input: CreateMcpServerInput): McpServerInfo {
       input.name.trim(),
       input.command.trim(),
       JSON.stringify(input.args ?? []),
-      JSON.stringify(input.env ?? {}),
+      JSON.stringify(protectSecretMap(input.env ?? {})),
       input.enabled === false ? 0 : 1,
     );
   return getMcpServer(id)!;
@@ -118,7 +139,7 @@ export function updateMcpServer(
       patch.name ?? existing.name,
       patch.command ?? existing.command,
       JSON.stringify(patch.args ?? existing.args),
-      JSON.stringify(patch.env ?? existing.env),
+      JSON.stringify(protectSecretMap(patch.env ?? existing.env)),
       patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : existing.enabled ? 1 : 0,
       id,
     );

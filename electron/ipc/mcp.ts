@@ -3,7 +3,8 @@ import {
   createMcpServer,
   deleteMcpServer,
   getMcpServer,
-  listMcpServers,
+  listMcpServersForRenderer,
+  redactMcpServerInfo,
   updateMcpServer,
 } from '../../src/db/mcp-servers';
 import {
@@ -13,6 +14,7 @@ import {
   testMcpServer,
 } from '../../src/mcp/client';
 import { invalidateAgentRegistry } from '../../src/tools/agent-registry';
+import { assertTrustedIpcSender } from '../windows/security';
 
 function refreshMcp(): void {
   invalidateMcpLoad();
@@ -23,12 +25,15 @@ function refreshMcp(): void {
 }
 
 export function registerMcpIpc(): void {
-  ipcMain.handle('mcp:list', () => listMcpServers());
+  ipcMain.handle('mcp:list', (event) => {
+    assertTrustedIpcSender(event);
+    return listMcpServersForRenderer();
+  });
 
   ipcMain.handle(
     'mcp:create',
     (
-      _event,
+      event,
       input: {
         name: string;
         command: string;
@@ -37,16 +42,17 @@ export function registerMcpIpc(): void {
         enabled?: boolean;
       },
     ) => {
+      assertTrustedIpcSender(event);
       const server = createMcpServer(input);
       refreshMcp();
-      return server;
+      return redactMcpServerInfo(server);
     },
   );
 
   ipcMain.handle(
     'mcp:update',
     (
-      _event,
+      event,
       id: string,
       patch: Partial<{
         name: string;
@@ -56,19 +62,22 @@ export function registerMcpIpc(): void {
         enabled: boolean;
       }>,
     ) => {
+      assertTrustedIpcSender(event);
       const server = updateMcpServer(id, patch);
       refreshMcp();
-      return server;
+      return server ? redactMcpServerInfo(server) : null;
     },
   );
 
-  ipcMain.handle('mcp:delete', (_event, id: string) => {
+  ipcMain.handle('mcp:delete', (event, id: string) => {
+    assertTrustedIpcSender(event);
     deleteMcpServer(id);
     refreshMcp();
     return { ok: true };
   });
 
-  ipcMain.handle('mcp:test', async (_event, id: string) => {
+  ipcMain.handle('mcp:test', async (event, id: string) => {
+    assertTrustedIpcSender(event);
     const server = getMcpServer(id);
     if (!server) return { ok: false, tools: [], error: 'Server 不存在' };
     return testMcpServer(server);

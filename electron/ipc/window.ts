@@ -32,6 +32,18 @@ export function registerWindowIpc() {
     return { ok: true };
   });
 
+  ipcMain.on('window:moveBy', (event, dx: unknown, dy: unknown) => {
+    if (typeof dx !== 'number' || typeof dy !== 'number') return;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+
+    const win = windowFromSender(event.sender);
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+
+    const [x, y] = win.getPosition();
+    win.setPosition(Math.round(x + dx), Math.round(y + dy));
+  });
+
   ipcMain.on('window:minimize', (event) => {
     const win = windowFromSender(event.sender);
     if (!win) return;

@@ -84,17 +84,14 @@ describe('applyTheme', () => {
     expect(mock.styleMap.get('--sk-bg-image')).toContain('bg-test.png');
   });
 
-  it('uses absolute file URL for builtin background', async () => {
-    vi.stubGlobal('window', {
-      location: { href: 'file:///C:/app/dist/index.html' },
-    });
+  it('uses sk-asset URL for builtin background', async () => {
     const { applyTheme } = await import('../apply-theme');
     applyTheme({
       ...base,
       assets: { ...base.assets, backgroundUrl: null },
     });
     expect(mock.styleMap.get('--sk-bg-image')).toBe(
-      'url("file:///C:/app/dist/keeper-bg.png")',
+      'url("sk-asset://dist/keeper-bg.png")',
     );
   });
 

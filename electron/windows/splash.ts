@@ -1,6 +1,10 @@
 import { BrowserWindow, screen } from 'electron';
 import { resolveAppIconPath } from '../app-icon';
 import { getRendererIndexPath } from '../paths';
+import {
+  attachRendererNavigationGuards,
+  getTrustedDevServerUrl,
+} from './security';
 
 const SPLASH_WIDTH = 420;
 const SPLASH_HEIGHT = 320;
@@ -19,9 +23,10 @@ function centerSplashBounds(): { x: number; y: number; width: number; height: nu
 
 function loadSplashContent(win: BrowserWindow): void {
   const query = { panel: 'splash' };
-  if (process.env.VITE_DEV_SERVER_URL) {
+  const devServerUrl = getTrustedDevServerUrl();
+  if (devServerUrl) {
     const params = new URLSearchParams(query);
-    win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?${params.toString()}`);
+    win.loadURL(`${devServerUrl}?${params.toString()}`);
     return;
   }
   win.loadFile(getRendererIndexPath(), { query });
@@ -55,6 +60,7 @@ export function showSplashWindow(): BrowserWindow {
     },
   });
 
+  attachRendererNavigationGuards(win);
   loadSplashContent(win);
   win.once('ready-to-show', () => {
     if (!win.isDestroyed()) win.show();

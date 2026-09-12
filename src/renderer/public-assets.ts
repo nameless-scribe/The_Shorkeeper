@@ -1,10 +1,8 @@
-/** public/ 静态资源绝对 URL，兼容 Electron file:// 与 dev server */
+import { toAppearanceAssetUrl } from '../shared/appearance-asset-url';
+
+/** 内置 public/ 资源走 sk-asset://dist，安装包里不依赖 asar 的 file:// 相对路径 */
 export function publicAssetUrl(filename: string): string {
-  if (typeof window !== 'undefined' && window.location?.href) {
-    return new URL(filename, window.location.href).href;
-  }
-  const base = import.meta.env.BASE_URL;
-  return `${base}${filename}`;
+  return toAppearanceAssetUrl(filename, 'dist');
 }
 
 export const KEEPER_AVATAR_URL = publicAssetUrl('keeper-avatar.png');

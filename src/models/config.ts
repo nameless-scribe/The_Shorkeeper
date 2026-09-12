@@ -1,5 +1,11 @@
 import { v4 as uuid } from 'uuid';
-import { getJsonSetting, getSetting, setJsonSetting, setSetting } from '../db/app-settings';
+import {
+  deleteSetting,
+  getJsonSetting,
+  getSetting,
+  setJsonSetting,
+  setSetting,
+} from '../db/app-settings';
 import type {
   ModelConfig,
   ModelProfileInfo,
@@ -10,6 +16,11 @@ import type {
   ModelSettingsInfo,
   ModelSettingsPatch,
 } from '../shared/types';
+import {
+  isProtectedSecret,
+  protectSecret,
+  revealSecret,
+} from '../security/secret-storage';
 
 export type { ModelProtocol };
 
@@ -54,20 +65,26 @@ function readGlobalProtocol(): ModelProtocol {
 function loadProfilesState(): StoredProfilesState {
   const stored = getJsonSetting<StoredProfilesState>(MODEL_PROFILES_KEY);
   if (stored?.profiles?.length) {
-    return {
+    const state = {
       activeId: stored.activeId,
       profiles: stored.profiles.map((p) => ({
         id: p.id,
         name: p.name?.trim() || '未命名配置',
         baseUrl: p.baseUrl ? normalizeBaseUrl(p.baseUrl) : '',
         model: p.model?.trim() || DEFAULT_MODEL,
-        apiKey: p.apiKey?.trim() ?? '',
+        apiKey: p.apiKey ? revealSecret(p.apiKey.trim()) : '',
         protocol: parseProtocol(p.protocol),
       })),
     };
+    if (stored.profiles.some((profile) => profile.apiKey && !isProtectedSecret(profile.apiKey))) {
+      saveProfilesState(state);
+    }
+    deleteSetting(MODEL_API_KEY_SETTING);
+    return state;
   }
 
-  const apiKey = getSetting(MODEL_API_KEY_SETTING);
+  const storedApiKey = getSetting(MODEL_API_KEY_SETTING);
+  const apiKey = storedApiKey ? revealSecret(storedApiKey) : null;
   const baseUrl = getSetting(MODEL_BASE_URL_SETTING);
   const model = getSetting(MODEL_ID_SETTING);
   if (apiKey || baseUrl || model) {
@@ -85,7 +102,8 @@ function loadProfilesState(): StoredProfilesState {
         },
       ],
     };
-    setJsonSetting(MODEL_PROFILES_KEY, migrated);
+    saveProfilesState(migrated);
+    deleteSetting(MODEL_API_KEY_SETTING);
     return migrated;
   }
 
@@ -93,7 +111,13 @@ function loadProfilesState(): StoredProfilesState {
 }
 
 function saveProfilesState(state: StoredProfilesState): void {
-  setJsonSetting(MODEL_PROFILES_KEY, state);
+  setJsonSetting(MODEL_PROFILES_KEY, {
+    ...state,
+    profiles: state.profiles.map((profile) => ({
+      ...profile,
+      apiKey: protectSecret(profile.apiKey),
+    })),
+  });
 }
 
 function getActiveProfile(state: StoredProfilesState): StoredModelProfile | null {

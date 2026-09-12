@@ -9,6 +9,7 @@ import { useCallVad } from '../hooks/useCallVad';
 import { useCallStreamPlayback } from '../hooks/useCallStreamPlayback';
 import { useCallTokenUsage } from '../hooks/useCallTokenUsage';
 import { usePermissionRequests } from '../hooks/usePermissionRequests';
+import { useWindowDrag } from '../hooks/useWindowDrag';
 import {
   applyTranscriptEvent,
   CallTranscriptPanel,
@@ -331,13 +332,17 @@ export function CallStage() {
   const combinedError = error ?? inputError ?? playbackError;
   const isVadAuto = callMode === 'vad_auto';
   const canRetry = Boolean(retryText && combinedError);
+  const drag = useWindowDrag();
 
   return (
     <div className="keeper-panel-shell border border-keeper-silver/25 shadow-cyanSm">
       <AppBackground variant="chat" />
 
       <div className="relative z-10 flex h-full min-h-0 flex-col">
-        <header className="drag-region keeper-glass-panel flex shrink-0 flex-col gap-2 rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3">
+        <header
+          className="keeper-glass-panel flex shrink-0 flex-col gap-2 rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3"
+          {...drag}
+        >
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-sm font-semibold tracking-wide text-keeper-ice">{displayName}</h1>

@@ -3,6 +3,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import electron from 'vite-plugin-electron/simple';
 
+const hasWindowsSigningCertificate = Boolean(
+  process.env.WIN_CSC_LINK || process.env.CSC_LINK,
+);
+
 const isExternal = (id: string) =>
   id === 'electron' ||
   id === 'electron-updater' ||
@@ -34,6 +38,9 @@ export default defineConfig({
       main: {
         entry: 'electron/main.ts',
         vite: {
+          define: {
+            __SIGNED_UPDATE_BUILD__: JSON.stringify(hasWindowsSigningCertificate),
+          },
           build: {
             emptyOutDir: true,
             rollupOptions: {

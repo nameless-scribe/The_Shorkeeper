@@ -5,8 +5,9 @@ import { net, protocol } from 'electron';
 import { getAppearanceDir } from '../../src/config/paths';
 import {
   APPEARANCE_ASSET_SCHEME,
-  parseAppearanceAssetFilename,
+  parseAppearanceAssetUrl,
 } from '../../src/shared/appearance-asset-url';
+import { resolvePackagedDistAsset } from '../paths';
 
 export function registerAppearanceAssetScheme(): void {
   protocol.registerSchemesAsPrivileged([
@@ -25,21 +26,29 @@ export function registerAppearanceAssetScheme(): void {
 
 export function registerAppearanceAssetProtocol(): void {
   protocol.handle(APPEARANCE_ASSET_SCHEME, async (request) => {
-    const filename = parseAppearanceAssetFilename(request.url);
-    if (!filename) {
+    const parsed = parseAppearanceAssetUrl(request.url);
+    if (!parsed) {
       return new Response('Forbidden', { status: 403 });
     }
 
-    const base = path.resolve(getAppearanceDir());
-    const abs = path.resolve(base, filename);
+    const abs =
+      parsed.scope === 'dist'
+        ? resolvePackagedDistAsset(parsed.filename)
+        : resolveLocalAppearanceFile(parsed.filename);
 
-    if (!abs.startsWith(base + path.sep) && abs !== base) {
-      return new Response('Forbidden', { status: 403 });
-    }
-    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+    if (!abs || !fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
       return new Response('Not Found', { status: 404 });
     }
 
     return net.fetch(pathToFileURL(abs).href);
   });
+}
+
+function resolveLocalAppearanceFile(filename: string): string | null {
+  const base = path.resolve(getAppearanceDir());
+  const abs = path.resolve(base, filename);
+  if (!abs.startsWith(base + path.sep) && abs !== base) {
+    return null;
+  }
+  return abs;
 }

@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, safeStorage } = require('electron');
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
@@ -28,6 +28,16 @@ function verifyNativeCanvas() {
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, 2, 2);
   return canvas.toBuffer('image/png').byteLength;
+}
+
+function verifySafeStorage() {
+  assert(safeStorage.isEncryptionAvailable(), '系统凭据存储不可用');
+  const encrypted = safeStorage.encryptString('shorekeeper-runtime-smoke');
+  assert(
+    safeStorage.decryptString(encrypted) === 'shorekeeper-runtime-smoke',
+    '系统凭据存储加解密回环失败',
+  );
+  return true;
 }
 
 async function verifySandboxedPreload() {
@@ -79,6 +89,7 @@ app.whenReady()
           abi: process.versions.modules,
           sqliteVersion,
           nativeCanvasPngBytes: verifyNativeCanvas(),
+          safeStorage: verifySafeStorage(),
           renderer,
         },
         null,

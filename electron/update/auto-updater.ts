@@ -5,6 +5,8 @@ import type { UpdateInfo as SharedUpdateInfo } from '../../src/shared/types';
 import { setAppQuitting } from '../tray';
 import { broadcastToAllRendererWindows } from '../windows/broadcast';
 
+declare const __SIGNED_UPDATE_BUILD__: boolean;
+
 const require = createRequire(import.meta.url);
 const STARTUP_CHECK_DELAY_MS = 8_000;
 
@@ -18,6 +20,14 @@ function getAutoUpdater(): AppUpdater {
 }
 
 let currentState: SharedUpdateInfo = { status: 'idle' };
+
+function isSecureAutoUpdateEnabled(): boolean {
+  return (
+    process.platform === 'win32' &&
+    typeof __SIGNED_UPDATE_BUILD__ !== 'undefined' &&
+    __SIGNED_UPDATE_BUILD__
+  );
+}
 
 function broadcastState(): void {
   broadcastToAllRendererWindows('update:status', currentState);
@@ -33,7 +43,7 @@ export function getUpdateState(): SharedUpdateInfo {
 }
 
 export function quitAndInstallUpdate(): void {
-  if (!app.isPackaged) return;
+  if (!app.isPackaged || !isSecureAutoUpdateEnabled()) return;
   setAppQuitting();
   getAutoUpdater().quitAndInstall(false, true);
 }
@@ -43,6 +53,12 @@ export async function checkForAppUpdates(): Promise<SharedUpdateInfo> {
     return {
       status: 'not-available',
       error: '开发模式不支持检查更新，请使用打包后的安装版。',
+    };
+  }
+  if (!isSecureAutoUpdateEnabled()) {
+    return {
+      status: 'not-available',
+      error: '当前安装包未启用安全自动更新：Windows 发布包必须先配置代码签名证书。',
     };
   }
 
@@ -123,6 +139,10 @@ function attachAutoUpdaterListeners(updater: AppUpdater): void {
 export function initAutoUpdater(): void {
   if (!app.isPackaged) {
     console.info('[update] 开发模式，跳过自动更新');
+    return;
+  }
+  if (!isSecureAutoUpdateEnabled()) {
+    console.warn('[update] 当前 Windows 构建未配置代码签名，已禁用自动更新');
     return;
   }
 

@@ -5,6 +5,11 @@ import {
   type ClonedVoiceProfile,
   type VoiceSettings,
 } from '../voice/types';
+import {
+  isProtectedSecret,
+  protectSecret,
+  revealSecret,
+} from '../security/secret-storage';
 
 export type { VoiceSettings, ClonedVoiceProfile };
 
@@ -58,7 +63,17 @@ function clampPlaybackGain(gain: number): number {
 }
 
 export function getVoiceSettings(): VoiceSettings {
-  return mergeVoiceSettings(getJsonSetting<Partial<VoiceSettings>>(SETTINGS_KEY));
+  const stored = getJsonSetting<Partial<VoiceSettings>>(SETTINGS_KEY);
+  if (!stored?.voiceApiKey) return mergeVoiceSettings(stored);
+
+  const voiceApiKey = revealSecret(stored.voiceApiKey);
+  if (!isProtectedSecret(stored.voiceApiKey)) {
+    setJsonSetting(SETTINGS_KEY, {
+      ...stored,
+      voiceApiKey: protectSecret(voiceApiKey),
+    });
+  }
+  return mergeVoiceSettings({ ...stored, voiceApiKey });
 }
 
 export function saveVoiceSettings(patch: Partial<VoiceSettings>): VoiceSettings {
@@ -68,7 +83,10 @@ export function saveVoiceSettings(patch: Partial<VoiceSettings>): VoiceSettings 
     merged.voiceApiKey = current.voiceApiKey;
   }
   const next = mergeVoiceSettings(merged);
-  setJsonSetting(SETTINGS_KEY, next);
+  setJsonSetting(SETTINGS_KEY, {
+    ...next,
+    voiceApiKey: protectSecret(next.voiceApiKey),
+  });
   return next;
 }
 

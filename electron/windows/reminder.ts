@@ -1,6 +1,10 @@
 import { app, BrowserWindow } from 'electron';
 import { resolveAppIconPath } from '../app-icon';
 import { getPreloadPath, getRendererIndexPath } from '../paths';
+import {
+  attachRendererNavigationGuards,
+  getTrustedDevServerUrl,
+} from './security';
 
 export function showReminderWindow(title: string, body: string): BrowserWindow {
   const iconPath = resolveAppIconPath();
@@ -30,9 +34,11 @@ export function showReminderWindow(title: string, body: string): BrowserWindow {
     body,
   };
 
-  if (process.env.VITE_DEV_SERVER_URL) {
+  attachRendererNavigationGuards(win);
+  const devServerUrl = getTrustedDevServerUrl();
+  if (devServerUrl) {
     const params = new URLSearchParams(query);
-    win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?${params.toString()}`);
+    win.loadURL(`${devServerUrl}?${params.toString()}`);
   } else {
     win.loadFile(getRendererIndexPath(), { query });
   }

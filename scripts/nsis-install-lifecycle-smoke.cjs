@@ -131,7 +131,18 @@ function main() {
   assertNoExistingInstallation();
 
   const root = path.resolve(__dirname, '..');
-  const installer = path.join(root, 'release', `${APP_NAME} Setup 1.2.0.exe`);
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
+  );
+  assert(
+    typeof packageJson.version === 'string' && /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(packageJson.version),
+    'package.json contains an invalid version.',
+  );
+  const installer = path.join(
+    root,
+    'release',
+    `${APP_NAME} Setup ${packageJson.version}.exe`,
+  );
   const workerPath = path.join(root, 'scripts', 'packaged-native-sqlite-smoke.cjs');
   assert(fs.existsSync(installer), `NSIS installer is missing: ${installer}`);
 

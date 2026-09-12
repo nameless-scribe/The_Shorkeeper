@@ -1,6 +1,11 @@
 import { getJsonSetting, setJsonSetting } from '../db/app-settings';
 import type { WebSearchSettingsInfo, WebSearchSettingsPatch } from '../shared/types';
 import { maskApiKey } from '../models/config';
+import {
+  isProtectedSecret,
+  protectSecret,
+  revealSecret,
+} from '../security/secret-storage';
 
 export const WEB_SEARCH_CONFIG_KEY = 'web_search.config';
 
@@ -20,14 +25,18 @@ function loadStored(): StoredWebSearchConfig | null {
   try {
     const stored = getJsonSetting<StoredWebSearchConfig>(WEB_SEARCH_CONFIG_KEY);
     if (!stored?.apiKey?.trim()) return null;
-    return { apiKey: stored.apiKey.trim() };
+    const apiKey = revealSecret(stored.apiKey.trim());
+    if (!isProtectedSecret(stored.apiKey)) saveStored({ apiKey });
+    return { apiKey };
   } catch {
     return null;
   }
 }
 
 function saveStored(config: StoredWebSearchConfig): void {
-  setJsonSetting(WEB_SEARCH_CONFIG_KEY, config);
+  setJsonSetting(WEB_SEARCH_CONFIG_KEY, {
+    apiKey: protectSecret(config.apiKey),
+  });
 }
 
 export function getWebSearchApiKey(): string {

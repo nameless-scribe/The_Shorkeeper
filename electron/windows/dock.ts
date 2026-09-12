@@ -6,6 +6,10 @@ import { getPreloadPath, getRendererIndexPath } from '../paths';
 import { clampBoundsToWorkArea } from './bounds';
 import { getWindowManager } from './manager';
 import { getDockPreferences, type DockPreferences } from '../dock/preferences';
+import {
+  attachRendererNavigationGuards,
+  getTrustedDevServerUrl,
+} from './security';
 
 const DOCK_WIDTH = 300;
 const DOCK_HEIGHT = 188;
@@ -25,9 +29,10 @@ function defaultBounds(): WindowBounds {
 
 function loadDockContent(win: BrowserWindow): void {
   const query = { panel: 'dock' };
-  if (process.env.VITE_DEV_SERVER_URL) {
+  const devServerUrl = getTrustedDevServerUrl();
+  if (devServerUrl) {
     const params = new URLSearchParams(query);
-    win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?${params.toString()}`);
+    win.loadURL(`${devServerUrl}?${params.toString()}`);
     return;
   }
   win.loadFile(getRendererIndexPath(), { query });
@@ -96,6 +101,7 @@ export function createDockWindow(): BrowserWindow {
     },
   });
 
+  attachRendererNavigationGuards(win);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   applyDockPreferences(win);
 

@@ -123,11 +123,11 @@ function attachTrayCloseBehavior(win: BrowserWindow): void {
 }
 
 app.whenReady().then(async () => {
+  registerAppearanceAssetProtocol();
   showSplashWindow();
   const splashStartedAt = Date.now();
 
   loadEnvFiles();
-  registerAppearanceAssetProtocol();
   const layout = bootstrapDataLayout(app.getPath('userData'));
   if (layout.usedFallback) {
     console.warn(

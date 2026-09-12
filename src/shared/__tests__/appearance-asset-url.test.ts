@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   parseAppearanceAssetFilename,
+  parseAppearanceAssetUrl,
   toAppearanceAssetUrl,
 } from '../appearance-asset-url';
 
@@ -19,5 +20,14 @@ describe('appearance asset URL', () => {
     expect(parseAppearanceAssetFilename('sk-asset://local/..%2Fsecret.png')).toBeNull();
     expect(parseAppearanceAssetFilename('file:///etc/passwd')).toBeNull();
     expect(parseAppearanceAssetFilename('sk-asset://evil/bg.png')).toBeNull();
+  });
+
+  it('builds dist URLs for packaged builtin assets', () => {
+    expect(toAppearanceAssetUrl('keeper-bg.png', 'dist')).toBe('sk-asset://dist/keeper-bg.png');
+    expect(parseAppearanceAssetUrl('sk-asset://dist/keeper-bg.png')).toEqual({
+      scope: 'dist',
+      filename: 'keeper-bg.png',
+    });
+    expect(parseAppearanceAssetFilename('sk-asset://dist/keeper-bg.png')).toBeNull();
   });
 });

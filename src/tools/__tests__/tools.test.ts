@@ -4,7 +4,7 @@ import { readFileTool } from '../file/read-file';
 import { writeFileTool } from '../file/write-file';
 import { listDirTool } from '../file/list-dir';
 import { webSearchTool } from '../web/web-search';
-import { fetchUrlTool } from '../web/fetch-url';
+import { fetchUrlTool, isPublicAddress, readLimitedBody } from '../web/fetch-url';
 import { translateTool } from '../web/translate';
 import { genDocxTool, genMarkdownTool, genXlsxTool, readXlsxTool } from '../doc/gen-tools';
 import { loadExcelJS } from '../doc/exceljs-loader';
@@ -12,6 +12,8 @@ import { convertToMarkdownTool } from '../doc/convert-markdown';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import type { IncomingMessage } from 'node:http';
 
 describe('ToolRegistry', () => {
   it('registers and lists tools', () => {
@@ -153,24 +155,29 @@ describe('write_file', () => {
 });
 
 describe('fetch_url', () => {
-  it('fetches and strips html', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: { get: () => 'text/html' },
-        arrayBuffer: async () => Buffer.from('<html><body><p>Hi</p></body></html>'),
-      }),
-    );
-
+  it('rejects private and mapped loopback addresses before connecting', async () => {
+    expect(isPublicAddress('8.8.8.8')).toBe(true);
+    expect(isPublicAddress('127.0.0.1')).toBe(false);
+    expect(isPublicAddress('169.254.169.254')).toBe(false);
+    expect(isPublicAddress('::ffff:7f00:1')).toBe(false);
     const result = await fetchUrlTool.execute(
-      { url: 'https://example.com' },
+      { url: 'http://127.0.0.1/private' },
       { sessionId: 's1', workspaceRoot: os.tmpdir(), signal: new AbortController().signal },
     );
+    expect(result).toMatchObject({
+      success: false,
+      error: '不允许访问本地或私有网络地址',
+    });
+  });
 
-    expect(result.success).toBe(true);
-    expect(result.output).toContain('Hi');
-    vi.unstubAllGlobals();
+  it('stops reading once the byte cap is reached', async () => {
+    const response = Readable.from([
+      Buffer.alloc(40_000, 'a'),
+      Buffer.alloc(40_000, 'b'),
+    ]) as IncomingMessage;
+    const result = await readLimitedBody(response, 64_000);
+    expect(result.truncated).toBe(true);
+    expect(result.body).toHaveLength(64_000);
   });
 });
 
