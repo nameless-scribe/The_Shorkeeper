@@ -176,6 +176,33 @@ describe('write_file', () => {
     const content = await fs.readFile(path.join(root, 'out', 'note.txt'), 'utf-8');
     expect(content).toBe('hello');
   });
+
+  it('previews without writing and rejects an execution after the target changes', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-write-preview-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+    await fs.writeFile(path.join(root, 'note.txt'), 'before', 'utf-8');
+
+    const preview = await writeFileTool.execute(
+      { path: 'note.txt', content: 'after' },
+      { ...ctx, preview: true },
+    );
+    expect(preview.success).toBe(true);
+    expect(preview.preview).toMatchObject({
+      kind: 'text-diff',
+      target: 'note.txt',
+      before: 'before',
+      after: 'after',
+    });
+    expect(await fs.readFile(path.join(root, 'note.txt'), 'utf-8')).toBe('before');
+
+    await fs.writeFile(path.join(root, 'note.txt'), 'changed while confirming', 'utf-8');
+    const stale = await writeFileTool.execute(
+      { path: 'note.txt', content: 'after' },
+      { ...ctx, previewRevision: preview.preview?.revision },
+    );
+    expect(stale).toMatchObject({ success: false, metadata: { previewStale: true } });
+    expect(await fs.readFile(path.join(root, 'note.txt'), 'utf-8')).toBe('changed while confirming');
+  });
 });
 
 describe('replace_text', () => {
@@ -197,6 +224,30 @@ describe('replace_text', () => {
     );
     expect(updated.success).toBe(true);
     expect(await fs.readFile(path.join(root, 'note.md'), 'utf-8')).toBe('alpha\ndone\ndone');
+  });
+
+  it('returns a text diff preview and applies only the confirmed revision', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-replace-preview-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+    await fs.writeFile(path.join(root, 'note.md'), 'alpha beta', 'utf-8');
+
+    const preview = await replaceTextTool.execute(
+      { path: 'note.md', old_text: 'beta', new_text: 'done' },
+      { ...ctx, preview: true },
+    );
+    expect(preview.preview).toMatchObject({
+      kind: 'text-diff',
+      before: 'alpha beta',
+      after: 'alpha done',
+    });
+    expect(await fs.readFile(path.join(root, 'note.md'), 'utf-8')).toBe('alpha beta');
+
+    const result = await replaceTextTool.execute(
+      { path: 'note.md', old_text: 'beta', new_text: 'done' },
+      { ...ctx, previewRevision: preview.preview?.revision },
+    );
+    expect(result.success).toBe(true);
+    expect(await fs.readFile(path.join(root, 'note.md'), 'utf-8')).toBe('alpha done');
   });
 });
 
@@ -379,6 +430,36 @@ describe('read_xlsx / gen_xlsx', () => {
     expect(verified.getWorksheet('Main')?.getCell('B1').value).toMatchObject({ formula: '1+1' });
     expect(verified.getWorksheet('Main')?.getCell('B1').font.bold).toBe(true);
     expect(verified.getWorksheet('Other')?.getCell('A1').value).toBe('keep');
+  });
+
+  it('previews cell changes without writing and rejects a stale workbook', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-xlsx-preview-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+    const ExcelJS = await loadExcelJS();
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('Main').getCell('A1').value = 'before';
+    await workbook.xlsx.writeFile(path.join(root, 'book.xlsx'));
+
+    const preview = await updateXlsxCellsTool.execute(
+      { source_path: 'book.xlsx', sheet_name: 'Main', updates: [{ cell: 'A1', value: 'after' }] },
+      { ...ctx, preview: true },
+    );
+    expect(preview.preview).toMatchObject({
+      kind: 'cell-changes',
+      target: 'book.xlsx',
+      changes: [{ label: 'A1', before: 'before', after: 'after' }],
+    });
+    const unchanged = new ExcelJS.Workbook();
+    await unchanged.xlsx.readFile(path.join(root, 'book.xlsx'));
+    expect(unchanged.getWorksheet('Main')?.getCell('A1').value).toBe('before');
+
+    unchanged.getWorksheet('Main')!.getCell('A1').value = 'external change';
+    await unchanged.xlsx.writeFile(path.join(root, 'book.xlsx'));
+    const stale = await updateXlsxCellsTool.execute(
+      { source_path: 'book.xlsx', sheet_name: 'Main', updates: [{ cell: 'A1', value: 'after' }] },
+      { ...ctx, previewRevision: preview.preview?.revision },
+    );
+    expect(stale).toMatchObject({ success: false, metadata: { previewStale: true } });
   });
 });
 

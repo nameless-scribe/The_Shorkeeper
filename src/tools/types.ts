@@ -1,5 +1,5 @@
 import type { PermissionFlag } from '../agent/types';
-import type { WorkspaceAttachment } from '../shared/types';
+import type { ToolPreviewInfo, WorkspaceAttachment } from '../shared/types';
 
 export interface JSONSchema {
   type: string;
@@ -16,6 +16,8 @@ export interface ToolResult {
   errorCategory?: ToolErrorCategory;
   metadata?: Record<string, unknown>;
   artifacts?: WorkspaceAttachment[];
+  /** 仅 ctx.preview=true 时返回；不得同时产生 artifacts 或其他副作用。 */
+  preview?: ToolPreviewInfo;
 }
 
 export type ToolErrorCategory =
@@ -35,6 +37,8 @@ export interface ToolContext {
   runId?: string;
   /** 为 true 时工具只应描述将要发生的变更，不得产生副作用（需 sideEffects.supportsPreview）。 */
   preview?: boolean;
+  /** 用户确认时看到的版本；执行前必须与当前目标版本一致。 */
+  previewRevision?: string;
 }
 
 /**
@@ -56,6 +60,7 @@ export interface ToolSideEffectContract {
   risk: ToolRiskLevel;
   /** 相同参数重复执行不会产生额外副作用；为 false 时同一 run 内重复调用会被合并。 */
   idempotent: boolean;
+  /** confirm 策略下先执行无副作用预览，确认后带 revision 正式执行。 */
   supportsPreview: boolean;
   reversible: ToolReversibility;
   evidence: ToolEvidenceKind;

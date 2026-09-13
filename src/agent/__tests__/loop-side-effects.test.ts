@@ -213,6 +213,97 @@ describe('agent loop side-effect contract', () => {
     expect(toolEnds(events)[0].result).toMatchObject({ success: true, output: '执行成功' });
   });
 
+  it('previews a supported tool before confirmation and executes the confirmed revision', async () => {
+    const contexts: unknown[] = [];
+    setPermissionConfirmer(async (_tool, _args, _signal, context) => {
+      contexts.push(context);
+      return true;
+    });
+    const previewable: ToolDefinition = {
+      name: 'previewable_write',
+      description: 'test',
+      parameters: { type: 'object' },
+      category: 'file',
+      requiresPermission: ['filesystem:write'],
+      sideEffects: {
+        risk: 'medium', idempotent: true, supportsPreview: true, reversible: 'manual', evidence: 'output',
+      },
+      execute: vi.fn(async (_args, ctx) => ctx.preview
+        ? {
+            success: true,
+            output: '预览完成',
+            preview: {
+              kind: 'text-diff' as const,
+              target: 'note.txt',
+              summary: '修改文件',
+              revision: 'revision-1',
+              before: 'before',
+              after: 'after',
+            },
+          }
+        : {
+            success: ctx.previewRevision === 'revision-1',
+            output: ctx.previewRevision === 'revision-1' ? '执行成功' : '',
+            error: ctx.previewRevision === 'revision-1' ? undefined : 'revision missing',
+          }),
+    };
+    streamChatMock
+      .mockReturnValueOnce(toolRound([{ id: 'c1', name: 'previewable_write' }]))
+      .mockReturnValueOnce(textRound('完成'));
+
+    const registry = new ToolRegistry();
+    registry.register(previewable);
+    const events = await collect(runAgentLoop({
+      sessionId: 's', runId: 'r', messages: [{ role: 'user', content: 'x' }], registry,
+      policy: { ...policy, filesystem: { allowedRoots: [workspace], writeAllowed: true, requireConfirmOnWrite: true } },
+    }));
+
+    expect(previewable.execute).toHaveBeenCalledTimes(2);
+    expect(previewable.execute).toHaveBeenNthCalledWith(1, {}, expect.objectContaining({ preview: true }));
+    expect(previewable.execute).toHaveBeenNthCalledWith(2, {}, expect.objectContaining({ preview: false, previewRevision: 'revision-1' }));
+    expect(contexts).toEqual([expect.objectContaining({ preview: expect.objectContaining({ revision: 'revision-1' }) })]);
+    expect(toolEnds(events)[0].result).toMatchObject({ success: true, output: '执行成功' });
+  });
+
+  it('does not execute a previewed tool when the user rejects it', async () => {
+    setPermissionConfirmer(async () => false);
+    const previewable: ToolDefinition = {
+      name: 'rejected_preview',
+      description: 'test',
+      parameters: { type: 'object' },
+      category: 'file',
+      requiresPermission: ['filesystem:write'],
+      sideEffects: {
+        risk: 'medium', idempotent: true, supportsPreview: true, reversible: 'manual', evidence: 'output',
+      },
+      execute: vi.fn(async (_args, ctx) => ctx.preview
+        ? {
+            success: true,
+            output: '预览完成',
+            preview: {
+              kind: 'text-diff' as const,
+              target: 'note.txt',
+              summary: '修改文件',
+              revision: 'revision-1',
+            },
+          }
+        : { success: true, output: '不应执行' }),
+    };
+    streamChatMock
+      .mockReturnValueOnce(toolRound([{ id: 'c1', name: 'rejected_preview' }]))
+      .mockReturnValueOnce(textRound('已拒绝'));
+
+    const registry = new ToolRegistry();
+    registry.register(previewable);
+    const events = await collect(runAgentLoop({
+      sessionId: 's', runId: 'r', messages: [{ role: 'user', content: 'x' }], registry,
+      policy: { ...policy, filesystem: { allowedRoots: [workspace], writeAllowed: true, requireConfirmOnWrite: true } },
+    }));
+
+    expect(previewable.execute).toHaveBeenCalledOnce();
+    expect(toolEnds(events)[0].result).toMatchObject({ success: false, errorCategory: 'permission_denied' });
+  });
+
   it('does not treat a failed side-effect call as a completed one for later retries', async () => {
     let attempt = 0;
     const flakyTool: ToolDefinition = {

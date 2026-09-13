@@ -161,7 +161,7 @@ TheShorekeeper/
 | 能力 | 插件 / 技能 / MCP | 联网、文档工具、技能、外部 MCP |
 | 人格与记忆 | 人设 / 用户信息 / 记忆 / Worldbook | System Prompt、画像、RAG 调优 |
 | 个性化 | 外观 / 语音 | 主题、壁纸、头像；TTS 与通话 |
-| 数据与任务 | 泰提斯终端 / 定时任务 | 知识库、周期与一次性任务 |
+| 数据与任务 | 泰提斯终端 / 定时任务 / 运行记录 | 知识库、周期与一次性任务；Agent 运行、审批与产物历史 |
 | 系统 | API 设置 / 关于 / 免责声明 | 模型、自动更新、协议 |
 
 ### 多窗口
@@ -187,6 +187,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 
 | 文档 | 说明 |
 |------|------|
+| [DEVELOPMENT-CONTRACT.md](docs/DEVELOPMENT-CONTRACT.md) | 全仓库开发契约与完成标准 |
 | [使用说明.md](docs/使用说明.md) | 技能、插件、工作区、待办 |
 | [DESIGN.md](docs/DESIGN.md) | 架构设计 |
 | [DATABASE.md](docs/DATABASE.md) | 数据库与 migration |

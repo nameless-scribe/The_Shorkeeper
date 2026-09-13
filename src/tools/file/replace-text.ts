@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition } from '../types';
-import { WORKSPACE_WRITE_CONTRACT } from '../contract';
+import { PREVIEWABLE_WORKSPACE_WRITE_CONTRACT } from '../contract';
 import { withFileArtifact, writeWorkspaceFileAtomically } from './artifact';
+import { revisionForBuffer, stalePreviewResult, truncatePreviewText } from './preview';
 import { resolveWorkspacePath } from './workspace-path';
 
 function countOccurrences(content: string, needle: string): number {
@@ -22,7 +23,7 @@ export const replaceTextTool: ToolDefinition = {
   description: '在工作区文本文件中精确替换已知片段；匹配数量不符时拒绝写入',
   category: 'file',
   requiresPermission: ['filesystem:read', 'filesystem:write'],
-  sideEffects: WORKSPACE_WRITE_CONTRACT,
+  sideEffects: PREVIEWABLE_WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -52,7 +53,12 @@ export const replaceTextTool: ToolDefinition = {
 
     try {
       const absolute = resolveWorkspacePath(ctx.workspaceRoot, filePath);
-      const current = await fs.readFile(absolute, 'utf-8');
+      const currentBuffer = await fs.readFile(absolute);
+      const currentRevision = revisionForBuffer(currentBuffer);
+      if (ctx.previewRevision && currentRevision !== ctx.previewRevision) {
+        return stalePreviewResult(filePath);
+      }
+      const current = currentBuffer.toString('utf-8');
       const actual = countOccurrences(current, old_text);
       if (actual !== expected_replacements) {
         return {
@@ -63,6 +69,25 @@ export const replaceTextTool: ToolDefinition = {
         };
       }
       const next = current.split(old_text).join(new_text);
+      if (ctx.preview) {
+        const before = truncatePreviewText(current);
+        const after = truncatePreviewText(next);
+        return {
+          success: true,
+          output: `预览：将在 ${filePath} 精确替换 ${actual} 处内容`,
+          preview: {
+            kind: 'text-diff',
+            target: filePath,
+            summary: `精确替换 ${actual} 处；原文件在确认前不会修改`,
+            revision: currentRevision,
+            details: [`匹配次数：${actual}`, `替换后大小：${Buffer.byteLength(next, 'utf-8')} 字节`],
+            before: before.content,
+            after: after.content,
+            beforeTruncated: before.truncated,
+            afterTruncated: after.truncated,
+          },
+        };
+      }
       const artifact = await writeWorkspaceFileAtomically(
         ctx.workspaceRoot,
         filePath,

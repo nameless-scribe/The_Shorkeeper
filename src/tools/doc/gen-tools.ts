@@ -1,8 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
-import { READ_ONLY_CONTRACT, WORKSPACE_WRITE_CONTRACT } from '../contract';
+import {
+  PREVIEWABLE_WORKSPACE_WRITE_CONTRACT,
+  READ_ONLY_CONTRACT,
+  WORKSPACE_WRITE_CONTRACT,
+} from '../contract';
 import { buildFileArtifact, withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
+import { getWorkspaceFileRevision, stalePreviewResult } from '../file/preview';
 import { resolveWorkspacePath } from '../file/workspace-path';
 import { parseXlsxFile } from './parse-xlsx';
 import { loadExcelJS } from './exceljs-loader';
@@ -183,7 +188,7 @@ export const updateXlsxCellsTool: ToolDefinition = {
   description: '原位修改现有 Excel 工作簿中的指定单元格，并保留其他工作表、公式与格式',
   category: 'doc',
   requiresPermission: ['filesystem:read', 'filesystem:write'],
-  sideEffects: WORKSPACE_WRITE_CONTRACT,
+  sideEffects: PREVIEWABLE_WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -251,6 +256,14 @@ export const updateXlsxCellsTool: ToolDefinition = {
       const overwritesSource = process.platform === 'win32'
         ? sourceAbsolute.toLowerCase() === outputAbsolute.toLowerCase()
         : sourceAbsolute === outputAbsolute;
+      const sourceRevision = await getWorkspaceFileRevision(ctx.workspaceRoot, sourcePath);
+      const outputRevision = overwritesSource
+        ? sourceRevision
+        : await getWorkspaceFileRevision(ctx.workspaceRoot, outputPath);
+      const previewRevision = JSON.stringify({ source: sourceRevision, output: outputRevision });
+      if (ctx.previewRevision && previewRevision !== ctx.previewRevision) {
+        return stalePreviewResult(outputPath);
+      }
       const ExcelJS = await loadExcelJS();
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.readFile(sourceAbsolute);
@@ -266,8 +279,38 @@ export const updateXlsxCellsTool: ToolDefinition = {
         };
       }
 
+      if (ctx.preview) {
+        return {
+          success: true,
+          output: `预览：将在 ${sheet.name} 修改 ${updates.length} 个单元格`,
+          preview: {
+            kind: 'cell-changes',
+            target: outputPath,
+            summary: `${overwritesSource ? '覆盖源工作簿' : '写入新工作簿'}，修改 ${updates.length} 个单元格`,
+            revision: previewRevision,
+            details: [`来源：${sourcePath}`, `工作表：${sheet.name}`],
+            changes: updates.map((update) => {
+              const address = update.cell.trim().toUpperCase();
+              const before = sheet.getCell(address).text;
+              const after = update.value == null ? '（清空）' : String(update.value);
+              return { label: address, before: before || '（空）', after };
+            }),
+          },
+        };
+      }
+
       for (const update of updates) {
         sheet.getCell(update.cell.trim().toUpperCase()).value = update.value;
+      }
+
+      if (ctx.previewRevision) {
+        const latestSourceRevision = await getWorkspaceFileRevision(ctx.workspaceRoot, sourcePath);
+        const latestOutputRevision = overwritesSource
+          ? latestSourceRevision
+          : await getWorkspaceFileRevision(ctx.workspaceRoot, outputPath);
+        if (JSON.stringify({ source: latestSourceRevision, output: latestOutputRevision }) !== ctx.previewRevision) {
+          return stalePreviewResult(outputPath);
+        }
       }
 
       const artifact = await writeWorkspaceFileAtomically(

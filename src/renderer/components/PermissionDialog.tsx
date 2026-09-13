@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
-import type { PermissionRequestPayload } from '@/shared/types';
+import type { PermissionRequestPayload, ToolPreviewInfo } from '@/shared/types';
 import { toolDisplayName } from './tool-labels';
 
 function truncate(text: string, max = 1200): string {
@@ -109,6 +109,88 @@ function ArgPreview({ args }: { args: unknown }) {
   );
 }
 
+function PreviewTextPane({
+  label,
+  content,
+  truncated,
+}: {
+  label: string;
+  content: string;
+  truncated?: boolean;
+}) {
+  return (
+    <div className="min-w-0 flex-1">
+      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-keeper-ice/45">
+        {label}{truncated ? '（已截断）' : ''}
+      </p>
+      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-keeper-ice/10 bg-black/35 p-3 font-mono text-[11px] leading-relaxed text-keeper-ice/75">
+        {content || '（空）'}
+      </pre>
+    </div>
+  );
+}
+
+function ToolPreviewPanel({ preview }: { preview: ToolPreviewInfo }) {
+  const visibleChanges = preview.changes?.slice(0, 100) ?? [];
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-keeper-cyan/25 bg-keeper-cyan/8 px-3 py-2.5">
+        <p className="text-sm font-medium text-keeper-ice">{preview.summary}</p>
+        <p className="mt-1 break-all font-mono text-[11px] text-keeper-cyan/80">
+          {preview.target}
+        </p>
+        {preview.details?.map((detail) => (
+          <p key={detail} className="mt-1 text-[11px] text-keeper-ice/50">{detail}</p>
+        ))}
+      </div>
+
+      {preview.kind === 'text-diff' && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <PreviewTextPane
+            label="修改前"
+            content={preview.before ?? ''}
+            truncated={preview.beforeTruncated}
+          />
+          <PreviewTextPane
+            label="修改后"
+            content={preview.after ?? ''}
+            truncated={preview.afterTruncated}
+          />
+        </div>
+      )}
+
+      {preview.kind === 'cell-changes' && (
+        <div className="overflow-hidden rounded-xl border border-keeper-ice/10">
+          <div className="grid grid-cols-[64px_minmax(0,1fr)_minmax(0,1fr)] gap-2 bg-keeper-navy/30 px-3 py-2 text-[10px] font-medium text-keeper-ice/45">
+            <span>单元格</span><span>修改前</span><span>修改后</span>
+          </div>
+          <div className="max-h-56 divide-y divide-keeper-ice/8 overflow-y-auto">
+            {visibleChanges.map((change, index) => (
+              <div
+                key={`${change.label}-${index}`}
+                className="grid grid-cols-[64px_minmax(0,1fr)_minmax(0,1fr)] gap-2 px-3 py-2 text-[11px]"
+              >
+                <span className="font-mono text-keeper-cyan">{change.label}</span>
+                <span className="break-words text-keeper-ice/55">{change.before}</span>
+                <span className="break-words text-keeper-ice/85">{change.after}</span>
+              </div>
+            ))}
+          </div>
+          {(preview.changes?.length ?? 0) > visibleChanges.length && (
+            <p className="border-t border-keeper-ice/10 px-3 py-2 text-[10px] text-keeper-ice/40">
+              仅展示前 {visibleChanges.length} 项，共 {preview.changes?.length} 项
+            </p>
+          )}
+        </div>
+      )}
+
+      <p className="text-[11px] leading-relaxed text-keeper-ice/45">
+        当前仅为预览，尚未写入。确认后会再次校验目标版本；内容已变化时将拒绝执行。
+      </p>
+    </div>
+  );
+}
+
 interface PermissionDialogProps {
   request: PermissionRequestPayload | null;
   onRespond: (approved: boolean) => void;
@@ -153,7 +235,7 @@ export function PermissionDialog({ request, onRespond }: PermissionDialogProps) 
           </span>
           <div className="min-w-0 flex-1">
             <h2 id="permission-dialog-title" className="text-base font-semibold text-keeper-ice">
-              允许执行：{label}？
+              {request.preview ? `确认并执行：${label}？` : `允许执行：${label}？`}
             </h2>
             <p className="mt-0.5 truncate font-mono text-[11px] text-keeper-ice/40">
               {request.toolName}
@@ -170,7 +252,7 @@ export function PermissionDialog({ request, onRespond }: PermissionDialogProps) 
         </header>
 
         <div className="max-h-[min(52vh,420px)] overflow-y-auto px-5 py-4">
-          <ArgPreview args={request.args} />
+          {request.preview ? <ToolPreviewPanel preview={request.preview} /> : <ArgPreview args={request.args} />}
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-keeper-cyan/15 bg-keeper-navy/25 px-5 py-4">
@@ -186,7 +268,7 @@ export function PermissionDialog({ request, onRespond }: PermissionDialogProps) 
             onClick={() => onRespond(true)}
             className={`rounded-xl bg-keeper-cyan px-5 py-2.5 text-sm font-semibold text-keeper-navyDeep shadow-cyanSm transition hover:bg-keeper-cyanDim ${dialogButtonClass}`}
           >
-            允许
+            {request.preview ? '确认并执行' : '允许'}
           </button>
         </footer>
       </div>

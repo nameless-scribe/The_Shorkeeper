@@ -578,12 +578,34 @@ export interface KnowledgeIndexCompatibilityInfo {
   chunkConfigMismatch: boolean;
 }
 
+export interface ToolPreviewChange {
+  label: string;
+  before: string;
+  after: string;
+}
+
+/** 用户确认前展示的无副作用工具预览；revision 仅用于确认后防止执行过期预览。 */
+export interface ToolPreviewInfo {
+  kind: 'text-diff' | 'cell-changes';
+  target: string;
+  summary: string;
+  revision: string;
+  details?: string[];
+  before?: string;
+  after?: string;
+  beforeTruncated?: boolean;
+  afterTruncated?: boolean;
+  changes?: ToolPreviewChange[];
+}
+
 export interface PermissionRequestPayload {
   requestId: string;
   toolName: string;
   args: unknown;
   /** 工具声明的风险等级，供确认界面展示 */
   risk?: 'read' | 'low' | 'medium' | 'high';
+  /** 支持 dry-run 的工具会先生成结构化预览，再等待用户确认。 */
+  preview?: ToolPreviewInfo;
 }
 
 export interface PersonaSettingsInfo {

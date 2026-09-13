@@ -60,6 +60,9 @@ export function normalizeToolResult(value: unknown, fallbackError = '工具执�
     ? candidate.metadata as Record<string, unknown>
     : undefined;
   const artifacts = Array.isArray(candidate.artifacts) ? candidate.artifacts : undefined;
+  const preview = candidate.preview && typeof candidate.preview === 'object'
+    ? candidate.preview
+    : undefined;
 
   if (candidate.success === true) {
     return {
@@ -67,6 +70,7 @@ export function normalizeToolResult(value: unknown, fallbackError = '工具执�
       output,
       ...(metadata ? { metadata } : {}),
       ...(artifacts ? { artifacts } : {}),
+      ...(preview ? { preview } : {}),
     };
   }
 
@@ -82,5 +86,6 @@ export function normalizeToolResult(value: unknown, fallbackError = '工具执�
       : classifyToolError(error),
     ...(metadata ? { metadata } : {}),
     ...(artifacts ? { artifacts } : {}),
+    ...(preview ? { preview } : {}),
   };
 }

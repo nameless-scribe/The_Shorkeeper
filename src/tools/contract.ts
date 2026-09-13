@@ -18,6 +18,12 @@ export const WORKSPACE_WRITE_CONTRACT: ToolSideEffectContract = {
   evidence: 'artifact',
 };
 
+/** 支持确认前 dry-run 和执行前版本校验的工作区写入。 */
+export const PREVIEWABLE_WORKSPACE_WRITE_CONTRACT: ToolSideEffectContract = {
+  ...WORKSPACE_WRITE_CONTRACT,
+  supportsPreview: true,
+};
+
 /** 本机数据库的追加型写入（记账、新建待办等）：重复调用会产生重复记录。 */
 export const LOCAL_APPEND_CONTRACT: ToolSideEffectContract = {
   risk: 'low',

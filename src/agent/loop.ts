@@ -141,6 +141,7 @@ interface AuthorizedToolCall {
   tool: ToolDefinition;
   args: unknown;
   contract: ToolSideEffectContract;
+  previewRevision?: string;
 }
 
 function isToolResult(value: AuthorizedToolCall | ToolResult): value is ToolResult {
@@ -156,6 +157,7 @@ async function authorizeToolCall(
   ctx: ToolContext,
   registry: ToolRegistry,
   policy: PermissionPolicy,
+  previewTimeoutMs: number,
   hooks?: Pick<AgentLoopOptions, 'onPermissionStart' | 'onPermissionEnd'>,
 ): Promise<AuthorizedToolCall | ToolResult> {
   const tool = registry.get(toolCall.function.name);
@@ -171,6 +173,7 @@ async function authorizeToolCall(
   const args = parsed.args;
   const contract = resolveCallContract(tool, args);
   const decision = checkPermission(tool, policy, args);
+  let previewRevision: string | undefined;
 
   if (decision === 'deny') {
     return createToolError(
@@ -181,12 +184,72 @@ async function authorizeToolCall(
 
   if (decision === 'confirm') {
     const activityId = hooks?.onPermissionStart?.(tool.name);
+    let preview: ToolResult['preview'];
+    if (contract.supportsPreview) {
+      const previewTimeout = createLinkedTimeoutSignal(ctx.signal, previewTimeoutMs);
+      let previewResult: ToolResult;
+      try {
+        previewResult = normalizeToolResult(await awaitWithAbort(
+          tool.execute(args, {
+            ...ctx,
+            signal: previewTimeout.signal,
+            preview: true,
+            previewRevision: undefined,
+          }),
+          previewTimeout.signal,
+        ));
+      } catch (error) {
+        previewResult = createToolError(
+          previewTimeout.didTimeout()
+            ? '操作预览生成超时'
+            : ctx.signal.aborted
+              ? '已取消'
+              : error instanceof Error
+                ? error.message
+                : String(error),
+          previewTimeout.didTimeout()
+            ? 'timeout'
+            : ctx.signal.aborted
+              ? 'cancelled'
+              : undefined,
+        );
+      } finally {
+        previewTimeout.dispose();
+      }
+
+      if (!previewResult.success) {
+        if (activityId) {
+          hooks?.onPermissionEnd?.(
+            activityId,
+            previewResult.errorCategory === 'cancelled' ? 'cancelled' : 'failed',
+            previewResult.error ?? '操作预览生成失败',
+          );
+        }
+        return previewResult;
+      }
+      if (!previewResult.preview || previewResult.artifacts?.length) {
+        const invalidPreview = createToolError(
+          previewResult.artifacts?.length
+            ? '工具预览违反无副作用契约：预览阶段产生了文件产物'
+            : '工具声明支持预览，但未返回结构化预览',
+          'internal_error',
+        );
+        if (activityId) {
+          hooks?.onPermissionEnd?.(activityId, 'failed', invalidPreview.error);
+        }
+        return invalidPreview;
+      }
+      preview = previewResult.preview;
+      previewRevision = preview.revision;
+    }
+
     let approved: boolean;
     try {
       approved = await confirmPermission(tool.name, args, ctx.signal, {
         runId: ctx.runId,
         sessionId: ctx.sessionId,
         risk: contract.risk,
+        preview,
       });
     } catch (error) {
       if (activityId) {
@@ -213,14 +276,18 @@ async function authorizeToolCall(
     }
   }
 
-  return { tool, args, contract };
+  return { tool, args, contract, previewRevision };
 }
 
 async function executeAuthorizedTool(
   call: AuthorizedToolCall,
   ctx: ToolContext,
 ): Promise<ToolResult> {
-  const result = normalizeToolResult(await call.tool.execute(call.args, ctx));
+  const result = normalizeToolResult(await call.tool.execute(call.args, {
+    ...ctx,
+    preview: false,
+    previewRevision: call.previewRevision,
+  }));
   // 闭环第 5 步"验证"：声明产生文件产物的工具必须能读回产物，否则不算完成。
   return enforceToolEvidence(result, call.contract, ctx.workspaceRoot);
 }
@@ -417,6 +484,7 @@ export async function* runAgentLoop(
             toolCtx,
             registry,
             policy,
+            toolTimeoutMs,
             {
               onPermissionStart: options.onPermissionStart,
               onPermissionEnd: options.onPermissionEnd,

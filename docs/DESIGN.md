@@ -277,7 +277,7 @@ interface ToolDefinition {
 interface ToolSideEffectContract {
   risk: 'read' | 'low' | 'medium' | 'high'; // high 无论策略如何都必须用户确认
   idempotent: boolean;                       // false 时同一 run 内相同参数的重复调用会被合并
-  supportsPreview: boolean;                  // 是否支持 ctx.preview 干跑（当前均为 false）
+  supportsPreview: boolean;                  // 是否支持 ctx.preview 干跑
   reversible: 'none' | 'manual' | 'automatic';
   evidence: 'none' | 'output' | 'artifact';  // artifact 表示成功必须附带可读回校验的文件
 }
@@ -288,12 +288,15 @@ interface ToolContext {
   signal: AbortSignal;
   runId?: string;
   preview?: boolean;
+  previewRevision?: string; // 确认时返回的目标版本，实际执行前用于防止过期写入
 }
 ```
 
 **副作用契约的运行时约束**（`src/tools/contract.ts`、`src/tools/evidence.ts`、`src/agent/loop.ts`）：
 
 - `risk: 'high'` 的工具即使权限策略允许也会进入确认；每次确认都写入 `approvals` 表，含风险等级和结论来源。
+- 支持预览且需要确认的工具先以 `ctx.preview = true` 干跑，再把结构化 diff 放入权限弹窗；确认后携带 `previewRevision` 执行，目标已变化则拒绝写入。当前覆盖 `write_file`、`replace_text`、`update_xlsx_cells`。
+- 预览成功不得携带文件产物；违反该约束或声明支持预览但未返回结构化预览时，主循环拒绝继续。
 - 非幂等的副作用工具在同一 run 内以完全相同参数再次调用时，不会重复执行，而是复用首次结果并在输出前标注“重复调用已合并”。
 - `evidence: 'artifact'` 的工具成功后会由主循环读回校验产物（存在、大小、SHA-256）；校验失败时结果降级为失败，避免“声称完成”。
 - 预设契约：`READ_ONLY_CONTRACT`、`WORKSPACE_WRITE_CONTRACT`、`LOCAL_APPEND_CONTRACT`、`LOCAL_UPSERT_CONTRACT`；`tool-contract.test.ts` 强制所有内置工具显式声明并与权限标志一致。
@@ -587,7 +590,9 @@ interface PermissionPolicy {
 | 工具 | 工具调用或权限确认 |
 | 输出 | 生成最终回复 |
 
-由 `deriveAgentWorkflow`（`src/renderer/hooks/agent-workflow.ts`）根据消息流、`isRunning`、权限弹窗推导；权限等待时 headline 为「等待确认」。
+由 `deriveAgentWorkflow`（`src/renderer/hooks/agent-workflow.ts`）根据消息流、`isRunning`、权限弹窗推导；权限等待时 headline 为「等待确认」。支持预览的写操作会在同一权限弹窗展示修改前后文本或 Excel 单元格新旧值，确认后才执行。
+
+设置 → 数据与任务 → **运行记录**提供跨重启历史浏览：最近 100 条 run 可按状态筛选，详情展示工具步骤、错误、审批结论与文件产物。列表和详情分别使用 `agent:runHistory`、`agent:runDetail`，只呈现持久化脱敏摘要。
 
 ---
 
@@ -838,6 +843,7 @@ sessions 1───N bookkeeping_entries (optional)
 - Agent 头像：静态头像或用户自定义头像
 - 顶栏：模型名、连接状态、Style / Reasoning 下拉
 - 工具调用：折叠卡片展示名称、参数、结果
+- 写操作确认：支持预览的工具展示拟议 diff，并在确认后校验目标版本
 - 推理过程：可折叠灰色区域
 - Assistant 消息 **🔊** 按钮：按需 TTS 朗读（设置 → 语音）
 
@@ -854,6 +860,7 @@ sessions 1───N bookkeeping_entries (optional)
 - Token 当日/累计、进度条
 - 周趋势柱状图（Recharts）
 - 定时任务列表与「任务设置」入口
+- 设置中的「运行记录」列表与运行详情（步骤、审批、产物）
 
 ### 8.5 Dock 快捷栏
 

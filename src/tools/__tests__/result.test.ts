@@ -26,6 +26,22 @@ describe('tool result contract', () => {
     });
   });
 
+  it('preserves a structured dry-run preview', () => {
+    const preview = {
+      kind: 'text-diff' as const,
+      target: 'note.txt',
+      summary: '覆盖文件',
+      revision: 'sha256:test:1',
+      before: 'a',
+      after: 'b',
+    };
+    expect(normalizeToolResult({ success: true, output: '预览', preview })).toEqual({
+      success: true,
+      output: '预览',
+      preview,
+    });
+  });
+
   it('adds a category to legacy failed results and preserves artifacts', () => {
     const artifact = {
       relativePath: 'report.md',

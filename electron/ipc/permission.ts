@@ -74,6 +74,7 @@ export async function requestPermissionConfirm(
       toolName,
       args,
       ...(context?.risk ? { risk: context.risk } : {}),
+      ...(context?.preview ? { preview: context.preview } : {}),
     };
     if (pending.has(requestId)) {
       pending.get(requestId)!.cancelPendingSend = sendWhenWebContentsReady(

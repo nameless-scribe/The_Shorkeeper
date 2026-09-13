@@ -1,0 +1,18 @@
+---
+description: Mandatory engineering and UI consistency contract for The Shorekeeper
+alwaysApply: true
+---
+
+# Project Development Contract
+
+All repository changes must follow `docs/DEVELOPMENT-CONTRACT.md`; read the relevant sections before editing.
+
+- Reuse nearby architecture and UI primitives. Do not create a parallel component, IPC, persistence, or tool system.
+- New UI must use `keeper-*` theme tokens and existing shared components, work across themes and minimum window sizes, cover loading/empty/error/disabled states, and be checked in Electron.
+- Keep privileged work in the main process. Renderer code cannot access Node, secrets, or the database; IPC must use `trustedIpcMain` and validate `unknown` inputs.
+- Add ordered migrations for schema changes; update schema, repositories, database docs, and dual-adapter tests. Tests use temporary databases and never real user data.
+- Preserve WAL, backup, atomic-write, cancellation, shutdown, and recovery guarantees. Never delete user data or sidecars as a shortcut.
+- Every tool declares side effects and obeys permission, idempotency, preview, reversibility, and evidence rules. Do not claim completion without verified results.
+- Every bug fix adds a regression test for its original failure path. Avoid empty catches and unhandled promises; mandatory initialization failures fail closed.
+- Keep diffs scoped, preserve user changes, protect secrets, update affected docs, and run the contract's validation matrix.
+- If an exception is unavoidable, document the violated rule, reason, risk, mitigation, and follow-up; otherwise the change is not complete.

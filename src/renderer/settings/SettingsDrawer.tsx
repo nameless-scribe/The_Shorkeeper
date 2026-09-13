@@ -28,6 +28,7 @@ const PluginsPage = lazyPage(() => import('./PluginsPage'), 'PluginsPage');
 const DisclaimerPage = lazyPage(() => import('./DisclaimerPage'), 'DisclaimerPage');
 const AboutPage = lazyPage(() => import('./AboutPage'), 'AboutPage');
 const VoicePage = lazyPage(() => import('./VoicePage'), 'VoicePage');
+const RunHistoryPage = lazyPage(() => import('./RunHistoryPage'), 'RunHistoryPage');
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -85,6 +86,7 @@ export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawer
               {tab === 'voice' && <VoicePage />}
               {tab === 'userTodos' && <UserTodosPage />}
               {tab === 'tasks' && <TasksPage />}
+              {tab === 'runs' && <RunHistoryPage />}
               {tab === 'documents' && <DocumentsPage />}
               {tab === 'skills' && <SkillsPage />}
               {tab === 'mcp' && <McpPage />}

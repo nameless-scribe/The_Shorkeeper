@@ -1,21 +1,22 @@
 # P0 闭环骨架：运行记录、工具契约与完成证据
 
-> 版本：0.1.0
+> 版本：0.3.0
 > 日期：2026-09-13
 > 对应蓝图：`docs/personal-assistant-growth-blueprint.html` 的 P0「闭环骨架」
-> 固定验收入口：`pnpm test:p0`
+> 固定验收入口：`pnpm test:p0`（逻辑与数据）/ `pnpm test:p0:ui`（真实 Electron 渲染）
+> 当前状态：核心工程实现与自动化验收已完成；待一周真实使用验收
 
 ## 1. 本轮落地范围
 
-蓝图 P0 列出五项。本轮完成前三项的基础设施与第四项，第五项（每日简报到晚间复盘）以及 Goal / Commitment 两类领域对象留待下一轮，原因见第 5 节。
+蓝图 P0 列出的五项核心能力均已落地。TaskRun / Approval / Artifact 构成可靠执行底座，Goal / Commitment 与每日管家在后续实现中补齐；安全预览与运行历史界面也已完成。当前只剩真实使用验收，见第 5 节。
 
 | 蓝图条目 | 状态 | 实现 |
 |---|---|---|
-| 新增 Goal、Commitment、TaskRun、Approval、Artifact | TaskRun / Approval / Artifact 已落地；Goal / Commitment 未开始 | `0021_task_runs.sql`、`src/db/repositories/task-runs.ts` |
-| 任务支持等待确认、失败恢复、重启续跑与完成验证 | 已落地骨架 | `src/agent/run-record.ts`、`src/agent/run-recovery.ts`、`src/tools/evidence.ts` |
-| 工具声明风险、幂等、预览、可撤销和完成证据 | 已落地声明与运行时约束；预览均为 `false` | `src/tools/contract.ts`、各内置工具 `sideEffects` |
+| 新增 Goal、Commitment、TaskRun、Approval、Artifact | 已落地 | `0021_task_runs.sql`、`0022_goals_commitments.sql`、对应 repositories |
+| 任务支持等待确认、失败恢复、重启续跑与完成验证 | 已落地；续跑采用事实恢复与用户确认，不自动重放 | `src/agent/run-record.ts`、`src/agent/run-recovery.ts`、`src/tools/evidence.ts` |
+| 工具声明风险、幂等、预览、可撤销和完成证据 | 已落地；三个高价值写工具支持确认前 dry-run | `src/tools/contract.ts`、`src/tools/file/preview.ts`、各内置工具 `sideEffects` |
 | 支持直接创建待办 | 已落地 | `create_user_task` 工具 |
-| 打通每日简报到晚间复盘 | 未开始 | — |
+| 打通每日简报到晚间复盘 | 已落地 | `src/tasks/daily-steward.ts`、`src/config/daily-steward.ts`、`skills/daily-steward/SKILL.md` |
 
 ## 2. 行为契约
 
@@ -58,6 +59,27 @@
 - `create_user_task(title, due_at?, module?, notes?, status?)` 直接写入 `user_tasks`，不依赖 Excel；输入校验失败不触库；新建状态只能是 `pending` / `in_progress`。
 - 已加入核心工具集合（不受技能白名单限制）和 system prompt 工具说明。
 
+### 2.6 目标、承诺与每日管家
+
+- `goals`、`commitments`、`briefings` 及 `user_tasks.goal_id` 已由 `0022_goals_commitments.sql` 落库。
+- 用户承诺与待办联动，助理承诺与提醒联动；待办完成、取消或重开时同步关联承诺并保留 run 证据。
+- `build_daily_brief` 与 `build_evening_review` 聚合天气、待办、提醒、承诺、目标和当日运行产物；`briefings` 保证同一天同类简报不重复生成。
+- 设置页可显式启用每日管家、配置早晚时间和弹窗；安静时段遵循主动性策略。
+- 对话承诺提取只创建 `proposed` 候选，不自动变成待办；确认后才生效。完整设计与实现状态见 `docs/P0-DAILY-STEWARD-DESIGN.md`。
+
+### 2.7 确认前预览（dry-run）
+
+- `write_file`、`replace_text` 与 `update_xlsx_cells` 声明 `supportsPreview: true`。需要确认时，主循环先以 `ctx.preview = true` 执行，预览阶段不得产生文件产物。
+- 文本写入展示修改前/修改后内容；Excel 更新展示工作表、单元格地址与新旧值。预览通过现有权限弹窗呈现，用户确认后才真正写入。
+- 预览带目标文件 SHA-256/缺失状态版本。确认后执行时重新比对；文件在等待期间发生变化则拒绝写入，要求重新预览，避免把过期确认应用到新内容。
+- 全文件系统模式按用户已选择的权限策略直接执行，不额外弹出预览确认；默认确认模式使用完整的“预览 → 确认 → 版本复核 → 原子写入 → 产物校验”链路。
+
+### 2.8 运行历史界面
+
+- 设置 → 数据与任务 → 运行记录展示最近 100 条跨重启保存的 run，可按全部、正在运行、已完成、失败或中断筛选。
+- 详情页展示阶段、耗时、模型、工具步骤、风险与错误类别、审批结论及文件产物；文件产物复用现有附件卡片打开。
+- 列表读取 `agent:runHistory`，详情读取 `agent:runDetail`；`run_finished` / `run_error` 到达时自动刷新。页面只展示持久化的脱敏摘要，不暴露完整工具输出。
+
 ## 3. 查询入口
 
 - IPC `agent:runHistory({ sessionId?, limit? })` 返回持久化的 run 列表。
@@ -77,13 +99,14 @@
 - `create_user_task`：创建、校验、契约声明。
 - Orchestrator：运行记录从开始到终态、记录不可用时 run 照常完成、用量写入失败不影响 run、中断说明只在成功收口后确认。
 - 提醒快捷路径：审批携带 run / 会话上下文、工具执行进入记录钩子、工具抛错转为失败结果。
+- Goal / Commitment：双引擎 CRUD、状态推进、待办与提醒联动、完成证据。
+- 每日管家：早晚聚合、同日幂等、设置同步、安静时段、提醒弹窗和承诺候选提取。
 
-全量 Vitest、`pnpm typecheck`、`pnpm build` 与 `git diff --check` 作为收口条件。
+全量 Vitest、`pnpm typecheck`、`pnpm build`、`pnpm test:p0:ui` 与 `git diff --check` 作为收口条件。UI 冒烟会在隔离的 mock IPC 数据下打开真实 Electron renderer，并验证运行列表、详情、文本预览与 Excel 单元格预览；截图写入系统临时目录，不污染仓库或真实数据库。
 
-## 5. 未完成与下一步
+## 5. 待验收
 
-1. **Goal / Commitment**：需要先定义与 `user_tasks`、`scheduled_tasks` 的关系（承诺是否直接生成待办与提醒），建议在每日管家场景中一起设计，避免先建空表。
-2. **每日简报 / 晚间复盘**：依赖 Goal / Commitment 与天气、日程、待办的聚合；可先用现有 `weather`、`list_user_tasks`、`list_scheduled_tasks` 做一个 `daily_brief` 技能原型。
-3. **预览（dry-run）**：契约已预留 `supportsPreview` 与 `ctx.preview`，尚无工具实现；优先给 `write_file`、`replace_text`、`update_xlsx_cells` 补预览。
-4. **界面**：运行记录与审批已可通过 IPC 查询，聊天界面尚未展示“上次运行中断”和运行历史。
-5. **首次启动迁移**：真实数据库在下次启动时会应用 `0021_task_runs.sql`（迁移前自动备份）；在此之前 `pnpm db:health` 会报告 1 个未执行 migration，属于预期。
+1. **真实使用一周（P0 最终产品验收）**：开启每日管家，记录简报是否准确、是否打扰、是否漏掉承诺，以及重启、中断、安静时段和同日幂等在真实环境中的表现。工程实现和自动化验收已经完成，但在这一步结束前不宣称产品效果已经稳定。
+2. **真实交互覆盖**：重点观察预览内容是否足以判断改动、长文本与大量单元格是否易读、历史筛选是否符合用户直觉，以及过期预览被拒绝后的提示是否清楚。
+
+已完成但曾列为后续项：确认前 dry-run、运行历史列表/详情界面、真实库首次启动迁移。2026-09-13 native 数据库已有 22/22 migrations，健康检查为 `healthy`，迁移前备份已创建。

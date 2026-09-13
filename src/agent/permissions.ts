@@ -8,7 +8,7 @@ import type { ToolDefinition, ToolRiskLevel } from '../tools/types';
 import { requiresMandatoryConfirmation, resolveToolContract } from '../tools/contract';
 import { isDatabaseReady } from '../db/state';
 import { createApproval, decideApproval } from '../db/repositories/task-runs';
-import type { ApprovalDecider } from '../shared/types';
+import type { ApprovalDecider, ToolPreviewInfo } from '../shared/types';
 
 export function ensureWorkspaceDir(): string {
   const root = path.resolve(getWorkspaceDir());
@@ -104,6 +104,7 @@ export interface PermissionConfirmContext {
   runId?: string;
   sessionId?: string;
   risk?: ToolRiskLevel;
+  preview?: ToolPreviewInfo;
 }
 
 export interface PermissionConfirmOutcome {

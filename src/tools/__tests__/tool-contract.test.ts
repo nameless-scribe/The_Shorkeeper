@@ -51,6 +51,14 @@ describe('tool side-effect contract', () => {
     ]);
   });
 
+  it('limits dry-run support to tools that implement a revision-checked preview', () => {
+    const previewable = tools
+      .filter((tool) => resolveToolContract(tool).supportsPreview)
+      .map((tool) => tool.name)
+      .sort();
+    expect(previewable).toEqual(['replace_text', 'update_xlsx_cells', 'write_file']);
+  });
+
   it('suppresses duplicate calls only for non-idempotent side-effect tools', () => {
     const byName = new Map(tools.map((tool) => [tool.name, resolveToolContract(tool)]));
     expect(shouldSuppressDuplicateCall(byName.get('create_scheduled_task')!)).toBe(true);
