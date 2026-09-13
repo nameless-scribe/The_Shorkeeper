@@ -158,7 +158,7 @@
         <span class="pill"><strong>6</strong> 个阶段</span>
         <span class="pill"><strong>3</strong> 个兼容 migration</span>
         <span class="pill">P0 真实验收可并行</span>
-        <span class="pill">P2 外部连接暂不进入</span>
+        <span class="pill">外部连接已从产品路线取消</span>
       </div>
     </header>
 
@@ -231,21 +231,21 @@
       <div class="phase-panel glass" data-panel="2" role="tabpanel">
         <div class="phase-number">02</div>
         <div class="phase-copy"><h3>冲突识别与用户裁决</h3><p>新值不再直接覆盖同 key 旧值。先区分重复、补充与真实冲突，再让用户选择保留、替代或并存。</p><ul><li>关系、敏感、低置信和冲突必须确认</li><li>替代在单一事务内完成</li><li>手工编辑也进入版本化服务</li></ul></div>
-        <div class="exit"><b>已完成</b><p>冲突样本零静默覆盖；拒绝不复活；事务化版本链、重复确认和真实 Electron 三种裁决验收通过。</p></div>
+        <div class="exit"><b>已完成</b><p>冲突样本零静默覆盖；拒绝不复活；事务化版本链与 Electron renderer 固定数据 UI 冒烟通过。</p></div>
       </div>
       <div class="phase-panel glass" data-panel="3" role="tabpanel">
         <div class="phase-number">03</div>
         <div class="phase-copy"><h3>0024 · 使用来源与回答回链</h3><p>只选择 active、未过期且 model_use_policy 允许的事实；把实际使用的记忆、文档、目标与承诺写入 run 上下文来源。</p><ul><li>相关度 × 重要度 × 置信度 × 新鲜度</li><li>稳定 memory/document 引用标签</li><li>回答引用卡片与运行详情回链</li></ul></div>
-        <div class="exit"><b>已完成</b><p>预算后来源账本、四类稳定引用、回答卡片和运行详情回链已通过自动化与 Electron 验收。</p></div>
+        <div class="exit"><b>已完成</b><p>预算后来源账本、四类稳定引用、回答卡片和运行详情回链已通过自动化与 Electron 固定数据 UI 冒烟。</p></div>
       </div>
       <div class="phase-panel glass" data-panel="4" role="tabpanel">
         <div class="phase-number">04</div>
-        <div class="phase-copy"><h3>0025 · 本地知识新鲜度</h3><p>记录来源 mtime/size/hash 与检查时间；来源变化先标记 changed，重建成功后才原子切换新版本。</p><ul><li>默认手工检查，显式开启低频同步</li><li>变化、缺失、重建失败都有状态</li><li>外部邮箱/云盘同步留给 P2</li></ul></div>
+        <div class="phase-copy"><h3>0025 · 本地知识新鲜度</h3><p>记录来源 mtime/size/hash 与检查时间；来源变化先标记 changed，重建成功后才原子切换新版本。</p><ul><li>默认手工检查，显式开启低频同步</li><li>变化、缺失、重建失败都有状态</li><li>外部邮箱/云盘同步不进入当前产品路线</li></ul></div>
         <div class="exit"><b>已完成</b><p>未变化不重复索引；changed/missing、重新定位、低频同步和旧版本保护已接入。</p></div>
       </div>
       <div class="phase-panel glass" data-panel="5" role="tabpanel">
         <div class="phase-number">05</div>
-        <div class="phase-copy"><h3>真实 Electron 与总体工程验收</h3><p>覆盖记忆筛选、冲突确认、来源详情、过期状态、知识更新和运行引用；一周真实使用作为上线后的独立观察窗口持续记录。</p><ul><li><code>test:p1</code> + <code>test:p1:ui</code></li><li>P0/S2/S4/S5 与全量回归</li><li>观察结论不由 mock 冒充</li></ul></div>
+        <div class="phase-copy"><h3>Electron UI 与总体工程验收</h3><p>固定模拟数据覆盖记忆筛选、冲突确认、来源详情、过期状态、知识更新和运行引用；真实用户数据库端到端效果及一周使用作为上线后的独立观察窗口。</p><ul><li><code>test:p1</code> + <code>test:p1:ui</code></li><li>P0/S2/S4/S5 与全量回归</li><li>UI 冒烟不冒充真实数据证据</li></ul></div>
         <div class="exit"><b>工程已完成</b><p>个人模型端到端闭环可用；一周观察在实际使用满周期后补录结论。</p></div>
       </div>
     </section>
@@ -264,18 +264,18 @@
     </section>
 
     <section class="section">
-      <div class="section-head"><h2>三道不可绕过的门</h2><p class="section-note">这是 P1 的完成标准，也是之后进入 P2 外部连接器前的安全前提。</p></div>
+      <div class="section-head"><h2>三道不可绕过的门</h2><p class="section-note">这是 P1 的完成标准，也是后续进入 P3 本地主动服务的可信数据前提。</p></div>
       <div class="gates">
         <article class="gate glass"><h3><span class="dot"></span>数据兼容门</h3><p>迁移只追加、不改已发布 migration；旧记忆和文档版本可读；测试仅使用临时数据库。</p></article>
         <article class="gate glass"><h3><span class="dot"></span>可信行为门</h3><p>冲突不静默覆盖，敏感事实不自动注入，状态和来源由领域服务统一决定。</p></article>
-        <article class="gate glass"><h3><span class="dot"></span>可解释验收门</h3><p>真实 Electron 中能查看来源和冲突；真实使用证明偏好更新后不再引用旧事实。</p></article>
+        <article class="gate glass"><h3><span class="dot"></span>可解释验收门</h3><p>Electron renderer 固定数据冒烟能查看来源和冲突；真实使用再证明偏好更新后不引用旧事实。</p></article>
       </div>
     </section>
 
     <section class="section">
       <div class="decision glass">
         <div><h3>P1 工程闭环已完成</h3><p>P1.0—P1.5 已落地：个人事实、冲突裁决、上下文来源、稳定引用和知识新鲜度已经贯通。</p></div>
-        <div class="start">下一步：实际使用观察可与 P2 方案设计并行，问题按契约回补 P1</div>
+        <div class="start">下一步：进入 P3 本地主动服务；实际使用问题继续按契约回补 P1</div>
       </div>
     </section>
 

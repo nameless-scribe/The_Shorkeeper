@@ -178,13 +178,8 @@ async function capture(window, directory, filename) {
   const { data } = await window.webContents.debugger.sendCommand('Page.captureScreenshot', {
     format: 'png', captureBeyondViewport: false,
   });
-  const parsed = path.parse(filename);
-  let target = path.join(directory, filename);
-  let attempt = 1;
-  while (fs.existsSync(target)) {
-    target = path.join(directory, `${parsed.name}_${attempt}${parsed.ext}`);
-    attempt += 1;
-  }
+  // 固定证据名并覆盖旧截图，避免重复验收累积 _1/_2/... 临时产物。
+  const target = path.join(directory, filename);
   fs.writeFileSync(target, Buffer.from(data, 'base64'));
   return target;
 }

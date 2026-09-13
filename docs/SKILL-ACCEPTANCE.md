@@ -31,7 +31,7 @@ pnpm build
 - Skill 专项：54 项通过。
 - 真实文件场景：5 类场景、27 项最终状态断言通过。
 - 故障与恢复：28 项通过。
-- 全量 Vitest：111 个测试文件、493 项通过。
+- 最新全量 Vitest（2026-09-13，P1 收口后）：147 个测试文件、691 项通过；后续以 `pnpm test` 实时结果为准。
 - Electron 技能页：生产 renderer、真实 preload、隔离 IPC 验收通过。
 - Windows 打包：NSIS 安装包生成成功；打包后的 better-sqlite3 与 trigram FTS 通过。
 - 安装生命周期：首次安装、覆盖升级、卸载及外部数据库保留通过。

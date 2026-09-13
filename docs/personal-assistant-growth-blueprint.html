@@ -160,7 +160,7 @@
       <div class="stats">
         <div class="stat"><strong>28</strong><span>已注册内置工具</span></div>
         <div class="stat"><strong>4</strong><span>会话工作模式</span></div>
-        <div class="stat"><strong>3</strong><span>优先纵向场景</span></div>
+        <div class="stat"><strong>4</strong><span>优先纵向场景</span></div>
         <div class="stat"><strong>1</strong><span>先做一个黄金闭环</span></div>
       </div>
     </header>
@@ -175,7 +175,7 @@
 
     <section>
       <h2>当前基础与下一次跃迁</h2>
-      <p class="muted">真正的差距集中在任务持久化、记忆质量、现实世界连接与克制的主动性。</p>
+      <p class="muted">任务持久化和记忆质量已经完成工程闭环；下一次跃迁集中在克制、可解释的本地主动服务。</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>能力域</th><th>当前基础</th><th>下一次跃迁</th><th>优先级</th></tr></thead>
@@ -185,8 +185,7 @@
             <tr><td>知识库</td><td>混合 RAG、摘要、文档路由与重建</td><td>持续同步、引用回链、版本与过期管理</td><td><span class="tag p1">P1</span></td></tr>
             <tr><td>任务执行</td><td>Agent 循环、运行计划、待办与提醒</td><td>持久化 Goal、Commitment、TaskRun，支持暂停、恢复与验证</td><td><span class="tag p0">P0</span></td></tr>
             <tr><td>工具能力</td><td>28 个内置工具、Skill 与 MCP</td><td>统一风险、幂等、预览、撤销和完成证据</td><td><span class="tag p0">P0</span></td></tr>
-            <tr><td>外部连接</td><td>已有 MCP 客户端</td><td>优先接入日历、邮件、联系人、任务和云盘</td><td><span class="tag p2">P2</span></td></tr>
-            <tr><td>主动服务</td><td>提醒、安静时段、通知去重</td><td>事件驱动的承诺追踪、每日简报和主动收件箱</td><td><span class="tag p2">P3</span></td></tr>
+            <tr><td>主动服务</td><td>提醒、安静时段、通知去重、每日管家</td><td>本地事件账本、承诺追踪、主动收件箱、持久降噪与反馈</td><td><span class="tag p2">P3</span></td></tr>
             <tr><td>质量与安全</td><td>权限确认、运行诊断、自动化测试</td><td>场景评测、工具回放、完成证据、审计日志与恢复演练</td><td><span class="tag all">贯穿</span></td></tr>
           </tbody>
         </table>
@@ -240,29 +239,17 @@
           </div>
         </details>
         <details>
-          <summary>P2 · 连接现实世界（4–8 周）</summary>
+          <summary>P3 · 本地、克制的主动性（3–5 周 + 观察）</summary>
           <div class="phase-body">
-            <p>通过统一连接器层处理日历、邮件、联系人、任务和云盘。</p>
+            <p>完全依据本地任务、承诺、运行与知识状态主动跟进，不依赖外部账号。</p>
             <ul>
-              <li>统一内置工具、Skill、MCP 与第三方连接器。</li>
-              <li>OAuth 与 API Key 只进入安全存储。</li>
-              <li>写操作提供预览、差异、确认、幂等和撤销。</li>
-              <li>提供健康检查、限流、降级和重新授权入口。</li>
-            </ul>
-            <div class="proof"><b>完成证据</b>完成“读邮件承诺 → 查日历 → 拟回复 → 确认后发送”的链路。</div>
-          </div>
-        </details>
-        <details>
-          <summary>P3 · 克制的主动性（持续迭代）</summary>
-          <div class="phase-body">
-            <p>会主动跟进承诺，但不制造打扰。</p>
-            <ul>
-              <li>截止时间、文档变化、任务失败和外部消息统一为事件。</li>
+              <li>截止时间、文档变化、记忆冲突和任务失败统一为持久事件。</li>
               <li>普通建议进入主动收件箱，紧急事项才即时通知。</li>
-              <li>建立每日简报、会前准备、承诺追踪和晚间复盘。</li>
+              <li>增强每日简报、承诺追踪、失败恢复和晚间复盘。</li>
               <li>记录通知原因、抑制原因、反馈和采纳率。</li>
             </ul>
             <div class="proof"><b>完成证据</b>连续两周无重复轰炸，关键承诺没有漏跟进。</div>
+            <p><a href="p3-local-proactivity-plan.html">查看 P3 可执行实施路线 →</a></p>
           </div>
         </details>
       </div>
@@ -273,7 +260,7 @@
       <div class="cards">
         <article class="card"><h3>每日管家</h3><p>聚合天气、日历、待办与承诺，生成早间简报；调整后写入计划，晚间复盘。</p><span class="tag p0">最高</span></article>
         <article class="card"><h3>项目秘书</h3><p>结合工作区、知识库和项目目标，整理材料、追踪阻塞、维护下一步并生成周报。</p><span class="tag p0">最高</span></article>
-        <article class="card"><h3>沟通助理</h3><p>读取邮件和联系人背景，查询日历、拟定回复，在用户确认后发送。</p><span class="tag p1">高</span></article>
+        <article class="card"><h3>主动事务管家</h3><p>汇总本地待办、承诺、运行失败和知识变化，普通建议进入收件箱，紧急事项才提醒。</p><span class="tag p1">高</span></article>
         <article class="card"><h3>个人知识管家</h3><p>持续导入本地文件、网页收藏和对话归档，去重、引用回答并发现过期资料。</p><span class="tag p1">高</span></article>
       </div>
     </section>
