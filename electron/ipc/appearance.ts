@@ -1,4 +1,5 @@
-import { ipcMain, dialog } from 'electron';
+import { dialog } from 'electron';
+import { trustedIpcMain as ipcMain } from './trusted-ipc';
 import {
   getAppearanceSettings,
   setAppearancePreset,
@@ -12,6 +13,12 @@ import {
 } from '../../src/config/appearance-assets';
 import type { AppearanceAssetSlot, AppearanceSettingsInfo } from '../../src/shared/types';
 import { broadcastToAllRendererWindows } from '../windows/broadcast';
+import {
+  parseAppearanceAssetSlot,
+  parseBackgroundFit,
+  requireFiniteNumber,
+  requireString,
+} from '../../src/shared/ipc-validation';
 
 const IMAGE_FILTERS = [
   { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] },
@@ -35,18 +42,18 @@ async function pickImagePath(): Promise<string | null> {
 export function registerAppearanceIpc(): void {
   ipcMain.handle('appearance:get', () => getAppearanceSettings());
 
-  ipcMain.handle('appearance:setPreset', (_event, presetId: string) => {
-    setAppearancePreset(presetId);
+  ipcMain.handle('appearance:setPreset', (_event, presetId: unknown) => {
+    setAppearancePreset(requireString(presetId, '主题 ID', { maxLength: 200 }));
     return broadcastAppearance();
   });
 
-  ipcMain.handle('appearance:setVeilOpacity', (_event, opacity: number) => {
-    setVeilOpacity(opacity);
+  ipcMain.handle('appearance:setVeilOpacity', (_event, opacity: unknown) => {
+    setVeilOpacity(requireFiniteNumber(opacity, '遮罩透明度', { min: 0, max: 1 }));
     return broadcastAppearance();
   });
 
-  ipcMain.handle('appearance:setBackgroundFit', (_event, fit: string) => {
-    setBackgroundFit(fit === 'contain' ? 'contain' : 'cover');
+  ipcMain.handle('appearance:setBackgroundFit', (_event, fit: unknown) => {
+    setBackgroundFit(parseBackgroundFit(fit));
     return broadcastAppearance();
   });
 
@@ -57,8 +64,8 @@ export function registerAppearanceIpc(): void {
     return broadcastAppearance();
   });
 
-  ipcMain.handle('appearance:importBackground', (_event, sourcePath: string) => {
-    importBackgroundAsset(sourcePath);
+  ipcMain.handle('appearance:importBackground', (_event, sourcePath: unknown) => {
+    importBackgroundAsset(requireString(sourcePath, '背景文件路径', { maxLength: 32_767 }));
     return broadcastAppearance();
   });
 
@@ -77,7 +84,7 @@ export function registerAppearanceIpc(): void {
   });
 
   ipcMain.handle('appearance:clearAsset', (_event, slot: AppearanceAssetSlot) => {
-    clearAppearanceAsset(slot);
+    clearAppearanceAsset(parseAppearanceAssetSlot(slot));
     return broadcastAppearance();
   });
 }

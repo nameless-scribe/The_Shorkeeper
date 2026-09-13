@@ -27,6 +27,8 @@ export function useVoiceInput(): UseVoiceInputResult {
   const recorderRef = useRef<PcmRecorder | null>(null);
   const callIdRef = useRef<string | null>(null);
   const pcmBufferRef = useRef<Uint8Array>(new Uint8Array(0));
+  const pushQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pushFailedRef = useRef(false);
   const generationRef = useRef(0);
   const levelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [status, setStatus] = useState<VoiceInputStatus>('idle');
@@ -45,10 +47,11 @@ export function useVoiceInput(): UseVoiceInputResult {
     const pending = pcmBufferRef.current;
     if (pending.byteLength === 0) return;
     pcmBufferRef.current = new Uint8Array(0);
-    await window.shorekeeper.voice.stt.pushChunk({
+    const result = await window.shorekeeper.voice.stt.pushChunk({
       callId,
       chunk: pending.slice().buffer,
     });
+    if (!result.ok) throw new Error(result.error);
   }, []);
 
   const pushPcmFrame = useCallback(
@@ -67,13 +70,29 @@ export function useVoiceInput(): UseVoiceInputResult {
           chunk: frame.buffer,
         });
         if (!result.ok) {
-          setError(result.error);
-          break;
+          throw new Error(result.error);
         }
       }
     },
     [],
   );
+
+  const enqueuePcmFrame = useCallback((callId: string, pcm: ArrayBuffer) => {
+    if (pushFailedRef.current) return;
+    const generation = generationRef.current;
+    const queued = pushQueueRef.current
+      .then(async () => {
+        if (generation !== generationRef.current || pushFailedRef.current) return;
+        await pushPcmFrame(callId, pcm);
+      })
+      .catch((err) => {
+        if (generation !== generationRef.current) return;
+        pushFailedRef.current = true;
+        setError(err instanceof Error ? err.message : '语音识别流发送失败');
+        void window.shorekeeper.voice.stt.abortCallStream({ callId }).catch(console.error);
+      });
+    pushQueueRef.current = queued;
+  }, [pushPcmFrame]);
 
   const teardown = useCallback(() => {
     clearLevelTimer();
@@ -102,10 +121,22 @@ export function useVoiceInput(): UseVoiceInputResult {
     const generation = generationRef.current;
     setError(null);
     pcmBufferRef.current = new Uint8Array(0);
+    pushQueueRef.current = Promise.resolve();
+    pushFailedRef.current = false;
     callIdRef.current = callId ?? null;
 
     if (callId) {
-      const streamResult = await window.shorekeeper.voice.stt.startCallStream({ callId });
+      let streamResult: Awaited<ReturnType<typeof window.shorekeeper.voice.stt.startCallStream>>;
+      try {
+        streamResult = await window.shorekeeper.voice.stt.startCallStream({ callId });
+      } catch (err) {
+        if (generation === generationRef.current) {
+          setError(err instanceof Error ? err.message : '语音识别流启动失败');
+          callIdRef.current = null;
+          setStatus('idle');
+        }
+        return;
+      }
       if (generation !== generationRef.current) return;
       if (!streamResult.ok) {
         setError(streamResult.error);
@@ -118,9 +149,17 @@ export function useVoiceInput(): UseVoiceInputResult {
     let recorder: PcmRecorder;
     try {
       recorder = await startPcmRecording({
+        retainAudio: !callId,
+        onError: (message) => {
+          if (generation !== generationRef.current) return;
+          recorderRef.current = null;
+          clearLevelTimer();
+          setError(message);
+          setStatus('idle');
+        },
         onPcmFrame: callId
           ? (pcm) => {
-              void pushPcmFrame(callId, pcm);
+              enqueuePcmFrame(callId, pcm);
             }
           : undefined,
       });
@@ -148,7 +187,7 @@ export function useVoiceInput(): UseVoiceInputResult {
     levelTimerRef.current = setInterval(() => {
       setLevel(recorder.level);
     }, 100);
-  }, [pushPcmFrame]);
+  }, [clearLevelTimer, enqueuePcmFrame]);
 
   const stopAndTranscribe = useCallback(
     async (lang?: SttLanguage): Promise<string> => {
@@ -166,6 +205,12 @@ export function useVoiceInput(): UseVoiceInputResult {
         if (callId) {
           await recorder.stop();
           if (generation !== generationRef.current) return '';
+          await pushQueueRef.current;
+          if (generation !== generationRef.current) return '';
+          if (pushFailedRef.current) {
+            setStatus('idle');
+            return '';
+          }
           await flushPcmBuffer(callId);
           const result = await window.shorekeeper.voice.stt.finishCallStream({ callId });
           pcmBufferRef.current = new Uint8Array(0);
@@ -193,6 +238,9 @@ export function useVoiceInput(): UseVoiceInputResult {
         }
         return result.text;
       } catch (err) {
+        if (callId) {
+          await window.shorekeeper.voice.stt.abortCallStream({ callId }).catch(console.error);
+        }
         if (generation === generationRef.current) {
           setError(err instanceof Error ? err.message : '语音识别失败');
           setStatus('idle');

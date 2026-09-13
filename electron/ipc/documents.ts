@@ -1,16 +1,46 @@
-import { dialog, ipcMain } from 'electron';
+import { dialog } from 'electron';
+import { trustedIpcMain as ipcMain } from './trusted-ipc';
 import {
   deleteDocument,
   checkKnowledgeIndexCompatibility,
   listDocuments,
   recoverInterruptedDocumentImports,
+  recoverKnowledgeTrash,
 } from '../../src/rag/documents';
 import { importDocumentFromPath } from '../../src/rag/importer';
 import { reindexAllDocuments, reindexDocument } from '../../src/rag/reindex';
 import { testEmbeddingConnection } from '../../src/rag/embedding';
 import { getEmbeddingModelName } from '../../src/models/embedding-config';
+import { trackRagOperation, shutdownRagOperations } from '../../src/rag/operation-runtime';
+import type { WebContents } from 'electron';
+import { safeSendToWebContents } from '../windows/web-contents';
+import { requireString } from '../../src/shared/ipc-validation';
 
-export function registerDocumentsIpc() {
+function safeSend(sender: WebContents, channel: string, payload: unknown): void {
+  safeSendToWebContents(sender, channel, payload);
+}
+
+function runForSender<T>(
+  sender: WebContents,
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  sender.once('destroyed', abort);
+  return trackRagOperation(work, controller.signal).finally(() => {
+    sender.removeListener('destroyed', abort);
+  });
+}
+
+export function shutdownDocumentsRuntime(timeoutMs = 5000): Promise<boolean> {
+  return shutdownRagOperations(timeoutMs);
+}
+
+export async function registerDocumentsIpc() {
+  const trashRecovery = await recoverKnowledgeTrash();
+  if (trashRecovery.restored || trashRecovery.cleaned || trashRecovery.retained) {
+    console.warn('[rag] 知识文件隔离区恢复结果:', trashRecovery);
+  }
   const recovered = recoverInterruptedDocumentImports();
   if (recovered > 0) {
     console.warn(`[rag] 已将 ${recovered} 个中断的导入标记为需要重建。`);
@@ -18,8 +48,8 @@ export function registerDocumentsIpc() {
 
   ipcMain.handle('documents:list', () => listDocuments());
 
-  ipcMain.handle('documents:delete', async (_event, id: string) => {
-    const ok = await deleteDocument(id);
+  ipcMain.handle('documents:delete', async (_event, id: unknown) => {
+    const ok = await deleteDocument(requireString(id, '文档 ID', { maxLength: 200 }));
     return { ok };
   });
 
@@ -38,14 +68,15 @@ export function registerDocumentsIpc() {
 
   ipcMain.handle('documents:reindex', async (event) => {
     const sender = event.sender;
-    const result = await reindexAllDocuments((progress) => {
-      sender.send('documents:reindexProgress', progress);
-    });
+    const result = await runForSender(sender, (signal) => reindexAllDocuments((progress) => {
+      safeSend(sender, 'documents:reindexProgress', progress);
+    }, { signal }));
     return { ok: result.failed === 0, ...result };
   });
 
-  ipcMain.handle('documents:reindexOne', async (_event, id: string) => {
-    return reindexDocument(id);
+  ipcMain.handle('documents:reindexOne', async (event, id: unknown) => {
+    const documentId = requireString(id, '文档 ID', { maxLength: 200 });
+    return runForSender(event.sender, (signal) => reindexDocument(documentId, { signal }));
   });
 
   ipcMain.handle('documents:import', async (event) => {
@@ -58,8 +89,10 @@ export function registerDocumentsIpc() {
     if (result.canceled || !result.filePaths[0]) return null;
 
     const sender = event.sender;
-    return importDocumentFromPath(result.filePaths[0], (progress) => {
-      sender.send('documents:importProgress', progress);
-    });
+    return runForSender(sender, (signal) => importDocumentFromPath(
+      result.filePaths[0],
+      (progress) => safeSend(sender, 'documents:importProgress', progress),
+      { signal },
+    ));
   });
 }

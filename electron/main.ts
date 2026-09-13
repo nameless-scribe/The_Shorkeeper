@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, powerMonitor } from 'electron';
 import {
   registerAppearanceAssetProtocol,
   registerAppearanceAssetScheme,
@@ -37,7 +37,7 @@ import { emitInitialState } from './state/presence';
 import { setTaskChangeHandler } from '../src/scheduler/task-events';
 import { registerWorkspaceIpc } from './ipc/workspace';
 import { registerDockIpc } from './ipc/dock';
-import { registerDocumentsIpc } from './ipc/documents';
+import { registerDocumentsIpc, shutdownDocumentsRuntime } from './ipc/documents';
 import { registerEmbeddingIpc } from './ipc/embedding';
 import { registerMcpIpc, initMcpOnStartup } from './ipc/mcp';
 import { registerSkillsIpc } from './ipc/skills';
@@ -45,10 +45,10 @@ import { registerModelIpc } from './ipc/model';
 import { registerPerformanceIpc } from './ipc/performance';
 import { registerPluginsIpc } from './ipc/plugins';
 import { registerWebSearchIpc } from './ipc/web-search';
-import { registerVoiceIpc } from './ipc/voice';
+import { registerVoiceIpc, shutdownVoiceRuntime } from './ipc/voice';
 import { registerPermissionIpc, requestPermissionConfirm } from './ipc/permission';
 import { registerUpdateIpc } from './ipc/update';
-import { initAutoUpdater } from './update/auto-updater';
+import { initAutoUpdater, shutdownAutoUpdaterRuntime } from './update/auto-updater';
 import { configureAppIdentity } from './app-icon';
 import { showSplashWindow, closeSplashWindow } from './windows/splash';
 import { setPermissionConfirmer } from '../src/agent/permissions';
@@ -61,6 +61,8 @@ import {
 import { cancelAllPendingPermissions } from './ipc/permission';
 import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron';
 import { broadcastTasksUpdated } from './tasks/events';
+import { coordinateRuntimeShutdown } from '../src/runtime/shutdown-coordinator';
+import { bindPowerLifecycle } from '../src/runtime/power-lifecycle';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -95,21 +97,41 @@ const SPLASH_MIN_MS = 2200;
 const SHUTDOWN_GRACE_MS = 5000;
 let shutdownReady = false;
 let shutdownPromise: Promise<void> | null = null;
+let startupSplashFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+let startupVisibilityTimer: ReturnType<typeof setTimeout> | null = null;
+let removePowerLifecycle: (() => void) | null = null;
+
+function clearStartupTimers(): void {
+  if (startupSplashFallbackTimer) clearTimeout(startupSplashFallbackTimer);
+  if (startupVisibilityTimer) clearTimeout(startupVisibilityTimer);
+  startupSplashFallbackTimer = null;
+  startupVisibilityTimer = null;
+  removePowerLifecycle?.();
+  removePowerLifecycle = null;
+}
 
 async function settleRuntimeForShutdown(): Promise<void> {
-  beginSessionRunShutdown();
-  cancelAllPendingPermissions();
-  abortAllSessionRuns();
-
-  const [runsIdle, backgroundIdle] = await Promise.all([
-    awaitSessionRunsIdle(SHUTDOWN_GRACE_MS),
-    shutdownPendingSessionWork(SHUTDOWN_GRACE_MS),
-  ]);
-  if (!runsIdle || !backgroundIdle) {
-    console.warn('[shutdown] 部分 Agent 任务未在宽限期内结束，将继续关闭数据库');
+  const result = await coordinateRuntimeShutdown({
+    beginSessionRunShutdown,
+    cancelAllPendingPermissions,
+    abortAllSessionRuns,
+    shutdownVoiceRuntime,
+    shutdownAutoUpdaterRuntime,
+    clearStartupTimers,
+    awaitSessionRunsIdle,
+    shutdownPendingSessionWork,
+    shutdownDocumentsRuntime,
+    closeDatabase: closeDatabaseAsync,
+  }, SHUTDOWN_GRACE_MS);
+  if (!result.runsIdle || !result.backgroundIdle || !result.ragIdle) {
+    console.warn('[shutdown] 部分运行时任务未在宽限期内结束，将继续关闭数据库');
   }
-
-  await closeDatabaseAsync();
+  for (const error of result.errors) {
+    console.error(`[shutdown] 清理失败: ${error}`);
+  }
+  if (!result.databaseClosed) {
+    console.error('[shutdown] 数据库未能完成关闭');
+  }
 }
 
 function attachTrayCloseBehavior(win: BrowserWindow): void {
@@ -175,9 +197,9 @@ app.whenReady().then(async () => {
     registerStatsIpc();
     registerTasksIpc();
     registerUserTasksIpc();
-    registerWorkspaceIpc();
+    await registerWorkspaceIpc();
     registerDockIpc();
-    registerDocumentsIpc();
+    await registerDocumentsIpc();
     registerEmbeddingIpc();
     registerMcpIpc();
     registerSkillsIpc();
@@ -199,6 +221,14 @@ app.whenReady().then(async () => {
     });
 
     startScheduler();
+    removePowerLifecycle = bindPowerLifecycle(powerMonitor, {
+      suspend: () => stopScheduler(),
+      resume: () => {
+        if (isAppQuitting()) return;
+        reloadScheduler();
+        getWindowManager().reconcileVisibility();
+      },
+    });
   }
 
   createTray();
@@ -208,9 +238,20 @@ app.whenReady().then(async () => {
   attachTrayCloseBehavior(chatWin);
 
   let splashFinished = false;
+  const cleanupSplashListeners = () => {
+    if (!chatWin.isDestroyed()) chatWin.removeListener('ready-to-show', onStartupReady);
+    if (!chatWin.webContents.isDestroyed()) {
+      chatWin.webContents.removeListener('did-finish-load', onStartupReady);
+    }
+    if (startupSplashFallbackTimer) {
+      clearTimeout(startupSplashFallbackTimer);
+      startupSplashFallbackTimer = null;
+    }
+  };
   const finishStartupSplash = async () => {
     if (splashFinished) return;
     splashFinished = true;
+    cleanupSplashListeners();
 
     const elapsed = Date.now() - splashStartedAt;
     const waitMs = Math.max(0, SPLASH_MIN_MS - elapsed);
@@ -218,7 +259,10 @@ app.whenReady().then(async () => {
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
     await closeSplashWindow();
-    manager.show('chat');
+    if (!isAppQuitting()) manager.show('chat');
+  };
+  const onStartupReady = () => {
+    void finishStartupSplash();
   };
 
   const scheduleStartupSplashFinish = () => {
@@ -227,20 +271,17 @@ app.whenReady().then(async () => {
       return;
     }
 
-    chatWin.once('ready-to-show', () => {
-      void finishStartupSplash();
-    });
+    chatWin.once('ready-to-show', onStartupReady);
 
     if (!chatWin.webContents.isLoading()) {
       void finishStartupSplash();
     } else {
-      chatWin.webContents.once('did-finish-load', () => {
-        void finishStartupSplash();
-      });
+      chatWin.webContents.once('did-finish-load', onStartupReady);
     }
 
     // 兜底：避免 ready-to-show 未触发时 Splash 一直停留
-    setTimeout(() => {
+    startupSplashFallbackTimer = setTimeout(() => {
+      startupSplashFallbackTimer = null;
       void finishStartupSplash();
     }, 10_000);
   };
@@ -255,8 +296,9 @@ app.whenReady().then(async () => {
   syncDockVisibility();
 
   // 启动后若聊天窗标记为打开但实际不可见，尝试恢复（常见于换显示器或 bounds 异常）
-  setTimeout(() => {
-    getWindowManager().reconcileVisibility();
+  startupVisibilityTimer = setTimeout(() => {
+    startupVisibilityTimer = null;
+    if (!isAppQuitting()) getWindowManager().reconcileVisibility();
   }, 1500);
 
   emitInitialState();

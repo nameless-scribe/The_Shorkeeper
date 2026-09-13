@@ -21,6 +21,8 @@ export function VoicePage() {
   const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'playing'>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewGenerationRef = useRef(0);
 
   const load = useCallback(async () => {
     const value = await window.shorekeeper.voice.getSettings();
@@ -43,7 +45,11 @@ export function VoicePage() {
       setSettings(value);
       setVoiceIdDraft(value.ttsVoiceId);
       setMessage('已保存');
-      setTimeout(() => setMessage(null), 2000);
+      if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+      messageTimerRef.current = setTimeout(() => {
+        messageTimerRef.current = null;
+        setMessage(null);
+      }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败');
     } finally {
@@ -63,13 +69,17 @@ export function VoicePage() {
 
   useEffect(
     () => () => {
+      previewGenerationRef.current += 1;
       previewAudioRef.current?.stop();
+      if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
     },
     [],
   );
 
   const preview = async () => {
     if (!settings) return;
+    previewGenerationRef.current += 1;
+    const generation = previewGenerationRef.current;
     previewAudioRef.current?.stop();
     setPreviewState('loading');
     setError(null);
@@ -79,21 +89,32 @@ export function VoicePage() {
         settings.ttsMaxChars,
         settings.ttsPlaybackGain,
         {
-          onLoading: () => setPreviewState('loading'),
-          onPlaying: () => setPreviewState('playing'),
+          onLoading: () => {
+            if (generation === previewGenerationRef.current) setPreviewState('loading');
+          },
+          onPlaying: () => {
+            if (generation === previewGenerationRef.current) setPreviewState('playing');
+          },
           onFinished: () => {
+            if (generation !== previewGenerationRef.current) return;
             previewAudioRef.current = null;
             setPreviewState('idle');
           },
           onError: (message) => {
+            if (generation !== previewGenerationRef.current) return;
             setError(message);
             previewAudioRef.current = null;
             setPreviewState('idle');
           },
         },
       );
+      if (generation !== previewGenerationRef.current) {
+        handle.stop();
+        return;
+      }
       previewAudioRef.current = handle;
     } catch (err) {
+      if (generation !== previewGenerationRef.current) return;
       setError(err instanceof Error ? err.message : '试听失败');
       setPreviewState('idle');
     }

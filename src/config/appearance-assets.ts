@@ -107,21 +107,28 @@ function copyAsset(sourcePath: string, prefix: string): string {
 
 export function importBackgroundAsset(sourcePath: string): string {
   const assets = getThemeAssetsRecord();
-  removeAppearanceFile(assets.background ?? null);
-
   const filename = copyAsset(sourcePath, 'bg');
-  const relative = filename;
-  setThemeAssetsRecord({ ...assets, background: relative });
-  return relative;
+  try {
+    setThemeAssetsRecord({ ...assets, background: filename });
+  } catch (error) {
+    removeAppearanceFile(filename);
+    throw error;
+  }
+  removeAppearanceFile(assets.background ?? null);
+  return filename;
 }
 
 export function importAvatarAsset(sourcePath: string, slot: 'keeperAvatar' | 'userAvatar'): string {
   const assets = getThemeAssetsRecord();
-  removeAppearanceFile(assets[slot] ?? null);
-
   const prefix = slot === 'keeperAvatar' ? 'avatar-keeper' : 'avatar-user';
   const filename = copyAsset(sourcePath, prefix);
-  setThemeAssetsRecord({ ...assets, [slot]: filename });
+  try {
+    setThemeAssetsRecord({ ...assets, [slot]: filename });
+  } catch (error) {
+    removeAppearanceFile(filename);
+    throw error;
+  }
+  removeAppearanceFile(assets[slot] ?? null);
   return filename;
 }
 

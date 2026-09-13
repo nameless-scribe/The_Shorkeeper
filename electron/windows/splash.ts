@@ -26,10 +26,14 @@ function loadSplashContent(win: BrowserWindow): void {
   const devServerUrl = getTrustedDevServerUrl();
   if (devServerUrl) {
     const params = new URLSearchParams(query);
-    win.loadURL(`${devServerUrl}?${params.toString()}`);
+    void win.loadURL(`${devServerUrl}?${params.toString()}`).catch((error) => {
+      if (!win.isDestroyed()) console.error('[window] 启动页加载失败:', error);
+    });
     return;
   }
-  win.loadFile(getRendererIndexPath(), { query });
+  void win.loadFile(getRendererIndexPath(), { query }).catch((error) => {
+    if (!win.isDestroyed()) console.error('[window] 启动页加载失败:', error);
+  });
 }
 
 export function showSplashWindow(): BrowserWindow {

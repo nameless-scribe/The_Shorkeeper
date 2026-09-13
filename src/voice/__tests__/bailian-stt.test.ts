@@ -6,7 +6,12 @@ vi.mock('../../config/voice', () => ({
 }));
 
 import { resolveVoiceApiKey } from '../../config/voice';
-import { BailianSttEngine, type SttSocket, type SttSocketEventMap } from '../bailian-stt';
+import {
+  BailianSttEngine,
+  createSttStreamSession,
+  type SttSocket,
+  type SttSocketEventMap,
+} from '../bailian-stt';
 import type { SttOptions } from '../types';
 
 const OPTS: SttOptions = {
@@ -185,5 +190,17 @@ describe('BailianSttEngine', () => {
       throw new Error('socket should not be created');
     });
     await expect(engine.transcribe(new ArrayBuffer(0), OPTS)).rejects.toThrow(/为空/);
+  });
+
+  it('rejects finish after a started socket closes unexpectedly', async () => {
+    const socket = new FakeSocket();
+    const sessionPromise = createSttStreamSession(OPTS, {}, () => socket);
+    socket.fire('open');
+    socket.fire('message', evt('task-started'));
+    const session = await sessionPromise;
+
+    socket.fire('close', {});
+
+    await expect(session.finish()).rejects.toThrow(/意外关闭/);
   });
 });

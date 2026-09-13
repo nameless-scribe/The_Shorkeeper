@@ -110,6 +110,7 @@ export function createTtsStreamSession(
   let started = false;
   let aborted = false;
   let finished = false;
+  let finishRequested = false;
   let startedResolve: (() => void) | null = null;
   let startedReject: ((err: Error) => void) | null = null;
   let finishResolve: (() => void) | null = null;
@@ -153,6 +154,7 @@ export function createTtsStreamSession(
   };
 
   const complete = () => {
+    if (aborted || finished) return;
     finished = true;
     cleanup();
     finishResolve?.();
@@ -162,8 +164,9 @@ export function createTtsStreamSession(
 
   socket.addEventListener('open', () => {
     if (aborted) return;
-    socket.send(
-      JSON.stringify({
+    try {
+      socket.send(
+        JSON.stringify({
         header: { action: 'run-task', task_id: taskId, streaming: 'duplex' },
         payload: {
           task_group: 'audio',
@@ -181,8 +184,11 @@ export function createTtsStreamSession(
           },
           input: {},
         },
-      }),
-    );
+        }),
+      );
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 
   socket.addEventListener('message', (ev) => {
@@ -236,7 +242,11 @@ export function createTtsStreamSession(
       fail(new Error('语音合成连接被关闭，请检查 API Key 与接入地址'));
       return;
     }
-    complete();
+    if (finishRequested) {
+      complete();
+    } else {
+      fail(new Error('语音合成连接意外关闭，请重试'));
+    }
   });
 
   const session: TtsStreamSession = {
@@ -245,27 +255,40 @@ export function createTtsStreamSession(
       await startedPromise;
       const prepared = prepareChunkForTts(sentence);
       if (!prepared || !hasSpeakableCharacters(prepared)) return;
-      socket.send(
-        JSON.stringify({
+      try {
+        socket.send(
+          JSON.stringify({
           header: { action: 'continue-task', task_id: taskId, streaming: 'duplex' },
           payload: { input: { text: prepared } },
-        }),
-      );
+          }),
+        );
+      } catch (error) {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        fail(failure);
+        throw failure;
+      }
     },
 
     async finish() {
       if (aborted) return;
       if (finished) {
-        await finishPromise.catch(() => undefined);
+        await finishPromise;
         return;
       }
+      finishRequested = true;
       await startedPromise;
-      socket.send(
-        JSON.stringify({
+      try {
+        socket.send(
+          JSON.stringify({
           header: { action: 'finish-task', task_id: taskId, streaming: 'duplex' },
           payload: { input: {} },
-        }),
-      );
+          }),
+        );
+      } catch (error) {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        fail(failure);
+        throw failure;
+      }
       await finishPromise;
     },
 

@@ -105,6 +105,17 @@ describe('call-session', () => {
     expect(broadcast).toHaveBeenCalledWith(ev.callState(result.callId, 'listening'));
   });
 
+  it('rejects a second active call for the same session', () => {
+    const manager = createCallSessionManager(host);
+    const first = manager.start('session-1');
+    expect(first.ok).toBe(true);
+
+    expect(manager.start('session-1')).toEqual({
+      ok: false,
+      error: '该会话的通话已在进行',
+    });
+  });
+
   it('submitUserText streams deltas into TTS and broadcasts audio chunks', async () => {
     runOrchestrator.mockReturnValue(
       mockRun([
@@ -171,6 +182,50 @@ describe('call-session', () => {
 
     expect(synthesizeVoiceChunk).toHaveBeenCalledWith('你好。', expect.any(AbortSignal));
     expect(broadcast).toHaveBeenCalledWith(ev.callSpeechEnd(started.callId));
+  });
+
+  it('keeps the text run successful when streaming TTS fails after audio starts', async () => {
+    runOrchestrator.mockReturnValue(mockRun([
+      { type: 'run_started', runId: 'run-audio-failure', sessionId: 'session-1' },
+      { type: 'text_delta', runId: 'run-audio-failure', delta: '已经开始播放。' },
+      { type: 'run_finished', runId: 'run-audio-failure' },
+    ]));
+    createTtsStreamSession.mockImplementation(async (_opts, handlers) => {
+      const stream = mockTtsStream({
+        pushText: vi.fn().mockImplementation(async () => {
+          handlers.onAudioChunk(new Uint8Array([1]).buffer, 0);
+          throw new Error('socket send failed');
+        }),
+      });
+      stream.handlers = handlers;
+      return stream;
+    });
+
+    const manager = createCallSessionManager(host);
+    const started = manager.start('session-1');
+    if (!started.ok) throw new Error('start failed');
+
+    await expect(manager.submitUserText(started.callId, '继续')).resolves.toEqual({ ok: true });
+    expect(host.onRunFinished).toHaveBeenCalledOnce();
+    expect(host.onRunError).not.toHaveBeenCalled();
+    expect(synthesizeVoiceChunk).not.toHaveBeenCalled();
+    expect(broadcast).toHaveBeenCalledWith(ev.callSpeechEnd(started.callId));
+  });
+
+  it('recovers to listening when the Agent event stream ends without a terminal event', async () => {
+    runOrchestrator.mockReturnValue(mockRun([
+      { type: 'run_started', runId: 'run-incomplete', sessionId: 'session-1' },
+    ]));
+    const manager = createCallSessionManager(host);
+    const started = manager.start('session-1');
+    if (!started.ok) throw new Error('start failed');
+
+    await expect(manager.submitUserText(started.callId, '测试')).resolves.toEqual({
+      ok: false,
+      error: '通话运行未正常结束，请重试',
+    });
+    expect(manager.get(started.callId)?.state).toBe('listening');
+    expect(host.onRunError).toHaveBeenCalledOnce();
   });
 
   it('speakingDone returns to listening', async () => {

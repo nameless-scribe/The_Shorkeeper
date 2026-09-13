@@ -11,15 +11,17 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
       return;
     }
 
-    const timer = setTimeout(() => resolve(), ms);
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(new DOMException('Aborted', 'AbortError'));
-      },
-      { once: true },
-    );
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -30,39 +32,47 @@ export async function playAudioWithGain(
   onEnded: () => void,
 ): Promise<AudioPlaybackHandle> {
   const ctx = new AudioContext();
-  const decoded = await ctx.decodeAudioData(data.slice(0));
-  const source = ctx.createBufferSource();
-  source.buffer = decoded;
+  try {
+    const decoded = await ctx.decodeAudioData(data.slice(0));
+    const source = ctx.createBufferSource();
+    source.buffer = decoded;
 
-  const gainNode = ctx.createGain();
-  gainNode.gain.value = Math.max(0.5, Math.min(3, gain));
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = Math.max(0.5, Math.min(3, gain));
 
-  source.connect(gainNode);
-  gainNode.connect(ctx.destination);
+    source.connect(gainNode);
+    gainNode.connect(ctx.destination);
 
-  let stopped = false;
-  const stop = () => {
-    if (stopped) return;
-    stopped = true;
-    try {
-      source.stop();
-    } catch {
-      // already stopped
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      source.onended = null;
+      try {
+        source.stop();
+      } catch {
+        // already stopped
+      }
+      source.disconnect();
+      gainNode.disconnect();
+      void ctx.close();
+    };
+
+    source.onended = () => {
+      stop();
+      onEnded();
+    };
+
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
     }
-    void ctx.close();
-  };
+    source.start(0);
 
-  source.onended = () => {
-    stop();
-    onEnded();
-  };
-
-  if (ctx.state === 'suspended') {
-    await ctx.resume();
+    return { stop };
+  } catch (error) {
+    await ctx.close().catch(() => undefined);
+    throw error;
   }
-  source.start(0);
-
-  return { stop };
 }
 
 export async function playSpeechSteps(
@@ -105,7 +115,8 @@ export async function playSpeechSteps(
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
-      throw err;
+      console.error('[voice] 播放序列失败:', err);
+      stop();
     }
   })();
 

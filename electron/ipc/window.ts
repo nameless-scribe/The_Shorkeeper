@@ -1,4 +1,6 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow } from 'electron';
+import { trustedIpcMain as ipcMain } from './trusted-ipc';
+import { parseWindowKind } from '../../src/shared/ipc-validation';
 import { getWindowManager } from '../windows/manager';
 
 function windowFromSender(sender: Electron.WebContents): BrowserWindow | null {
@@ -12,13 +14,13 @@ function isReminderWindow(win: BrowserWindow): boolean {
 export function registerWindowIpc() {
   const manager = getWindowManager();
 
-  ipcMain.handle('window:show', (_event, kind: 'chat' | 'status' | 'schedule' | 'call') => {
-    manager.show(kind);
+  ipcMain.handle('window:show', (_event, kind: unknown) => {
+    manager.show(parseWindowKind(kind));
     return { ok: true };
   });
 
-  ipcMain.handle('window:hide', (_event, kind: 'chat' | 'status' | 'schedule' | 'call') => {
-    manager.hide(kind);
+  ipcMain.handle('window:hide', (_event, kind: unknown) => {
+    manager.hide(parseWindowKind(kind));
     return { ok: true };
   });
 
@@ -35,6 +37,7 @@ export function registerWindowIpc() {
   ipcMain.on('window:moveBy', (event, dx: unknown, dy: unknown) => {
     if (typeof dx !== 'number' || typeof dy !== 'number') return;
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    if (Math.abs(dx) > 10_000 || Math.abs(dy) > 10_000) return;
 
     const win = windowFromSender(event.sender);
     if (!win) return;

@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { trustedIpcMain as ipcMain } from './trusted-ipc';
 import { getTokenUsageSummary } from '../../src/db/token-usage';
 import type { TokenUsageSummaryInfo } from '../../src/shared/types';
 

@@ -1,6 +1,7 @@
 import {
   getEmbeddingModelName,
   loadEmbeddingConfig,
+  type EmbeddingApiConfig,
 } from '../models/embedding-config';
 import { awaitWithAbort, createLinkedTimeoutSignal } from '../agent/abort';
 
@@ -14,15 +15,78 @@ interface EmbeddingsResponse {
   data?: Array<{ embedding?: number[] }>;
 }
 
+function validateVectors(vectors: unknown, expectedCount: number): number[][] {
+  if (!Array.isArray(vectors) || vectors.length !== expectedCount) {
+    throw new Error('Embeddings API 返回数量异常');
+  }
+  let dimension: number | null = null;
+  for (const vector of vectors) {
+    if (!Array.isArray(vector) || vector.length === 0) {
+      throw new Error('Embeddings API 返回空向量');
+    }
+    if (!vector.every((value) => typeof value === 'number' && Number.isFinite(value))) {
+      throw new Error('Embeddings API 返回非法向量数值');
+    }
+    if (dimension == null) dimension = vector.length;
+    if (vector.length !== dimension) {
+      throw new Error('Embeddings API 返回向量维度不一致');
+    }
+  }
+  return vectors as number[][];
+}
+
 /** 百炼 DashScope embedding 单次 input 上限为 10 条 */
 const MAX_EMBEDDING_BATCH = 10;
 export const DEFAULT_EMBEDDING_TIMEOUT_MS = 30_000;
+export const MAX_EMBEDDING_RESPONSE_BYTES = 10 * 1024 * 1024;
+const MAX_EMBEDDING_ERROR_BYTES = 64 * 1024;
+
+async function readResponseTextBounded(response: Response, maxBytes: number): Promise<string> {
+  const declared = Number(response.headers?.get?.('content-length') ?? 0);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new Error('Embeddings API 响应超过大小上限');
+  }
+
+  if (!response.body?.getReader) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) {
+      throw new Error('Embeddings API 响应超过大小上限');
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error('Embeddings API 响应超过大小上限');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(joined);
+}
 
 async function requestEmbeddings(
   input: string[],
-  options?: { signal?: AbortSignal },
+  options: { signal?: AbortSignal; config: EmbeddingApiConfig },
 ): Promise<number[][]> {
-  const config = loadEmbeddingConfig();
+  const { config } = options;
   const timeout = createLinkedTimeoutSignal(options?.signal, DEFAULT_EMBEDDING_TIMEOUT_MS);
   try {
     const response = await awaitWithAbort(fetch(`${config.baseUrl}/embeddings`, {
@@ -39,16 +103,14 @@ async function requestEmbeddings(
     }), timeout.signal);
 
     if (!response.ok) {
-      const text = await response.text();
+      const text = await readResponseTextBounded(response, MAX_EMBEDDING_ERROR_BYTES);
       throw new Error(formatEmbeddingApiError(response.status, text));
     }
 
-    const data = (await response.json()) as EmbeddingsResponse;
-    const vectors = data.data?.map((d) => d.embedding).filter(Boolean) as number[][];
-    if (!vectors?.length || vectors.length !== input.length) {
-      throw new Error('Embeddings API 返回格式异常');
-    }
-    return vectors;
+    const data = response.body || typeof response.text === 'function'
+      ? JSON.parse(await readResponseTextBounded(response, MAX_EMBEDDING_RESPONSE_BYTES)) as EmbeddingsResponse
+      : await response.json() as EmbeddingsResponse;
+    return validateVectors(data.data?.map((item) => item.embedding), input.length);
   } catch (error) {
     if (timeout.didTimeout()) throw new Error('Embedding 请求超时');
     if (options?.signal?.aborted) throw new Error('已取消');
@@ -60,22 +122,35 @@ async function requestEmbeddings(
 
 export async function embedTexts(
   texts: string[],
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; config?: EmbeddingApiConfig },
 ): Promise<number[][]> {
   const trimmed = texts.map((t) => t.trim()).filter(Boolean);
   if (!trimmed.length) return [];
 
+  // One logical embedding operation must not mix endpoints, credentials or models
+  // when settings are changed while its batches are still in flight.
+  const config = options?.config ?? loadEmbeddingConfig();
   const results: number[][] = [];
+  let expectedDimension: number | null = null;
   for (let i = 0; i < trimmed.length; i += MAX_EMBEDDING_BATCH) {
     const batch = trimmed.slice(i, i + MAX_EMBEDDING_BATCH);
-    const vectors = await requestEmbeddings(batch, options);
+    const vectors = await requestEmbeddings(batch, { signal: options?.signal, config });
+    const batchDimension = vectors[0].length;
+    if (expectedDimension != null && batchDimension !== expectedDimension) {
+      throw new Error('Embeddings API 分批返回的向量维度不一致');
+    }
+    expectedDimension = batchDimension;
     results.push(...vectors);
   }
   return results;
 }
 
-export async function embedText(text: string, signal?: AbortSignal): Promise<number[]> {
-  const [vec] = await embedTexts([text], { signal });
+export async function embedText(
+  text: string,
+  signal?: AbortSignal,
+  config?: EmbeddingApiConfig,
+): Promise<number[]> {
+  const [vec] = await embedTexts([text], { signal, config });
   return vec;
 }
 
@@ -96,7 +171,7 @@ export function formatEmbeddingApiError(status: number, body: string): string {
       '且 API Key 与该业务空间一致。也可尝试 https://dashscope.aliyuncs.com/compatible-mode/v1'
     );
   }
-  return `Embeddings API ${status}: ${body}`;
+  return `Embeddings API ${status}：请求失败`;
 }
 
 export async function testEmbeddingConnection(): Promise<{

@@ -10,6 +10,7 @@ import {
   attachRendererNavigationGuards,
   getTrustedDevServerUrl,
 } from './security';
+import { safeSendToWebContents, sendWhenWebContentsReady } from './web-contents';
 
 export type WindowKind = 'chat' | 'status' | 'schedule' | 'call';
 
@@ -37,14 +38,20 @@ function loadWindowContent(win: BrowserWindow, kind: WindowKind): void {
   if (devServerUrl) {
     const base = devServerUrl;
     const url = kind === 'chat' ? base : `${base}?panel=${kind}`;
-    win.loadURL(url);
+    void win.loadURL(url).catch((error) => {
+      if (!win.isDestroyed()) console.error(`[window] ${kind} 页面加载失败:`, error);
+    });
     return;
   }
   const indexHtml = getRendererIndexPath();
   if (kind === 'chat') {
-    win.loadFile(indexHtml);
+    void win.loadFile(indexHtml).catch((error) => {
+      if (!win.isDestroyed()) console.error(`[window] ${kind} 页面加载失败:`, error);
+    });
   } else {
-    win.loadFile(indexHtml, { query: { panel: kind } });
+    void win.loadFile(indexHtml, { query: { panel: kind } }).catch((error) => {
+      if (!win.isDestroyed()) console.error(`[window] ${kind} 页面加载失败:`, error);
+    });
   }
 }
 
@@ -140,6 +147,7 @@ export class WindowManager {
 
     loadWindowContent(win, kind);
     win.once('ready-to-show', () => {
+      if (win.isDestroyed()) return;
       const clamped = clampBoundsToWorkArea(win.getBounds(), DEFAULT_BOUNDS[kind]);
       const current = win.getBounds();
       if (
@@ -285,13 +293,13 @@ export class WindowManager {
 
   broadcast(channel: string, payload: unknown): void {
     for (const wc of this.getAllWebContents()) {
-      wc.send(channel, payload);
+      safeSendToWebContents(wc, channel, payload);
     }
   }
 
   openChatSettings(): void {
     const win = this.show('chat');
-    win.webContents.send('chat:openSettings');
+    sendWhenWebContentsReady(win.webContents, 'chat:openSettings');
   }
 
   private attachPersistence(win: BrowserWindow, kind: WindowKind): void {

@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   insertMessage: vi.fn(),
   scheduleCompress: vi.fn(),
   scheduleMemory: vi.fn(),
+  recordTokenUsage: vi.fn(),
   assistantMode: 'focus' as 'focus' | 'organize' | 'review' | 'companion',
 }));
 
@@ -18,6 +19,13 @@ vi.mock('../loop', () => ({
     modelRuntime?: { model: string; protocol: string; profileId: string | null };
   }) {
     state.loopInput = input;
+    yield {
+      type: 'usage',
+      runId: input.runId,
+      promptTokens: 12,
+      completionTokens: 3,
+      cachedTokens: 2,
+    };
     yield { type: 'text_delta', runId: input.runId, delta: '模型回答' };
   },
 }));
@@ -67,6 +75,9 @@ vi.mock('../../session/active', () => ({
 vi.mock('../../db/repositories/messages', () => ({
   insertMessage: (...args: unknown[]) => state.insertMessage(...args),
 }));
+vi.mock('../../db/token-usage', () => ({
+  recordTokenUsage: (...args: unknown[]) => state.recordTokenUsage(...args),
+}));
 vi.mock('../../memory/summarizer', () => ({
   extractMemoriesFromSession: vi.fn(async () => 0),
   shouldAutoExtractMemories: vi.fn((_sessionId: string, _message: string, mode?: string) => mode !== 'companion'),
@@ -109,6 +120,7 @@ describe('orchestrator runtime boundaries', () => {
     state.insertMessage.mockReset();
     state.scheduleCompress.mockReset();
     state.scheduleMemory.mockReset();
+    state.recordTokenUsage.mockReset();
   });
 
   it('includes the current user turn without persisting voice transcripts', async () => {
@@ -131,6 +143,13 @@ describe('orchestrator runtime boundaries', () => {
       model: 'test-model',
       protocol: 'anthropic',
       profileId: 'profile-test',
+    });
+    expect(state.recordTokenUsage).toHaveBeenCalledWith({
+      sessionId: 'voice-session',
+      model: 'test-model',
+      promptTokens: 12,
+      completionTokens: 3,
+      cachedTokens: 2,
     });
     expect(state.insertMessage).not.toHaveBeenCalled();
     expect(state.scheduleCompress).not.toHaveBeenCalled();

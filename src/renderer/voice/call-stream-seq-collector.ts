@@ -27,6 +27,16 @@ export class SeqChunkCollector {
     return this.pending.size > 0;
   }
 
+  /** At terminal stream end, skip missing sequence numbers and drain what arrived. */
+  drainRemaining(): Uint8Array[] {
+    const entries = [...this.pending.entries()].sort(([a], [b]) => a - b);
+    this.pending.clear();
+    if (entries.length) {
+      this.nextSeq = entries.at(-1)![0] + 1;
+    }
+    return entries.map(([, audio]) => new Uint8Array(audio));
+  }
+
   clear(): void {
     this.pending.clear();
   }

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { getWorkspaceDir } from '../config/paths';
 import {
   MAX_WORKSPACE_IMPORT_BYTES,
@@ -15,6 +16,29 @@ export interface WorkspaceImportResult {
   size: number;
 }
 
+export interface WorkspaceImportRecoveryResult {
+  cleaned: number;
+  retained: number;
+}
+
+const IMPORT_TEMP_PREFIX = '.shorekeeper-import-';
+
+export async function recoverWorkspaceImportTemps(): Promise<WorkspaceImportRecoveryResult> {
+  const root = ensureWorkspace();
+  const result: WorkspaceImportRecoveryResult = { cleaned: 0, retained: 0 };
+  const entries = await fsPromises.readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.name.startsWith(IMPORT_TEMP_PREFIX) || !entry.name.endsWith('.tmp')) continue;
+    if (!entry.isFile()) {
+      result.retained += 1;
+      continue;
+    }
+    await fsPromises.unlink(path.join(root, entry.name));
+    result.cleaned += 1;
+  }
+  return result;
+}
+
 function ensureWorkspace(): string {
   const root = path.resolve(getWorkspaceDir());
   fs.mkdirSync(root, { recursive: true });
@@ -25,26 +49,81 @@ export function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"|?*\\]/g, '_').replace(/\.\./g, '_').trim() || 'file';
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
+async function readBoundedFile(filePath: string, maxBytes: number): Promise<Buffer> {
+  const handle = await fsPromises.open(filePath, 'r');
   try {
-    await fsPromises.access(filePath);
-    return true;
-  } catch {
-    return false;
+    const stat = await handle.stat();
+    if (!stat.isFile()) throw new Error('不是有效文件');
+    if (stat.size > maxBytes) {
+      throw new Error(`文件超过 ${maxBytes / (1024 * 1024)}MB 上限`);
+    }
+
+    const chunks: Buffer[] = [];
+    let total = 0;
+    while (true) {
+      const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes + 1 - total));
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
+      if (!bytesRead) break;
+      total += bytesRead;
+      if (total > maxBytes) {
+        throw new Error(`文件超过 ${maxBytes / (1024 * 1024)}MB 上限`);
+      }
+      chunks.push(chunk.subarray(0, bytesRead));
+    }
+    return Buffer.concat(chunks, total);
+  } finally {
+    await handle.close();
+  }
+}
+
+async function writeCompleteImport(
+  root: string,
+  safeBase: string,
+  content: Buffer,
+): Promise<string> {
+  const parsed = path.parse(safeBase);
+  const tempPath = path.join(root, `${IMPORT_TEMP_PREFIX}${randomUUID()}.tmp`);
+  let linkedPath: string | null = null;
+  try {
+    const handle = await fsPromises.open(tempPath, 'wx');
+    try {
+      await handle.writeFile(content);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+
+    for (let counter = 0; ; counter += 1) {
+      const destName = counter === 0 ? safeBase : `${parsed.name}_${counter}${parsed.ext}`;
+      const destPath = path.join(root, destName);
+      try {
+        // Linking a fully-written temporary file makes name allocation atomic and
+        // prevents two concurrent imports from overwriting one another.
+        await fsPromises.link(tempPath, destPath);
+        linkedPath = destPath;
+        const written = await fsPromises.readFile(destPath);
+        if (!written.equals(content)) throw new Error('工作区文件写入校验失败');
+        return destName;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue;
+        if (linkedPath === destPath) {
+          await fsPromises.unlink(destPath).catch(() => undefined);
+          linkedPath = null;
+        }
+        throw error;
+      }
+    }
+  } finally {
+    await fsPromises.unlink(tempPath).catch((error) => {
+      console.warn('[workspace] 临时导入文件清理失败:', tempPath, error);
+    });
   }
 }
 
 export async function importFileToWorkspace(sourcePath: string): Promise<WorkspaceImportResult> {
   const root = ensureWorkspace();
-  const resolvedSource = path.resolve(sourcePath);
-
-  const stat = await fsPromises.stat(resolvedSource);
-  if (!stat.isFile()) {
-    throw new Error('不是有效文件');
-  }
-  if (stat.size > MAX_WORKSPACE_IMPORT_BYTES) {
-    throw new Error(`文件超过 ${MAX_WORKSPACE_IMPORT_BYTES / (1024 * 1024)}MB 上限`);
-  }
+  const resolvedSource = await fsPromises.realpath(path.resolve(sourcePath));
+  const content = await readBoundedFile(resolvedSource, MAX_WORKSPACE_IMPORT_BYTES);
 
   const ext = path.extname(resolvedSource).toLowerCase();
   if (ext && !WORKSPACE_IMPORT_EXTENSIONS.has(ext)) {
@@ -53,21 +132,9 @@ export async function importFileToWorkspace(sourcePath: string): Promise<Workspa
 
   const originalName = path.basename(resolvedSource);
   const safeBase = sanitizeFilename(originalName);
-  const parsed = path.parse(safeBase);
-  let destName = safeBase;
-  let destPath = path.join(root, destName);
-  let counter = 1;
+  const destName = await writeCompleteImport(root, safeBase, content);
 
-  while (await fileExists(destPath)) {
-    destName = `${parsed.name}_${counter}${parsed.ext}`;
-    destPath = path.join(root, destName);
-    counter += 1;
-  }
-
-  await fsPromises.copyFile(resolvedSource, destPath);
-
-  const relativePath = path.relative(root, destPath).replace(/\\/g, '/');
-  return { relativePath, originalName, size: stat.size };
+  return { relativePath: destName, originalName, size: content.byteLength };
 }
 
 export function formatAttachmentsForMessage(

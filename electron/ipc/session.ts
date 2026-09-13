@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { trustedIpcMain as ipcMain } from './trusted-ipc';
 import { getDatabasePath } from '../../src/config/paths';
 import { resolveDatabaseRuntime } from '../../src/db/engine-state';
 import { getModelConfigSafe, getModelSettingsInfo } from '../../src/models/config';
@@ -15,6 +15,13 @@ import { isSessionRunActive } from '../../src/agent/session-run-lock';
 import { getActiveSession, getActiveSessionId, resetActiveSession, switchActiveSession } from '../../src/session/active';
 import { listMessages } from '../../src/db/repositories/messages';
 import type { AppStatus, AssistantMode, DeleteEmptySessionsResult, MessageInfo, SessionDeleteResult, SessionInfo, SessionListOptions, SessionListResult } from '../../src/shared/types';
+import {
+  requireBoolean,
+  requireEnum,
+  requireFiniteNumber,
+  requireRecord,
+  requireString,
+} from '../../src/shared/ipc-validation';
 
 const SESSION_BUSY_ERROR = '该会话正在处理消息';
 
@@ -52,7 +59,22 @@ export function registerSessionIpc() {
   ipcMain.handle(
     'sessions:list',
     (_event, options?: SessionListOptions): SessionListResult => {
-      const result = listSessions(options ?? {});
+      const input = options === undefined ? {} : requireRecord(options, '会话列表参数');
+      const normalized: SessionListOptions = {
+        includeArchived: input.includeArchived === undefined
+          ? undefined
+          : requireBoolean(input.includeArchived, 'includeArchived'),
+        query: input.query === undefined
+          ? undefined
+          : requireString(input.query, '搜索词', { allowEmpty: true, maxLength: 1_000 }),
+        limit: input.limit === undefined
+          ? undefined
+          : Math.floor(requireFiniteNumber(input.limit, 'limit', { min: 1, max: 200 })),
+        offset: input.offset === undefined
+          ? undefined
+          : Math.floor(requireFiniteNumber(input.offset, 'offset', { min: 0, max: 1_000_000 })),
+      };
+      const result = listSessions(normalized);
       return {
         items: result.sessions.map(toSessionInfo),
         total: result.total,
@@ -71,13 +93,15 @@ export function registerSessionIpc() {
     return toSessionInfo(session);
   });
 
-  ipcMain.handle('sessions:switch', (_event, id: string): SessionInfo => {
+  ipcMain.handle('sessions:switch', (_event, rawId: unknown): SessionInfo => {
+    const id = requireString(rawId, '会话 ID', { maxLength: 200 });
     assertSessionNotBusy(id);
     const session = switchActiveSession(id);
     return toSessionInfo(session);
   });
 
-  ipcMain.handle('sessions:delete', (_event, id: string): SessionDeleteResult => {
+  ipcMain.handle('sessions:delete', (_event, rawId: unknown): SessionDeleteResult => {
+    const id = requireString(rawId, '会话 ID', { maxLength: 200 });
     if (isSessionRunActive(id)) {
       return { ok: false, error: SESSION_BUSY_ERROR, busy: true };
     }
@@ -99,7 +123,9 @@ export function registerSessionIpc() {
     return deleteEmptySessions({ keepSessionId: keepId, excludeSessionIds: excludeIds });
   });
 
-  ipcMain.handle('sessions:archive', (_event, id: string, archived: boolean): SessionInfo => {
+  ipcMain.handle('sessions:archive', (_event, rawId: unknown, rawArchived: unknown): SessionInfo => {
+    const id = requireString(rawId, '会话 ID', { maxLength: 200 });
+    const archived = requireBoolean(rawArchived, 'archived');
     assertSessionNotBusy(id);
     setSessionArchived(id, archived);
     if (archived && getActiveSessionId() === id) {
@@ -115,7 +141,13 @@ export function registerSessionIpc() {
     return toSessionInfo(session);
   });
 
-  ipcMain.handle('sessions:setMode', (_event, id: string, mode: AssistantMode): SessionInfo => {
+  ipcMain.handle('sessions:setMode', (_event, rawId: unknown, rawMode: unknown): SessionInfo => {
+    const id = requireString(rawId, '会话 ID', { maxLength: 200 });
+    const mode = requireEnum(
+      rawMode,
+      '助手模式',
+      ['focus', 'organize', 'review', 'companion'] as const,
+    ) as AssistantMode;
     assertSessionNotBusy(id);
     if (!getSession(id)) throw new Error('会话不存在');
     setSessionAssistantMode(id, normalizeAssistantMode(mode));
@@ -124,7 +156,8 @@ export function registerSessionIpc() {
     return toSessionInfo(session);
   });
 
-  ipcMain.handle('messages:list', (_event, sessionId: string): MessageInfo[] => {
+  ipcMain.handle('messages:list', (_event, rawSessionId: unknown): MessageInfo[] => {
+    const sessionId = requireString(rawSessionId, '会话 ID', { maxLength: 200 });
     return listMessages(sessionId).map((m) => ({
       id: m.id,
       sessionId: m.sessionId,

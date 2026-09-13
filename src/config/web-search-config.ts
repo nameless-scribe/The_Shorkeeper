@@ -59,10 +59,6 @@ export function saveWebSearchSettings(patch: WebSearchSettingsPatch): WebSearchS
   if (patch.apiKey !== undefined && patch.apiKey.trim()) {
     current.apiKey = patch.apiKey.trim();
   }
-  try {
-    saveStored(current);
-  } catch {
-    // DB 未就绪时忽略持久化；运行时仍可用 .env
-  }
+  saveStored(current);
   return getWebSearchSettingsInfo();
 }

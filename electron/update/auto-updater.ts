@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { app, dialog } from 'electron';
 import type { AppUpdater } from 'electron-updater';
 import type { UpdateInfo as SharedUpdateInfo } from '../../src/shared/types';
-import { setAppQuitting } from '../tray';
+import { isAppQuitting, setAppQuitting } from '../tray';
 import { broadcastToAllRendererWindows } from '../windows/broadcast';
 
 declare const __SIGNED_UPDATE_BUILD__: boolean;
@@ -11,6 +11,8 @@ const require = createRequire(import.meta.url);
 const STARTUP_CHECK_DELAY_MS = 8_000;
 
 let autoUpdater: AppUpdater | null = null;
+let startupCheckTimer: ReturnType<typeof setTimeout> | null = null;
+let removeUpdaterListeners: (() => void) | null = null;
 
 function getAutoUpdater(): AppUpdater {
   if (!autoUpdater) {
@@ -73,37 +75,37 @@ export async function checkForAppUpdates(): Promise<SharedUpdateInfo> {
   }
 }
 
-function attachAutoUpdaterListeners(updater: AppUpdater): void {
-  updater.on('checking-for-update', () => {
+function attachAutoUpdaterListeners(updater: AppUpdater): () => void {
+  const onChecking = () => {
     setState({ status: 'checking', error: undefined });
-  });
+  };
 
-  updater.on('update-available', (info) => {
+  const onAvailable = (info: { version: string }) => {
     setState({
       status: 'available',
       version: info.version,
       progress: 0,
       error: undefined,
     });
-  });
+  };
 
-  updater.on('update-not-available', (info) => {
+  const onNotAvailable = (info: { version: string }) => {
     setState({
       status: 'not-available',
       version: info.version,
       progress: undefined,
       error: undefined,
     });
-  });
+  };
 
-  updater.on('download-progress', (progress) => {
+  const onDownloadProgress = (progress: { percent: number }) => {
     setState({
       status: 'downloading',
       progress: Math.round(progress.percent),
     });
-  });
+  };
 
-  updater.on('update-downloaded', (info) => {
+  const onDownloaded = (info: { version: string }) => {
     setState({
       status: 'downloaded',
       version: info.version,
@@ -122,18 +124,37 @@ function attachAutoUpdaterListeners(updater: AppUpdater): void {
         cancelId: 1,
       })
       .then(({ response }) => {
-        if (response === 0) {
+        if (response === 0 && !isAppQuitting()) {
           quitAndInstallUpdate();
         }
+      })
+      .catch((error) => {
+        if (!isAppQuitting()) console.error('[update] 更新对话框失败:', error);
       });
-  });
+  };
 
-  updater.on('error', (err) => {
+  const onError = (err: Error) => {
     setState({
       status: 'error',
       error: err.message,
     });
-  });
+  };
+
+  updater.on('checking-for-update', onChecking);
+  updater.on('update-available', onAvailable);
+  updater.on('update-not-available', onNotAvailable);
+  updater.on('download-progress', onDownloadProgress);
+  updater.on('update-downloaded', onDownloaded);
+  updater.on('error', onError);
+
+  return () => {
+    updater.removeListener('checking-for-update', onChecking);
+    updater.removeListener('update-available', onAvailable);
+    updater.removeListener('update-not-available', onNotAvailable);
+    updater.removeListener('download-progress', onDownloadProgress);
+    updater.removeListener('update-downloaded', onDownloaded);
+    updater.removeListener('error', onError);
+  };
 }
 
 export function initAutoUpdater(): void {
@@ -151,11 +172,23 @@ export function initAutoUpdater(): void {
   updater.autoInstallOnAppQuit = true;
   updater.allowDowngrade = false;
 
-  attachAutoUpdaterListeners(updater);
+  if (removeUpdaterListeners) return;
+  removeUpdaterListeners = attachAutoUpdaterListeners(updater);
 
-  setTimeout(() => {
+  startupCheckTimer = setTimeout(() => {
+    startupCheckTimer = null;
+    if (isAppQuitting()) return;
     void checkForAppUpdates().catch((err) => {
       console.error('[update] 启动检查失败:', err);
     });
   }, STARTUP_CHECK_DELAY_MS);
+}
+
+export function shutdownAutoUpdaterRuntime(): void {
+  if (startupCheckTimer) {
+    clearTimeout(startupCheckTimer);
+    startupCheckTimer = null;
+  }
+  removeUpdaterListeners?.();
+  removeUpdaterListeners = null;
 }

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getWorkspaceDir } from '../config/paths';
-import { getEmbeddingModelName } from '../models/embedding-config';
+import { loadEmbeddingConfig } from '../models/embedding-config';
+import { AbortSignalError } from '../agent/abort';
 import { CHUNK_OVERLAP, CHUNK_SIZE, splitIntoChunks } from './chunker';
 import { embedText, embedTexts } from './embedding';
 import { retryEmbeddingOperation } from './embedding-retry';
@@ -44,6 +45,8 @@ export interface ImportTextOptions {
   title?: string;
 }
 
+export const MAX_KNOWLEDGE_TEXT_BYTES = 10 * 1024 * 1024;
+
 let importQueue: Promise<void> = Promise.resolve();
 
 export function importTextAsKnowledge(
@@ -68,8 +71,13 @@ async function importTextAsKnowledgeUnlocked(
   onProgress?: (p: ImportProgress) => void,
   options?: ImportTextOptions,
 ): Promise<DocumentInfo> {
+  if (options?.signal?.aborted) throw new AbortSignalError();
+
   const normalized = text.trim();
   if (!normalized) throw new Error('内容为空');
+  if (Buffer.byteLength(normalized, 'utf8') > MAX_KNOWLEDGE_TEXT_BYTES) {
+    throw new Error('知识库文本超过 10MB 上限');
+  }
 
   onProgress?.({ phase: 'reading' });
 
@@ -110,6 +118,7 @@ async function importTextAsKnowledgeUnlocked(
   const mimeType = ext === '.md' ? 'text/markdown' : 'text/plain';
   let pendingDocument: DocumentInfo;
   try {
+    if (options?.signal?.aborted) throw new AbortSignalError();
     pendingDocument = insertDocumentWithChunks({
       filename: safeName,
       filepath: relativePath,
@@ -140,6 +149,7 @@ async function importTextAsKnowledgeUnlocked(
 
   let importedDocument: DocumentInfo;
   try {
+    const embeddingConfig = loadEmbeddingConfig();
     const docEmbedInput = `${safeName}\n${summary}`;
     const reportRetry = ({ attempt, maxAttempts, error }: {
       attempt: number;
@@ -156,7 +166,7 @@ async function importTextAsKnowledgeUnlocked(
       });
     };
     const docVec = await retryEmbeddingOperation(
-      () => embedText(docEmbedInput, options?.signal),
+      () => embedText(docEmbedInput, options?.signal, embeddingConfig),
       { signal: options?.signal, onRetry: reportRetry },
     );
     const docEmbedding = serializeEmbedding(docVec);
@@ -170,9 +180,13 @@ async function importTextAsKnowledgeUnlocked(
     let embeddingDim = 0;
 
     for (let i = 0; i < textChunks.length; i += BATCH) {
+      if (options?.signal?.aborted) throw new AbortSignalError();
       const batch = textChunks.slice(i, i + BATCH);
       const vectors = await retryEmbeddingOperation(
-        () => embedTexts(batch.map((c) => c.embedText), { signal: options?.signal }),
+        () => embedTexts(batch.map((c) => c.embedText), {
+          signal: options?.signal,
+          config: embeddingConfig,
+        }),
         {
           signal: options?.signal,
           onRetry: ({ attempt, maxAttempts, error }) => {
@@ -202,8 +216,9 @@ async function importTextAsKnowledgeUnlocked(
       });
     }
 
+    if (options?.signal?.aborted) throw new AbortSignalError();
     replaceDocumentChunks(pendingDocument.id, embeddedChunks, {
-      embeddingModel: getEmbeddingModelName(),
+      embeddingModel: embeddingConfig.model,
       embeddingDim,
       summary,
       outline,
@@ -215,9 +230,12 @@ async function importTextAsKnowledgeUnlocked(
     importedDocument = getDocument(pendingDocument.id)!;
   } catch (error) {
     try {
-      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = options?.signal?.aborted;
+      const message = cancelled
+        ? '导入已取消，请重新构建索引'
+        : error instanceof Error ? error.message : String(error);
       updateDocumentMeta(pendingDocument.id, {
-        status: 'index_failed',
+        status: cancelled ? 'needs_rebuild' : 'index_failed',
         statusError: message.slice(0, 500),
       });
     } catch (statusError) {

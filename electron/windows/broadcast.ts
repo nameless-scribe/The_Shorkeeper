@@ -1,5 +1,6 @@
 import { getDockWindow } from './dock';
 import { getWindowManager } from './manager';
+import { safeSendToWebContents } from './web-contents';
 
 /** 向主面板与 Dock 悬浮窗广播 IPC 事件 */
 export function broadcastToAllRendererWindows(channel: string, payload: unknown): void {
@@ -7,6 +8,6 @@ export function broadcastToAllRendererWindows(channel: string, payload: unknown)
 
   const dock = getDockWindow();
   if (dock && !dock.isDestroyed()) {
-    dock.webContents.send(channel, payload);
+    safeSendToWebContents(dock.webContents, channel, payload);
   }
 }

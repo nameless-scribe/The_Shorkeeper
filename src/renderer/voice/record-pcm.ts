@@ -5,6 +5,7 @@
  */
 
 const TARGET_SAMPLE_RATE = 16000;
+export const MAX_BUFFERED_PCM_SAMPLES = TARGET_SAMPLE_RATE * 5 * 60;
 
 /** Inline AudioWorklet: forwards every input frame to the main thread untouched. */
 const WORKLET_SOURCE = `
@@ -24,6 +25,9 @@ registerProcessor('pcm-collector', PcmCollector);
 export interface PcmRecordingOptions {
   /** Called with Int16 PCM for each captured frame (after Float32→Int16). */
   onPcmFrame?: (pcm: ArrayBuffer) => void;
+  /** Streaming STT does not need to retain a second in-memory copy. */
+  retainAudio?: boolean;
+  onError?: (message: string) => void;
 }
 
 export interface PcmRecorder {
@@ -114,9 +118,18 @@ export async function startPcmRecording(options: PcmRecordingOptions = {}): Prom
   let done = false;
 
   worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
+    if (done) return;
     const frame = event.data;
-    frames.push(frame);
-    totalSamples += frame.length;
+    if (options.retainAudio !== false) {
+      if (totalSamples + frame.length > MAX_BUFFERED_PCM_SAMPLES) {
+        done = true;
+        teardown();
+        options.onError?.('单次录音超过 5 分钟，已自动停止');
+        return;
+      }
+      frames.push(frame);
+      totalSamples += frame.length;
+    }
 
     let sumSquares = 0;
     for (let i = 0; i < frame.length; i += 1) sumSquares += frame[i] * frame[i];
@@ -142,7 +155,7 @@ export async function startPcmRecording(options: PcmRecordingOptions = {}): Prom
       // already disconnected
     }
     stream.getTracks().forEach((t) => t.stop());
-    void ctx.close();
+    void ctx.close().catch(() => undefined);
   };
 
   return {

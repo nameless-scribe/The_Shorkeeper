@@ -27,8 +27,8 @@ export interface VadControllerOptions {
 export interface VadController {
   start(): Promise<void>;
   pause(): Promise<void>;
-  /** Update frame-processor options (e.g. threshold) while running. */
-  setThreshold(threshold: number): void;
+  /** Update frame-processor options while running. */
+  configure(threshold: number, redemptionMs: number): void;
   destroy(): Promise<void>;
 }
 
@@ -37,6 +37,15 @@ export async function createVadController(options: VadControllerOptions): Promis
   let micVad: MicVAD | null = null;
 
   try {
+    const runCallback = (callback: () => void | Promise<void>) => {
+      try {
+        void Promise.resolve(callback()).catch((error) => {
+          options.onError?.(error instanceof Error ? error.message : String(error));
+        });
+      } catch (error) {
+        options.onError?.(error instanceof Error ? error.message : String(error));
+      }
+    };
     micVad = await MicVAD.new({
       baseAssetPath: assetBase,
       onnxWASMBasePath: assetBase,
@@ -48,10 +57,10 @@ export async function createVadController(options: VadControllerOptions): Promis
         ort.env.wasm.numThreads = 1;
       },
       onSpeechStart: () => {
-        void options.onSpeechStart();
+        runCallback(options.onSpeechStart);
       },
       onSpeechEnd: () => {
-        void options.onSpeechEnd();
+        runCallback(options.onSpeechEnd);
       },
     });
   } catch (err) {
@@ -62,6 +71,8 @@ export async function createVadController(options: VadControllerOptions): Promis
 
   if (micVad.errored) {
     const message = micVad.errored;
+    await micVad.destroy().catch(() => undefined);
+    micVad = null;
     options.onError?.(message);
     throw new Error(message);
   }
@@ -75,8 +86,11 @@ export async function createVadController(options: VadControllerOptions): Promis
       if (!micVad) return;
       await micVad.pause();
     },
-    setThreshold(threshold: number) {
-      micVad?.setOptions({ positiveSpeechThreshold: threshold });
+    configure(threshold: number, redemptionMs: number) {
+      micVad?.setOptions({
+        positiveSpeechThreshold: threshold,
+        redemptionMs,
+      });
     },
     async destroy() {
       if (!micVad) return;

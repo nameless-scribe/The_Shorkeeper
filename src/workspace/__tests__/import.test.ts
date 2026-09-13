@@ -3,7 +3,7 @@ import {
   WORKSPACE_IMPORT_EXTENSIONS,
   workspaceFileToolHint,
 } from '../allowed-extensions';
-import { importFileToWorkspace } from '../import';
+import { importFileToWorkspace, recoverWorkspaceImportTemps } from '../import';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -53,5 +53,53 @@ describe('workspace import extensions', () => {
     const second = await importFileToWorkspace(source);
     expect(second.relativePath).toBe('sample_1.xlsx');
     expect(second.originalName).toBe('sample.xlsx');
+  });
+
+  it('allocates unique complete files for concurrent imports with the same name', async () => {
+    const source = path.join(sourceDir, 'concurrent.md');
+    const content = '# Concurrent import\n\n每个并发导入都必须完整。';
+    await fs.writeFile(source, content, 'utf-8');
+
+    const results = await Promise.all([
+      importFileToWorkspace(source),
+      importFileToWorkspace(source),
+      importFileToWorkspace(source),
+    ]);
+
+    expect(results.map((result) => result.relativePath).sort()).toEqual([
+      'concurrent.md',
+      'concurrent_1.md',
+      'concurrent_2.md',
+    ]);
+    await Promise.all(results.map(async (result) => {
+      await expect(fs.readFile(path.join(workspaceDir, result.relativePath), 'utf8'))
+        .resolves.toBe(content);
+    }));
+    expect((await fs.readdir(workspaceDir)).some((name) => name.startsWith('.shorekeeper-import-')))
+      .toBe(false);
+  });
+
+  it('rejects a source that grows beyond the import limit while being read', async () => {
+    const source = path.join(sourceDir, 'too-large.md');
+    const limit = 20 * 1024 * 1024;
+    await fs.writeFile(source, Buffer.alloc(limit + 1, 1));
+
+    await expect(importFileToWorkspace(source)).rejects.toThrow('文件超过 20MB 上限');
+    expect(await fs.readdir(workspaceDir)).toEqual([]);
+  });
+
+  it('cleans only managed import temporary files during startup recovery', async () => {
+    await fs.writeFile(path.join(workspaceDir, '.shorekeeper-import-crash.tmp'), 'partial');
+    await fs.writeFile(path.join(workspaceDir, 'user-file.tmp'), 'keep');
+    await fs.mkdir(path.join(workspaceDir, '.shorekeeper-import-directory.tmp'));
+
+    await expect(recoverWorkspaceImportTemps()).resolves.toEqual({
+      cleaned: 1,
+      retained: 1,
+    });
+    expect((await fs.readdir(workspaceDir)).sort()).toEqual([
+      '.shorekeeper-import-directory.tmp',
+      'user-file.tmp',
+    ]);
   });
 });

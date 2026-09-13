@@ -3,12 +3,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeDatabase, initDatabase, type AppDatabase } from '../../db';
-import { getDocumentIncludingDeleted } from '../../db/repositories/rag-documents';
+import {
+  deleteDocumentData,
+  getDocumentIncludingDeleted,
+} from '../../db/repositories/rag-documents';
 import { importDocumentFromPath, importTextAsKnowledge } from '../importer';
-import { deleteDocument, listDocuments } from '../documents';
+import { MAX_KNOWLEDGE_TEXT_BYTES } from '../text-import';
+import { deleteDocument, listDocuments, recoverKnowledgeTrash } from '../documents';
 import { reindexAllDocuments, reindexDocument } from '../reindex';
 import { embedText } from '../embedding';
 import { serializeEmbedding } from '../vector';
+import { saveEmbeddingSettings } from '../../models/embedding-config';
 
 vi.mock('../embedding', () => ({
   embedTexts: vi.fn(async (texts: string[]) =>
@@ -22,17 +27,22 @@ let db: AppDatabase;
 let tempDir: string;
 
 beforeEach(async () => {
+  vi.clearAllMocks();
   tempDir = path.join(os.tmpdir(), `sk-rag-test-${Date.now()}-${Math.random()}`);
   await fs.mkdir(tempDir, { recursive: true });
   process.env.SHOREKEEPER_WORKSPACE_DIR = tempDir;
 
   dbPath = path.join(tempDir, 'test.db');
   db = await initDatabase(dbPath);
+  vi.stubEnv('OPENAI_API_KEY', 'sk-rag-test-key');
+  vi.stubEnv('OPENAI_BASE_URL', 'https://rag-test.example.com/v1');
+  vi.stubEnv('EMBEDDING_MODEL', 'embedding-test');
 });
 
 afterEach(async () => {
   closeDatabase();
   delete process.env.SHOREKEEPER_WORKSPACE_DIR;
+  vi.unstubAllEnvs();
   await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
 });
 
@@ -101,6 +111,75 @@ describe('importDocumentFromPath', () => {
     expect(listDocuments()).toEqual([
       expect.objectContaining({ id: second.id, version: 2, status: 'indexed' }),
     ]);
+  });
+
+  it('does not start a queued import after it is cancelled', async () => {
+    let releaseFirst!: (value: number[]) => void;
+    const firstEmbedding = new Promise<number[]>((resolve) => {
+      releaseFirst = resolve;
+    });
+    vi.mocked(embedText).mockImplementationOnce(() => firstEmbedding);
+
+    const first = importTextAsKnowledge('# First queued\n\n占用导入队列。', 'first-queued.md');
+    await vi.waitFor(() => expect(embedText).toHaveBeenCalled());
+
+    const controller = new AbortController();
+    const second = importTextAsKnowledge(
+      '# Cancelled queued\n\n不应创建文件或文档。',
+      'cancelled-queued.md',
+      undefined,
+      { signal: controller.signal },
+    );
+    controller.abort();
+    releaseFirst([1, 0, 0, 0]);
+
+    await expect(first).resolves.toEqual(expect.objectContaining({ status: 'indexed' }));
+    await expect(second).rejects.toThrow('已取消');
+    expect(listDocuments()).toHaveLength(1);
+    expect(listDocuments()[0].filename).toBe('first-queued.md');
+  });
+
+  it('records the embedding model snapshot captured before an import starts', async () => {
+    saveEmbeddingSettings({
+      useChatApi: false,
+      baseUrl: 'https://embedding-a.example.com/v1',
+      apiKey: 'sk-embedding-a',
+      model: 'embedding-a',
+    });
+    let releaseEmbedding!: (value: number[]) => void;
+    const pendingEmbedding = new Promise<number[]>((resolve) => {
+      releaseEmbedding = resolve;
+    });
+    vi.mocked(embedText).mockImplementationOnce(() => pendingEmbedding);
+
+    const importing = importTextAsKnowledge(
+      '# Runtime snapshot\n\n一次导入只允许使用一份向量配置。',
+      'runtime-snapshot.md',
+    );
+    await vi.waitFor(() => expect(embedText).toHaveBeenCalled());
+
+    saveEmbeddingSettings({
+      useChatApi: false,
+      baseUrl: 'https://embedding-b.example.com/v1',
+      apiKey: 'sk-embedding-b',
+      model: 'embedding-b',
+    });
+    releaseEmbedding([1, 0, 0, 0]);
+
+    await expect(importing).resolves.toEqual(
+      expect.objectContaining({ embeddingModel: 'embedding-a' }),
+    );
+  });
+
+  it('applies the file-size limit to direct text imports as well', async () => {
+    const oversized = '界'.repeat(Math.floor(MAX_KNOWLEDGE_TEXT_BYTES / 3) + 1);
+
+    await expect(importTextAsKnowledge(oversized, 'oversized.md'))
+      .rejects.toThrow('知识库文本超过 10MB 上限');
+    expect(listDocuments()).toEqual([]);
+    await expect(fs.readdir(path.join(tempDir, 'knowledge'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 
   it('keeps the copied knowledge file and a retryable record when embedding fails', async () => {
@@ -190,6 +269,84 @@ describe('importDocumentFromPath', () => {
     await expect(fs.stat(knowledgePath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('serializes deletion behind an in-flight rebuild of the same document', async () => {
+    const source = path.join(tempDir, 'reindex-delete.md');
+    await fs.writeFile(source, '# Reindex then delete\n\n最终必须完整删除。', 'utf8');
+    const document = await importDocumentFromPath(source);
+    vi.clearAllMocks();
+
+    let releaseReindex!: (value: number[]) => void;
+    const pendingEmbedding = new Promise<number[]>((resolve) => {
+      releaseReindex = resolve;
+    });
+    vi.mocked(embedText).mockImplementationOnce(() => pendingEmbedding);
+
+    const rebuilding = reindexDocument(document.id);
+    await vi.waitFor(() => expect(embedText).toHaveBeenCalledOnce());
+    const deleting = deleteDocument(document.id);
+    await expect(Promise.race([
+      deleting.then(() => 'deleted'),
+      new Promise((resolve) => setTimeout(() => resolve('pending'), 10)),
+    ])).resolves.toBe('pending');
+
+    releaseReindex([1, 0, 0, 0]);
+    await expect(rebuilding).resolves.toEqual(expect.objectContaining({ status: 'indexed' }));
+    await expect(deleting).resolves.toBe(true);
+    expect(listDocuments()).toEqual([]);
+  });
+
+  it('rejects duplicate single-document and full rebuild requests while active', async () => {
+    const source = path.join(tempDir, 'duplicate-reindex.md');
+    await fs.writeFile(source, '# Duplicate rebuild\n\n重建不能重入。', 'utf8');
+    const document = await importDocumentFromPath(source);
+    vi.clearAllMocks();
+
+    let releaseReindex!: (value: number[]) => void;
+    const pendingEmbedding = new Promise<number[]>((resolve) => {
+      releaseReindex = resolve;
+    });
+    vi.mocked(embedText).mockImplementationOnce(() => pendingEmbedding);
+
+    const rebuilding = reindexDocument(document.id);
+    await vi.waitFor(() => expect(embedText).toHaveBeenCalledOnce());
+    await expect(reindexDocument(document.id)).rejects.toThrow('该文档正在重建');
+
+    const fullRebuild = reindexAllDocuments();
+    await expect(reindexAllDocuments()).rejects.toThrow('知识库正在执行全量重建');
+    releaseReindex([1, 0, 0, 0]);
+
+    await expect(rebuilding).resolves.toBeDefined();
+    await expect(fullRebuild).resolves.toEqual({ indexed: 1, failed: 0 });
+  });
+
+  it('leaves a cancelled rebuild retryable instead of marking it as a permanent failure', async () => {
+    const source = path.join(tempDir, 'cancel-reindex.md');
+    await fs.writeFile(source, '# Cancel rebuild\n\n取消后保留可重试状态。', 'utf8');
+    const document = await importDocumentFromPath(source);
+    vi.clearAllMocks();
+
+    let releaseReindex!: (value: number[]) => void;
+    const pendingEmbedding = new Promise<number[]>((resolve) => {
+      releaseReindex = resolve;
+    });
+    vi.mocked(embedText).mockImplementationOnce(() => pendingEmbedding);
+    const controller = new AbortController();
+
+    const rebuilding = reindexDocument(document.id, { signal: controller.signal });
+    await vi.waitFor(() => expect(embedText).toHaveBeenCalledOnce());
+    controller.abort();
+    releaseReindex([1, 0, 0, 0]);
+
+    await expect(rebuilding).rejects.toThrow('已取消');
+    expect(listDocuments()).toEqual([
+      expect.objectContaining({
+        id: document.id,
+        status: 'needs_rebuild',
+        statusError: '重建已取消，请稍后重试',
+      }),
+    ]);
+  });
+
   it('restores a quarantined file when the database delete rolls back', async () => {
     const source = path.join(tempDir, 'delete-rollback.md');
     await fs.writeFile(source, '# Keep\n\n数据库删除失败时必须恢复文件。', 'utf8');
@@ -208,6 +365,42 @@ describe('importDocumentFromPath', () => {
 
     expect(listDocuments().map((item) => item.id)).toContain(document.id);
     await expect(fs.stat(knowledgePath)).resolves.toBeDefined();
+  });
+
+  it('restores a quarantined file after a crash before the database delete', async () => {
+    const source = path.join(tempDir, 'trash-restore.md');
+    await fs.writeFile(source, '# Restore after crash\n\n数据库仍是活动状态。', 'utf8');
+    const document = await importDocumentFromPath(source);
+    const originalPath = path.resolve(tempDir, document.filepath);
+    const trashDir = path.join(tempDir, 'knowledge', '.trash');
+    await fs.mkdir(trashDir, { recursive: true });
+    await fs.rename(originalPath, path.join(trashDir, `${document.id}-crash`));
+
+    await expect(recoverKnowledgeTrash()).resolves.toEqual({
+      restored: 1,
+      cleaned: 0,
+      retained: 0,
+    });
+    await expect(fs.readFile(originalPath, 'utf8')).resolves.toContain('数据库仍是活动状态');
+  });
+
+  it('cleans quarantine after a crash following the database delete commit', async () => {
+    const source = path.join(tempDir, 'trash-clean.md');
+    await fs.writeFile(source, '# Clean after crash\n\n数据库已经删除。', 'utf8');
+    const document = await importDocumentFromPath(source);
+    const originalPath = path.resolve(tempDir, document.filepath);
+    const trashDir = path.join(tempDir, 'knowledge', '.trash');
+    const quarantinePath = path.join(trashDir, `${document.id}-crash`);
+    await fs.mkdir(trashDir, { recursive: true });
+    await fs.rename(originalPath, quarantinePath);
+    expect(deleteDocumentData(document.id, db)).toBe(true);
+
+    await expect(recoverKnowledgeTrash()).resolves.toEqual({
+      restored: 0,
+      cleaned: 1,
+      retained: 0,
+    });
+    await expect(fs.stat(quarantinePath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('rejects a trash directory symlink that escapes the workspace', async () => {

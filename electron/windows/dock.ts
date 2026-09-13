@@ -10,6 +10,7 @@ import {
   attachRendererNavigationGuards,
   getTrustedDevServerUrl,
 } from './security';
+import { sendWhenWebContentsReady } from './web-contents';
 
 const DOCK_WIDTH = 300;
 const DOCK_HEIGHT = 188;
@@ -32,10 +33,14 @@ function loadDockContent(win: BrowserWindow): void {
   const devServerUrl = getTrustedDevServerUrl();
   if (devServerUrl) {
     const params = new URLSearchParams(query);
-    win.loadURL(`${devServerUrl}?${params.toString()}`);
+    void win.loadURL(`${devServerUrl}?${params.toString()}`).catch((error) => {
+      if (!win.isDestroyed()) console.error('[window] Dock 页面加载失败:', error);
+    });
     return;
   }
-  win.loadFile(getRendererIndexPath(), { query });
+  void win.loadFile(getRendererIndexPath(), { query }).catch((error) => {
+    if (!win.isDestroyed()) console.error('[window] Dock 页面加载失败:', error);
+  });
 }
 
 function saveDockBounds(win: BrowserWindow): void {
@@ -125,7 +130,7 @@ export function showDockWindow(): void {
   applyDockPreferences(win);
   if (win.isVisible()) return;
   win.showInactive();
-  win.webContents.send('tasks:updated', { ts: Date.now() });
+  sendWhenWebContentsReady(win.webContents, 'tasks:updated', { ts: Date.now() });
 }
 
 export function refreshDockPreferences(): DockPreferences {

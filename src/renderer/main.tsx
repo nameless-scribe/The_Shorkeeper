@@ -1,16 +1,17 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
-import { ChatPage } from './ChatPage';
-import { StatusPage } from './status/StatusPage';
-import { SchedulePage } from './schedule/SchedulePage';
-import { ReminderPage } from './reminder/ReminderPage';
-import { DockPage } from './dock/DockPage';
-import { SplashPage } from './splash/SplashPage';
-import { CallStage } from './call/CallStage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RuntimeGate } from './components/RuntimeGate';
 import { ThemeProvider } from './theme/ThemeProvider';
 import './styles/globals.css';
+
+const ChatPage = lazy(() => import('./ChatPage').then((module) => ({ default: module.ChatPage })));
+const StatusPage = lazy(() => import('./status/StatusPage').then((module) => ({ default: module.StatusPage })));
+const SchedulePage = lazy(() => import('./schedule/SchedulePage').then((module) => ({ default: module.SchedulePage })));
+const ReminderPage = lazy(() => import('./reminder/ReminderPage').then((module) => ({ default: module.ReminderPage })));
+const DockPage = lazy(() => import('./dock/DockPage').then((module) => ({ default: module.DockPage })));
+const SplashPage = lazy(() => import('./splash/SplashPage').then((module) => ({ default: module.SplashPage })));
+const CallStage = lazy(() => import('./call/CallStage').then((module) => ({ default: module.CallStage })));
 
 function resolvePanel(): 'chat' | 'status' | 'schedule' | 'reminder' | 'dock' | 'splash' | 'call' {
   const panel = new URLSearchParams(window.location.search).get('panel');
@@ -49,12 +50,12 @@ const root = document.getElementById('root')!;
 
 const appTree =
   initialPanel === 'splash' ? (
-    <App />
+    <Suspense fallback={null}><App /></Suspense>
   ) : (
     <ErrorBoundary>
       <RuntimeGate>
         <ThemeProvider>
-          <App />
+          <Suspense fallback={null}><App /></Suspense>
         </ThemeProvider>
       </RuntimeGate>
     </ErrorBoundary>

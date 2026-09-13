@@ -1,4 +1,5 @@
-import { getPerformanceSettings } from '../config/performance';
+import { getPerformanceSettings, type PerformanceSettings } from '../config/performance';
+import { getEmbeddingModelName } from '../models/embedding-config';
 import { embedText } from './embedding';
 import { getCachedChunkEmbeddings, getChunkCacheVersion } from './chunk-cache';
 import { getCachedDocEmbeddings, getDocumentCount } from './doc-cache';
@@ -26,14 +27,39 @@ export interface RetrievedChunk {
 const DENSE_CANDIDATES = 20;
 const SPARSE_CANDIDATES = 20;
 const FTS_STRONG_THRESHOLD = -3.0;
+export const MAX_RAG_QUERY_CHARS = 4000;
+const MAX_RETRIEVAL_LIMIT = 20;
 const embeddingStore = new SqlJsEmbeddingStore();
 
 let lastRetrieveCache: {
   query: string;
   at: number;
   chunkCacheVersion: number;
+  settingsKey: string;
+  limit: number;
+  skipHyde: boolean;
   chunks: RetrievedChunk[];
 } | null = null;
+
+function retrievalSettingsKey(settings: PerformanceSettings): string {
+  return JSON.stringify({
+    minScore: settings.ragMinScore,
+    maxPerDocument: settings.ragMaxChunksPerDoc,
+    neighborWindow: settings.ragNeighborWindow,
+    ftsFirst: settings.ragFtsFirst,
+    docRouteTopK: settings.ragDocRouteTopK,
+    docRouteMinDocs: settings.ragDocRouteMinDocs,
+    rerankEnabled: settings.ragRerankEnabled,
+    rerankTopK: settings.ragRerankTopK,
+    hydeEnabled: settings.ragHydeEnabled,
+    embeddingModel: getEmbeddingModelName(),
+  });
+}
+
+function normalizeRetrievalLimit(limit: number): number {
+  if (!Number.isFinite(limit)) return 5;
+  return Math.max(1, Math.min(MAX_RETRIEVAL_LIMIT, Math.floor(limit)));
+}
 
 type ChunkCandidate = {
   id: string;
@@ -136,10 +162,10 @@ async function retrieveHybridInternal(
   trimmed: string,
   limit: number,
   skipEmbed: boolean,
+  settings: PerformanceSettings,
   queryVecOverride?: Float32Array,
   signal?: AbortSignal,
 ): Promise<RetrievedChunk[]> {
-  const settings = getPerformanceSettings();
   const minScore = settings.ragMinScore;
   const maxPerDocument = settings.ragMaxChunksPerDoc;
   const neighborWindow = settings.ragNeighborWindow;
@@ -235,13 +261,6 @@ async function retrieveHybridInternal(
     result = result.slice(0, limit);
   }
 
-  for (let i = 0; i < result.length; i++) {
-    const src = diverse[i];
-    if (src) {
-      result[i].score = sparseHits.length ? src.rrfScore : src.denseScore;
-    }
-  }
-
   return result;
 }
 
@@ -250,28 +269,34 @@ export async function retrieveRelevantChunks(
   limit = 5,
   options?: { skipCache?: boolean; skipHyde?: boolean; signal?: AbortSignal },
 ): Promise<RetrievedChunk[]> {
-  const trimmed = query.trim();
+  const trimmed = query.trim().slice(0, MAX_RAG_QUERY_CHARS);
   if (!trimmed) return [];
+  const normalizedLimit = normalizeRetrievalLimit(limit);
+  const settings = getPerformanceSettings();
+  const settingsKey = retrievalSettingsKey(settings);
+  const skipHyde = Boolean(options?.skipHyde);
 
   if (
     !options?.skipCache &&
     lastRetrieveCache &&
     lastRetrieveCache.query === trimmed &&
     lastRetrieveCache.chunkCacheVersion === getChunkCacheVersion() &&
+    lastRetrieveCache.settingsKey === settingsKey &&
+    lastRetrieveCache.limit === normalizedLimit &&
+    lastRetrieveCache.skipHyde === skipHyde &&
     Date.now() - lastRetrieveCache.at < 60_000
   ) {
-    return lastRetrieveCache.chunks.slice(0, limit);
+    return lastRetrieveCache.chunks.slice();
   }
   const retrievalCacheVersion = getChunkCacheVersion();
 
-  const settings = getPerformanceSettings();
   const maxPerDocument = settings.ragMaxChunksPerDoc;
   const neighborWindow = settings.ragNeighborWindow;
 
   if (settings.ragFtsFirst) {
     const sparseHits = searchChunksFts(trimmed, SPARSE_CANDIDATES);
     if (isFtsStrongHit(sparseHits, FTS_STRONG_THRESHOLD)) {
-      let sparseResults = sparseHitsToCandidates(sparseHits, limit, maxPerDocument);
+      let sparseResults = sparseHitsToCandidates(sparseHits, normalizedLimit, maxPerDocument);
       if (neighborWindow > 0) {
         sparseResults = sparseResults.map((hit) => ({
           ...hit,
@@ -288,20 +313,37 @@ export async function retrieveRelevantChunks(
         query: trimmed,
         at: Date.now(),
         chunkCacheVersion: retrievalCacheVersion,
+        settingsKey,
+        limit: normalizedLimit,
+        skipHyde,
         chunks: sparseResults,
       };
       return sparseResults;
     }
   }
 
-  let result = await retrieveHybridInternal(trimmed, limit, false, undefined, options?.signal);
+  let result = await retrieveHybridInternal(
+    trimmed,
+    normalizedLimit,
+    false,
+    settings,
+    undefined,
+    options?.signal,
+  );
 
-  if (!result.length && settings.ragHydeEnabled && !options?.skipHyde) {
+  if (!result.length && settings.ragHydeEnabled && !skipHyde) {
     try {
       const hydeQuery = await generateHydeQuery(trimmed, options?.signal);
       if (hydeQuery && hydeQuery !== trimmed) {
         const hydeVec = new Float32Array(await embedText(hydeQuery, options?.signal));
-        result = await retrieveHybridInternal(trimmed, limit, true, hydeVec, options?.signal);
+        result = await retrieveHybridInternal(
+          trimmed,
+          normalizedLimit,
+          true,
+          settings,
+          hydeVec,
+          options?.signal,
+        );
       }
     } catch {
       if (options?.signal?.aborted) throw new Error('已取消');
@@ -314,6 +356,9 @@ export async function retrieveRelevantChunks(
     query: trimmed,
     at: Date.now(),
     chunkCacheVersion: retrievalCacheVersion,
+    settingsKey,
+    limit: normalizedLimit,
+    skipHyde,
     chunks: result,
   };
   return result;

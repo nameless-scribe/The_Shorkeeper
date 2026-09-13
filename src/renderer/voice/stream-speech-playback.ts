@@ -1,9 +1,9 @@
-import type { SpeechPlanStep } from '@/voice/text-for-speech';
+import type { SpeechPlanStep } from '../../voice/text-for-speech';
 import {
   hasSpeakableCharacters,
   planStreamingSpeechFromMessage,
   prepareChunkForTts,
-} from '@/voice/text-for-speech';
+} from '../../voice/text-for-speech';
 import { playAudioWithGain } from './play-audio';
 
 type PrefetchState = {
@@ -18,15 +18,17 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
       return;
     }
 
-    const timer = setTimeout(() => resolve(), ms);
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(new DOMException('Aborted', 'AbortError'));
-      },
-      { once: true },
-    );
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -41,11 +43,37 @@ function playAudioAndWait(
       return;
     }
 
-    void playAudioWithGain(data, gain, resolve)
+    let playbackHandle: { stop: () => void } | null = null;
+    let settled = false;
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => {
+      playbackHandle?.stop();
+      fail(new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    void playAudioWithGain(data, gain, finish)
       .then((handle) => {
-        signal.addEventListener('abort', () => handle.stop(), { once: true });
+        if (settled || signal.aborted) {
+          handle.stop();
+          onAbort();
+          return;
+        }
+        playbackHandle = handle;
       })
-      .catch(reject);
+      .catch(fail);
   });
 }
 
@@ -96,8 +124,8 @@ export async function streamSpeechPlayback(
   callbacks.onLoading();
 
   void (async () => {
+    let prefetch: PrefetchState | null = null;
     try {
-      let prefetch: PrefetchState | null = null;
       let startedPlayback = false;
 
       for (let i = 0; i < plan.length; i += 1) {
@@ -143,6 +171,10 @@ export async function streamSpeechPlayback(
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       callbacks.onError(err instanceof Error ? err.message : '朗读失败');
+    } finally {
+      // A prefetched IPC request cannot currently be cancelled. Always attach a
+      // rejection sink when playback ends before that request is consumed.
+      void prefetch?.promise.catch(() => undefined);
     }
   })();
 

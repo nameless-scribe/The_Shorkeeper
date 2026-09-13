@@ -158,4 +158,23 @@ describe('createTtsStreamSession', () => {
     expect(chunks).toEqual([]);
     expect(socket.closed).toBe(true);
   });
+
+  it('treats a close after start but before finish as a failure', async () => {
+    const { factory, getSocket } = makeFactory();
+    const onError = vi.fn();
+    const sessionPromise = createTtsStreamSession(
+      OPTS,
+      { onAudioChunk: vi.fn(), onError },
+      factory,
+    );
+    const socket = getSocket();
+    socket.fire('open');
+    socket.fire('message', evt('task-started'));
+    const session = await sessionPromise;
+
+    socket.fire('close', {});
+
+    await expect(session.finish()).rejects.toThrow(/意外关闭/);
+    expect(onError).toHaveBeenCalledOnce();
+  });
 });

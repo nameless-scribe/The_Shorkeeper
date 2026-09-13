@@ -21,6 +21,69 @@ const MIME_BY_FORMAT: Record<string, string> = {
   opus: 'audio/opus',
 };
 
+export const MAX_TTS_AUDIO_BYTES = 20 * 1024 * 1024;
+const MAX_TTS_JSON_BYTES = 30 * 1024 * 1024;
+
+async function readResponseBytesLimited(
+  response: Response,
+  maxBytes: number,
+  label: string,
+): Promise<ArrayBuffer> {
+  const contentLength = Number(response.headers?.get?.('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    try {
+      await response.body?.cancel();
+    } catch {
+      // Ignore an already closed response.
+    }
+    throw new Error(`${label}超过大小限制（${Math.floor(maxBytes / 1024 / 1024)} MB）`);
+  }
+
+  if (!response.body) {
+    const buffer = typeof response.arrayBuffer === 'function'
+      ? await response.arrayBuffer()
+      : new TextEncoder().encode(await response.text()).buffer;
+    if (buffer.byteLength > maxBytes) {
+      throw new Error(`${label}超过大小限制（${Math.floor(maxBytes / 1024 / 1024)} MB）`);
+    }
+    return buffer;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        throw new Error(`${label}超过大小限制（${Math.floor(maxBytes / 1024 / 1024)} MB）`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // Ignore an already closed stream.
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // Ignore an already released reader.
+    }
+  }
+
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return merged.buffer;
+}
+
 export class BailianTtsEngine implements TtsEngine {
   constructor(
     private readonly fetchImpl: typeof fetch = fetch,
@@ -73,7 +136,9 @@ export class BailianTtsEngine implements TtsEngine {
         : AbortSignal.timeout(30_000),
     });
 
-    const rawText = await res.text();
+    const rawText = new TextDecoder().decode(
+      await readResponseBytesLimited(res, MAX_TTS_JSON_BYTES, '语音服务响应'),
+    );
     let json: SpeechSynthesizerResponse & { code?: string; message?: string };
     try {
       json = rawText ? (JSON.parse(rawText) as typeof json) : {};
@@ -106,7 +171,14 @@ export class BailianTtsEngine implements TtsEngine {
     }
 
     if (audio.data) {
+      const maxBase64Chars = Math.ceil(MAX_TTS_AUDIO_BYTES / 3) * 4 + 4;
+      if (audio.data.length > maxBase64Chars) {
+        throw new Error('合成音频超过大小限制（20 MB）');
+      }
       const buffer = Buffer.from(audio.data, 'base64');
+      if (buffer.byteLength > MAX_TTS_AUDIO_BYTES) {
+        throw new Error('合成音频超过大小限制（20 MB）');
+      }
       return {
         audio: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
         mime: MIME_BY_FORMAT[format] ?? 'audio/mpeg',
@@ -114,7 +186,11 @@ export class BailianTtsEngine implements TtsEngine {
     }
 
     if (audio.url) {
-      const audioRes = await this.fetchImpl(audio.url, {
+      const audioUrl = new URL(audio.url, endpoint);
+      if (audioUrl.protocol !== 'https:' && audioUrl.protocol !== 'http:') {
+        throw new Error('语音服务返回了不支持的音频地址');
+      }
+      const audioRes = await this.fetchImpl(audioUrl, {
         signal: signal
           ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
           : AbortSignal.timeout(30_000),
@@ -122,7 +198,11 @@ export class BailianTtsEngine implements TtsEngine {
       if (!audioRes.ok) {
         throw new Error(`下载合成音频失败（HTTP ${audioRes.status}）`);
       }
-      const arrayBuffer = await audioRes.arrayBuffer();
+      const arrayBuffer = await readResponseBytesLimited(
+        audioRes,
+        MAX_TTS_AUDIO_BYTES,
+        '合成音频',
+      );
       const mime = audioRes.headers.get('content-type') ?? MIME_BY_FORMAT[format] ?? 'audio/mpeg';
       return { audio: arrayBuffer, mime };
     }

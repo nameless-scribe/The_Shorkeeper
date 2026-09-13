@@ -1,5 +1,7 @@
-import { ipcMain } from 'electron';
 import type { AgentSendPayload } from '../../src/shared/types';
+import { trustedIpcMain as ipcMain } from './trusted-ipc';
+import { parseAgentSendPayload } from '../../src/shared/ipc-validation';
+import { requireFiniteNumber, requireRecord, requireString } from '../../src/shared/ipc-validation';
 import { ev } from '../../src/agent/events';
 import {
   acquireSessionRun,
@@ -12,8 +14,6 @@ import { cancelAllPendingPermissions } from './permission';
 import { formatAttachmentsForMessage } from '../../src/workspace/import';
 import { enrichAttachmentsMessage } from '../../src/workspace/attachment-preparse';
 import { runOrchestrator } from '../../src/agent/orchestrator';
-import { getModelConfigSafe } from '../../src/models/config';
-import { recordTokenUsage } from '../../src/db/token-usage';
 import {
   getRunDiagnostic,
   listRunDiagnostics,
@@ -26,7 +26,8 @@ import {
 } from '../state/presence';
 
 export function registerAgentIpc() {
-  ipcMain.handle('agent:send', async (_event, payload: AgentSendPayload) => {
+  ipcMain.handle('agent:send', async (event, rawPayload: AgentSendPayload) => {
+    const payload = parseAgentSendPayload(rawPayload);
     const session = resolveAgentSession(payload.sessionId);
     if (!session) {
       return { ok: false, error: '会话不存在' };
@@ -39,6 +40,8 @@ export function registerAgentIpc() {
     }
 
     onRunStarted();
+    const abortOnSenderDestroyed = () => controller.abort();
+    event.sender.once('destroyed', abortOnSenderDestroyed);
 
     let runId: string | null = null;
     let terminalError: string | null = null;
@@ -64,19 +67,6 @@ export function registerAgentIpc() {
         if (agEvent.type === 'run_started') {
           runId = agEvent.runId;
           setSessionRunId(resolvedSessionId, agEvent.runId);
-        }
-
-        if (agEvent.type === 'usage') {
-          const config = getModelConfigSafe();
-          if (config) {
-            recordTokenUsage({
-              sessionId: resolvedSessionId,
-              model: config.model,
-              promptTokens: agEvent.promptTokens,
-              completionTokens: agEvent.completionTokens,
-              cachedTokens: agEvent.cachedTokens,
-            });
-          }
         }
 
         if (agEvent.type === 'run_finished') {
@@ -106,6 +96,7 @@ export function registerAgentIpc() {
       );
       return { ok: false, error: message, runId };
     } finally {
+      event.sender.removeListener('destroyed', abortOnSenderDestroyed);
       if (!presenceSettled) onRunError();
       releaseSessionRun(resolvedSessionId, controller);
     }
@@ -125,10 +116,14 @@ export function registerAgentIpc() {
   ipcMain.handle(
     'agent:diagnostics',
     (_event, query?: { runId?: unknown; limit?: unknown }) => {
-      if (typeof query?.runId === 'string' && query.runId.trim()) {
-        return getRunDiagnostic(query.runId.trim());
+      if (query === undefined) return listRunDiagnostics();
+      const input = requireRecord(query, '运行诊断参数');
+      if (input.runId !== undefined) {
+        return getRunDiagnostic(requireString(input.runId, 'runId', { maxLength: 200 }).trim());
       }
-      const limit = typeof query?.limit === 'number' ? query.limit : undefined;
+      const limit = input.limit === undefined
+        ? undefined
+        : Math.floor(requireFiniteNumber(input.limit, 'limit', { min: 1, max: 100 }));
       return listRunDiagnostics(limit);
     },
   );

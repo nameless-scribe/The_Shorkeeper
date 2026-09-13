@@ -105,6 +105,7 @@ export function createSttStreamSession(
   let aborted = false;
   let finished = false;
   let finishRequested = false;
+  let terminalError: Error | null = null;
   const finalized: string[] = [];
   let lastPartial = '';
 
@@ -122,6 +123,7 @@ export function createSttStreamSession(
     finishResolve = resolve;
     finishReject = reject;
   });
+  void finishPromise.catch(() => undefined);
 
   const timeout = setTimeout(() => {
     fail(new Error('语音识别超时（30s）'));
@@ -139,6 +141,7 @@ export function createSttStreamSession(
   const fail = (err: Error) => {
     if (settled || aborted) return;
     settled = true;
+    terminalError = err;
     cleanup();
     if (startedReject) {
       startedReject(err);
@@ -147,9 +150,7 @@ export function createSttStreamSession(
     }
     startedResolve = null;
     startedReject = null;
-    if (finishRequested) {
-      finishReject?.(err);
-    }
+    finishReject?.(err);
     finishResolve = null;
     finishReject = null;
   };
@@ -170,8 +171,9 @@ export function createSttStreamSession(
 
   socket.addEventListener('open', () => {
     if (aborted) return;
-    socket.send(
-      JSON.stringify({
+    try {
+      socket.send(
+        JSON.stringify({
         header: { action: 'run-task', task_id: taskId, streaming: 'duplex' },
         payload: {
           task_group: 'audio',
@@ -187,8 +189,11 @@ export function createSttStreamSession(
           },
           input: {},
         },
-      }),
-    );
+        }),
+      );
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 
   socket.addEventListener('message', (ev) => {
@@ -249,29 +254,47 @@ export function createSttStreamSession(
       fail(new Error('语音识别连接被关闭，请检查 API Key 与接入地址'));
       return;
     }
-    complete();
+    if (finishRequested) {
+      complete();
+    } else {
+      fail(new Error('语音识别连接意外关闭，请重试'));
+    }
   });
 
   const session: SttStreamSession = {
     pushPcm(chunk) {
       if (aborted || settled) return;
       if (chunk.byteLength === 0) return;
-      socket.send(chunk);
+      try {
+        socket.send(chunk);
+      } catch (error) {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        fail(failure);
+        throw failure;
+      }
     },
 
     async finish() {
       if (aborted) return { text: '' };
+      if (terminalError) throw terminalError;
       if (finished) {
-        return finishPromise.catch(() => ({ text: '' }));
+        return finishPromise;
       }
       finishRequested = true;
       await startedPromise;
-      socket.send(
-        JSON.stringify({
+      if (terminalError) throw terminalError;
+      try {
+        socket.send(
+          JSON.stringify({
           header: { action: 'finish-task', task_id: taskId, streaming: 'duplex' },
           payload: { input: {} },
-        }),
-      );
+          }),
+        );
+      } catch (error) {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        fail(failure);
+        throw failure;
+      }
       return finishPromise;
     },
 

@@ -1,26 +1,33 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { TethysEmblem } from '../components/TethysEmblem';
-import { ProfilePage } from './ProfilePage';
-import { PersonaPage } from './PersonaPage';
-import { AppearancePage } from './AppearancePage';
-import { WorldbookPage } from './WorldbookPage';
-import { TasksPage } from './TasksPage';
-import { UserTodosPage } from './UserTodosPage';
-import { DocumentsPage } from './DocumentsPage';
-import { McpPage } from './McpPage';
-import { SkillsPage } from './SkillsPage';
-import { ModelPage } from './ModelPage';
-import { PerformancePage } from './PerformancePage';
-import { PluginsPage } from './PluginsPage';
-import { DisclaimerPage } from './DisclaimerPage';
-import { AboutPage } from './AboutPage';
-import { VoicePage } from './VoicePage';
+import { SettingsLoading } from './components/settings-ui';
 import {
   SettingsSidebar,
   SETTINGS_TAB_TITLES,
   type SettingsTab,
 } from './SettingsSidebar';
+
+const lazyPage = <T extends Record<string, unknown>, K extends keyof T>(
+  loader: () => Promise<T>,
+  exportName: K,
+) => lazy(() => loader().then((module) => ({ default: module[exportName] as React.ComponentType<any> })));
+
+const ProfilePage = lazyPage(() => import('./ProfilePage'), 'ProfilePage');
+const PersonaPage = lazyPage(() => import('./PersonaPage'), 'PersonaPage');
+const AppearancePage = lazyPage(() => import('./AppearancePage'), 'AppearancePage');
+const WorldbookPage = lazyPage(() => import('./WorldbookPage'), 'WorldbookPage');
+const TasksPage = lazyPage(() => import('./TasksPage'), 'TasksPage');
+const UserTodosPage = lazyPage(() => import('./UserTodosPage'), 'UserTodosPage');
+const DocumentsPage = lazyPage(() => import('./DocumentsPage'), 'DocumentsPage');
+const McpPage = lazyPage(() => import('./McpPage'), 'McpPage');
+const SkillsPage = lazyPage(() => import('./SkillsPage'), 'SkillsPage');
+const ModelPage = lazyPage(() => import('./ModelPage'), 'ModelPage');
+const PerformancePage = lazyPage(() => import('./PerformancePage'), 'PerformancePage');
+const PluginsPage = lazyPage(() => import('./PluginsPage'), 'PluginsPage');
+const DisclaimerPage = lazyPage(() => import('./DisclaimerPage'), 'DisclaimerPage');
+const AboutPage = lazyPage(() => import('./AboutPage'), 'AboutPage');
+const VoicePage = lazyPage(() => import('./VoicePage'), 'VoicePage');
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -66,23 +73,25 @@ export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawer
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           <ErrorBoundary>
-            {tab === 'plugins' && <PluginsPage />}
-            {tab === 'persona' && (
-              <PersonaPage onOpenWorldbook={() => setTab('worldbook')} />
-            )}
-            {tab === 'profile' && <ProfilePage />}
-            {tab === 'memory' && <PerformancePage />}
-            {tab === 'worldbook' && <WorldbookPage />}
-            {tab === 'appearance' && <AppearancePage />}
-            {tab === 'voice' && <VoicePage />}
-            {tab === 'userTodos' && <UserTodosPage />}
-            {tab === 'tasks' && <TasksPage />}
-            {tab === 'documents' && <DocumentsPage />}
-            {tab === 'skills' && <SkillsPage />}
-            {tab === 'mcp' && <McpPage />}
-            {tab === 'model' && <ModelPage onConfigChange={onConfigChange} />}
-            {tab === 'about' && <AboutPage />}
-            {tab === 'disclaimer' && <DisclaimerPage />}
+            <Suspense fallback={<SettingsLoading />}>
+              {tab === 'plugins' && <PluginsPage />}
+              {tab === 'persona' && (
+                <PersonaPage onOpenWorldbook={() => setTab('worldbook')} />
+              )}
+              {tab === 'profile' && <ProfilePage />}
+              {tab === 'memory' && <PerformancePage />}
+              {tab === 'worldbook' && <WorldbookPage />}
+              {tab === 'appearance' && <AppearancePage />}
+              {tab === 'voice' && <VoicePage />}
+              {tab === 'userTodos' && <UserTodosPage />}
+              {tab === 'tasks' && <TasksPage />}
+              {tab === 'documents' && <DocumentsPage />}
+              {tab === 'skills' && <SkillsPage />}
+              {tab === 'mcp' && <McpPage />}
+              {tab === 'model' && <ModelPage onConfigChange={onConfigChange} />}
+              {tab === 'about' && <AboutPage />}
+              {tab === 'disclaimer' && <DisclaimerPage />}
+            </Suspense>
           </ErrorBoundary>
         </div>
       </div>

@@ -25,6 +25,10 @@ export interface UseCallVadOptions {
  */
 export function useCallVad(options: UseCallVadOptions): void {
   const controllerRef = useRef<VadController | null>(null);
+  const controllerPromiseRef = useRef<Promise<VadController | null> | null>(null);
+  const controllerGenerationRef = useRef(0);
+  const syncQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const disposedRef = useRef(false);
   const runningRef = useRef(false);
   const speakingEnteredAtRef = useRef(0);
   const optionsRef = useRef(options);
@@ -32,7 +36,7 @@ export function useCallVad(options: UseCallVadOptions): void {
 
   const shouldRunVad = useCallback((): boolean => {
     const { enabled, callMode, callAllowBargeIn, callState } = optionsRef.current;
-    if (!enabled || callState === 'idle') return false;
+    if (disposedRef.current || !enabled || callState === 'idle') return false;
     if (callMode === 'vad_auto' && callState === 'listening') return true;
     if (callAllowBargeIn && (callState === 'thinking' || callState === 'speaking')) return true;
     return false;
@@ -67,26 +71,39 @@ export function useCallVad(options: UseCallVadOptions): void {
 
   const ensureController = useCallback(async (): Promise<VadController | null> => {
     if (controllerRef.current) return controllerRef.current;
+    if (controllerPromiseRef.current) return controllerPromiseRef.current;
+
+    const generation = controllerGenerationRef.current;
+    const pending = (async () => {
+      try {
+        const controller = await createVadController({
+          redemptionMs: optionsRef.current.callSilenceMs,
+          positiveSpeechThreshold: getThreshold(),
+          onSpeechStart: handleSpeechStart,
+          onSpeechEnd: handleSpeechEnd,
+          onError: (message) => {
+            optionsRef.current.onError?.(message);
+          },
+        });
+        if (generation !== controllerGenerationRef.current) {
+          await controller.destroy().catch(() => undefined);
+          return null;
+        }
+        controllerRef.current = controller;
+        return controller;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '语音活动检测不可用';
+        optionsRef.current.onError?.(message);
+        return null;
+      }
+    })();
+    controllerPromiseRef.current = pending;
     try {
-      const controller = await createVadController({
-        redemptionMs: optionsRef.current.callSilenceMs,
-        positiveSpeechThreshold: getThreshold(),
-        onSpeechStart: () => {
-          void handleSpeechStart();
-        },
-        onSpeechEnd: () => {
-          void handleSpeechEnd();
-        },
-        onError: (message) => {
-          optionsRef.current.onError?.(message);
-        },
-      });
-      controllerRef.current = controller;
-      return controller;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '语音活动检测不可用';
-      optionsRef.current.onError?.(message);
-      return null;
+      return await pending;
+    } finally {
+      if (controllerPromiseRef.current === pending) {
+        controllerPromiseRef.current = null;
+      }
     }
   }, [getThreshold, handleSpeechEnd, handleSpeechStart]);
 
@@ -105,9 +122,9 @@ export function useCallVad(options: UseCallVadOptions): void {
     }
 
     const controller = await ensureController();
-    if (!controller) return;
+    if (!controller || !shouldRunVad()) return;
 
-    controller.setThreshold(getThreshold());
+    controller.configure(getThreshold(), optionsRef.current.callSilenceMs);
     if (!runningRef.current) {
       await controller.start();
       runningRef.current = true;
@@ -115,7 +132,15 @@ export function useCallVad(options: UseCallVadOptions): void {
   }, [ensureController, getThreshold, shouldRunVad]);
 
   useEffect(() => {
-    void syncVad();
+    const sync = syncQueueRef.current
+      .catch(() => undefined)
+      .then(syncVad)
+      .catch((error) => {
+        optionsRef.current.onError?.(
+          error instanceof Error ? error.message : '语音活动检测状态切换失败',
+        );
+      });
+    syncQueueRef.current = sync;
   }, [
     syncVad,
     options.enabled,
@@ -127,8 +152,10 @@ export function useCallVad(options: UseCallVadOptions): void {
 
   useEffect(
     () => () => {
+      disposedRef.current = true;
+      controllerGenerationRef.current += 1;
       runningRef.current = false;
-      void controllerRef.current?.destroy();
+      void controllerRef.current?.destroy().catch(() => undefined);
       controllerRef.current = null;
     },
     [],

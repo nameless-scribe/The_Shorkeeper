@@ -45,16 +45,20 @@ export async function convertPdfToMarkdown(
   title?: string,
 ): Promise<string> {
   const name = title ?? path.basename(absolutePath, path.extname(absolutePath));
+  let parser: { getText(): Promise<{ text: string }>; destroy(): Promise<void> } | undefined;
   try {
     const { PDFParse } = await import('pdf-parse');
     const buffer = await fs.readFile(absolutePath);
-    const parser = new PDFParse({ data: buffer });
+    parser = new PDFParse({ data: buffer });
     const result = await parser.getText();
-    await parser.destroy();
     return plainTextToMarkdown(result.text, name);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`PDF 文本提取失败：${message}`);
+  } finally {
+    await parser?.destroy().catch((error) => {
+      console.warn('[rag] PDF 解析器清理失败:', error);
+    });
   }
 }
 

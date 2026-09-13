@@ -63,7 +63,26 @@ function createFallbackCallStreamPlayback(gain: number): CallStreamPlaybackHandl
     return ctx;
   };
 
+  const teardownAudio = () => {
+    if (activeSource) {
+      try {
+        activeSource.stop();
+      } catch {
+        // already stopped
+      }
+      activeSource = null;
+    }
+    try {
+      void ctx?.close();
+    } catch {
+      // ignore
+    }
+    ctx = null;
+    gainNode = null;
+  };
+
   const finishPlayback = () => {
+    teardownAudio();
     releaseSpeechPlayback(stop);
     endResolve?.();
     endResolve = null;
@@ -127,22 +146,8 @@ function createFallbackCallStreamPlayback(gain: number): CallStreamPlaybackHandl
     stopped = true;
     collector.clear();
     accumulated.length = 0;
-    if (activeSource) {
-      try {
-        activeSource.stop();
-      } catch {
-        // already stopped
-      }
-      activeSource = null;
-    }
+    teardownAudio();
     releaseSpeechPlayback(stop);
-    try {
-      void ctx?.close();
-    } catch {
-      // ignore
-    }
-    ctx = null;
-    gainNode = null;
     endResolve?.();
     endResolve = null;
   };
@@ -171,6 +176,8 @@ function createFallbackCallStreamPlayback(gain: number): CallStreamPlaybackHandl
       if (stopped) return;
       streamEnded = true;
       drain();
+      accumulated.push(...collector.drainRemaining());
+      void playAccumulated();
     },
 
     stop,
@@ -204,6 +211,7 @@ function createMseCallStreamPlayback(gain: number): CallStreamPlaybackHandle {
   const clampedGain = Math.max(0.5, Math.min(3, gain));
 
   const finishPlayback = () => {
+    teardownMedia();
     releaseSpeechPlayback(stop);
     endResolve?.();
     endResolve = null;
@@ -244,6 +252,7 @@ function createMseCallStreamPlayback(gain: number): CallStreamPlaybackHandle {
       await audioEl.play();
     } catch {
       playbackStarted = false;
+      stop();
     }
   };
 
@@ -256,6 +265,7 @@ function createMseCallStreamPlayback(gain: number): CallStreamPlaybackHandle {
         sourceBuffer!.appendBuffer(new Uint8Array(chunk));
       } catch (err) {
         console.warn('[call-stream-playback] appendBuffer failed', err);
+        stop();
       }
     });
 
@@ -400,6 +410,8 @@ function createMseCallStreamPlayback(gain: number): CallStreamPlaybackHandle {
       streamEnded = true;
       appendQueue.markStreamEnded();
       drainIncoming();
+      appendQueue.push(...collector.drainRemaining());
+      flushAppendQueue();
     },
 
     stop,

@@ -56,7 +56,9 @@ export function attachRendererNavigationGuards(win: BrowserWindow): void {
 
 export function assertTrustedIpcSender(event: IpcMainInvokeEvent | IpcMainEvent): void {
   const senderUrl = event.senderFrame?.url || event.sender.getURL();
-  if (!isTrustedRendererUrl(senderUrl)) {
+  // about:blank is tolerated only while a BrowserWindow is navigating. It is
+  // never a valid caller for privileged IPC.
+  if (!senderUrl || senderUrl === 'about:blank' || !isTrustedRendererUrl(senderUrl)) {
     throw new Error('拒绝来自非受信渲染页面的 IPC 请求');
   }
 }

@@ -23,6 +23,11 @@ vi.mock('../embedding', () => ({
 }));
 
 vi.mock('../../models/config', () => ({
+  loadModelConfig: vi.fn(() => ({
+    apiKey: 'test',
+    baseUrl: 'http://localhost',
+    model: 'test',
+  })),
   getModelRuntimeConfigSafe: vi.fn(() => ({
     apiKey: 'test',
     baseUrl: 'http://localhost',

@@ -37,6 +37,7 @@ import {
   estimateTokens,
   trimMessagesToTokenBudget,
 } from './context-budget';
+import { recordTokenUsage } from '../db/token-usage';
 
 async function* streamText(runId: string, text: string): AsyncGenerator<AgUiEvent> {
   const chunkSize = 12;
@@ -255,6 +256,13 @@ export async function* runOrchestrator(
         );
       } else if (event.type === 'usage') {
         telemetry.recordUsage(event.promptTokens, event.completionTokens, event.cachedTokens);
+        recordTokenUsage({
+          sessionId: session.id,
+          model: modelRuntime.model,
+          promptTokens: event.promptTokens,
+          completionTokens: event.completionTokens,
+          cachedTokens: event.cachedTokens,
+        });
       }
 
       yield event;

@@ -1,8 +1,19 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { embedTextMock, cacheState } = vi.hoisted(() => ({
+const { embedTextMock, cacheState, performanceState } = vi.hoisted(() => ({
   embedTextMock: vi.fn(async () => [1, 0, 0]),
   cacheState: { version: 0 },
+  performanceState: {
+    ragMinScore: 0.35,
+    ragMaxChunksPerDoc: 2,
+    ragNeighborWindow: 1,
+    ragFtsFirst: false,
+    ragDocRouteTopK: 3,
+    ragDocRouteMinDocs: 4,
+    ragRerankEnabled: false,
+    ragRerankTopK: 15,
+    ragHydeEnabled: false,
+  },
 }));
 
 vi.mock('../embedding', () => ({
@@ -52,25 +63,36 @@ vi.mock('../hyde', () => ({
 }));
 
 vi.mock('../../config/performance', () => ({
-  getPerformanceSettings: vi.fn(() => ({
-    ragMinScore: 0.35,
-    ragMaxChunksPerDoc: 2,
-    ragNeighborWindow: 1,
-    ragFtsFirst: false,
-    ragDocRouteTopK: 3,
-    ragDocRouteMinDocs: 4,
-    ragRerankEnabled: false,
-    ragRerankTopK: 15,
-    ragHydeEnabled: false,
-  })),
+  getPerformanceSettings: vi.fn(() => ({ ...performanceState })),
 }));
 
-import { retrieveRelevantChunks, formatDocumentCatalogForPrompt } from '../retriever';
+vi.mock('../../models/embedding-config', () => ({
+  getEmbeddingModelName: vi.fn(() => 'embedding-test'),
+}));
+
+import {
+  retrieveRelevantChunks,
+  formatDocumentCatalogForPrompt,
+  MAX_RAG_QUERY_CHARS,
+} from '../retriever';
+import { PassthroughReranker, setRerankerForTest } from '../reranker';
 
 describe('retrieveRelevantChunks', () => {
   beforeEach(() => {
     cacheState.version = 0;
+    Object.assign(performanceState, {
+      ragMinScore: 0.35,
+      ragMaxChunksPerDoc: 2,
+      ragNeighborWindow: 1,
+      ragFtsFirst: false,
+      ragDocRouteTopK: 3,
+      ragDocRouteMinDocs: 4,
+      ragRerankEnabled: false,
+      ragRerankTopK: 15,
+      ragHydeEnabled: false,
+    });
     vi.clearAllMocks();
+    setRerankerForTest(new PassthroughReranker());
     getAdjacentChunks.mockReturnValue([
       { chunkIndex: 0, content: 'alpha beta content' },
       { chunkIndex: 1, content: 'gamma delta' },
@@ -104,6 +126,49 @@ describe('retrieveRelevantChunks', () => {
     });
 
     expect(embedTextMock).toHaveBeenCalledWith('signal query', controller.signal);
+  });
+
+  it('does not reuse a smaller-limit cache entry for a larger request', async () => {
+    const first = await retrieveRelevantChunks('cache limit', 1);
+    const second = await retrieveRelevantChunks('cache limit', 2);
+
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(2);
+    expect(embedTextMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('invalidates a cached query when retrieval settings change', async () => {
+    const first = await retrieveRelevantChunks('settings change', 2);
+    expect(first[0].content).toContain('gamma delta');
+
+    performanceState.ragNeighborWindow = 0;
+    const second = await retrieveRelevantChunks('settings change', 2);
+
+    expect(second[0].content).toBe('alpha beta content');
+    expect(embedTextMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds oversized query text before sending it to the embedding service', async () => {
+    const query = 'x'.repeat(MAX_RAG_QUERY_CHARS + 500);
+    await retrieveRelevantChunks(query, 5, { skipCache: true });
+
+    expect(embedTextMock).toHaveBeenCalledWith(
+      'x'.repeat(MAX_RAG_QUERY_CHARS),
+      undefined,
+    );
+  });
+
+  it('keeps the score attached to a chunk when reranking changes order', async () => {
+    performanceState.ragRerankEnabled = true;
+    setRerankerForTest({
+      rerank: async (_query, candidates) => [{ ...candidates[1], score: 0.123 }],
+    });
+
+    const result = await retrieveRelevantChunks('rerank order', 1, { skipCache: true });
+
+    expect(result).toEqual([
+      expect.objectContaining({ chunkIndex: 1, score: 0.123 }),
+    ]);
   });
 
   it('drops results if the document cache changes during retrieval', async () => {

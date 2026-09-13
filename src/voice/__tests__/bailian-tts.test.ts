@@ -11,7 +11,7 @@ vi.mock('../../config/voice', async (importOriginal) => {
   };
 });
 
-import { BailianTtsEngine } from '../bailian-tts';
+import { BailianTtsEngine, MAX_TTS_AUDIO_BYTES } from '../bailian-tts';
 
 describe('BailianTtsEngine', () => {
   afterEach(() => {
@@ -58,5 +58,32 @@ describe('BailianTtsEngine', () => {
         rate: 1,
       }),
     ).rejects.toThrow(/音色 ID/);
+  });
+
+  it('rejects an oversized remote audio response before buffering it', async () => {
+    const audioBuffer = vi.fn();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({
+          output: { audio: { url: 'https://example.com/huge.mp3' } },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: { get: (name: string) => name === 'content-length'
+          ? String(MAX_TTS_AUDIO_BYTES + 1)
+          : 'audio/mpeg' },
+        arrayBuffer: audioBuffer,
+      });
+    const engine = new BailianTtsEngine(fetchMock as unknown as typeof fetch);
+
+    await expect(engine.synthesize('你好', {
+      model: 'cosyvoice-v3.5-plus',
+      voiceId: 'cosyvoice-v3.5-plus-demo',
+      rate: 1,
+    })).rejects.toThrow(/超过大小限制/);
+    expect(audioBuffer).not.toHaveBeenCalled();
   });
 });

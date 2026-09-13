@@ -7,6 +7,7 @@ import {
   getAdjacentChunks,
   getChunkSearchRows,
   getDocument,
+  getDocumentIncludingDeleted,
   getDocumentVersionPlan,
   getPreviousDocumentVersionIds,
   getStoredEmbeddingDimensions,
@@ -42,11 +43,13 @@ import { getKnowledgeDir, resolveKnowledgeFilePath } from './knowledge-path';
 import { CHUNK_OVERLAP, CHUNK_SIZE } from './chunker';
 import { getWorkspaceDir } from '../config/paths';
 import { resolveWorkspacePath } from '../tools/file/workspace-path';
+import { runDocumentMutation } from './document-mutation-queue';
 
 export {
   findDocumentByContentHash,
   getAdjacentChunks,
   getDocument,
+  getDocumentIncludingDeleted,
   getDocumentVersionPlan,
   getPreviousDocumentVersionIds,
   getStoredEmbeddingDimensions,
@@ -213,7 +216,64 @@ async function restoreQuarantinedFile(quarantinePath: string, originalPath: stri
   await fs.rename(quarantinePath, originalPath);
 }
 
+export interface KnowledgeTrashRecoveryResult {
+  restored: number;
+  cleaned: number;
+  retained: number;
+}
+
+/** Recover the two crash windows around file quarantine and the DB delete transaction. */
+export async function recoverKnowledgeTrash(): Promise<KnowledgeTrashRecoveryResult> {
+  const result: KnowledgeTrashRecoveryResult = { restored: 0, cleaned: 0, retained: 0 };
+  const trashDir = resolveWorkspacePath(getWorkspaceDir(), 'knowledge/.trash');
+  const entries = await fs.readdir(trashDir, { withFileTypes: true }).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  });
+
+  for (const entry of entries) {
+    const match = entry.name.match(/^([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})-/i);
+    if (!match || !entry.isFile()) {
+      result.retained += 1;
+      continue;
+    }
+    const quarantinePath = path.join(trashDir, entry.name);
+    const document = getDocumentIncludingDeleted(match[1]);
+    if (!document) {
+      result.retained += 1;
+      continue;
+    }
+    if (document.status === 'deleted') {
+      await fs.unlink(quarantinePath);
+      result.cleaned += 1;
+      continue;
+    }
+
+    const originalPath = resolveKnowledgeFilePath(document.filepath);
+    const originalExists = await fs.stat(originalPath).then(
+      (stat) => stat.isFile(),
+      (error) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+        throw error;
+      },
+    );
+    if (originalExists) {
+      await fs.unlink(quarantinePath);
+      result.cleaned += 1;
+      continue;
+    }
+    await fs.mkdir(path.dirname(originalPath), { recursive: true });
+    await restoreQuarantinedFile(quarantinePath, originalPath);
+    result.restored += 1;
+  }
+  return result;
+}
+
 export async function deleteDocument(id: string): Promise<boolean> {
+  return runDocumentMutation(id, () => deleteDocumentUnlocked(id));
+}
+
+async function deleteDocumentUnlocked(id: string): Promise<boolean> {
   const document = getDocument(id);
   if (!document || document.status === 'deleted') return false;
 

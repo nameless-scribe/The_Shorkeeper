@@ -1,12 +1,22 @@
-import { dialog, ipcMain, shell } from 'electron';
+import { dialog, shell } from 'electron';
+import { trustedIpcMain as ipcMain } from './trusted-ipc';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ensureWorkspaceDir } from '../../src/agent/permissions';
 import { resolveWorkspacePath } from '../../src/tools/file/workspace-path';
-import { importFileToWorkspace, type WorkspaceImportResult } from '../../src/workspace/import';
+import {
+  importFileToWorkspace,
+  recoverWorkspaceImportTemps,
+  type WorkspaceImportResult,
+} from '../../src/workspace/import';
 import { WORKSPACE_PICK_DIALOG_FILTERS } from '../../src/workspace/allowed-extensions';
+import { requireString } from '../../src/shared/ipc-validation';
 
-export function registerWorkspaceIpc() {
+export async function registerWorkspaceIpc() {
+  const recovery = await recoverWorkspaceImportTemps();
+  if (recovery.cleaned || recovery.retained) {
+    console.warn('[workspace] 导入临时文件恢复结果:', recovery);
+  }
   ipcMain.handle('workspace:pickAndImport', async (): Promise<WorkspaceImportResult | null> => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
@@ -23,11 +33,15 @@ export function registerWorkspaceIpc() {
   ipcMain.handle(
     'workspace:importPaths',
     async (event, paths: string[]): Promise<WorkspaceImportResult[]> => {
-      if (!Array.isArray(paths) || !paths.length) return [];
+      if (!Array.isArray(paths)) throw new TypeError('导入路径必须是数组');
+      if (!paths.length) return [];
 
-      const normalized = paths.filter(
-        (p): p is string => typeof p === 'string' && p.trim().length > 0,
-      );
+      const normalized = [...new Set(paths.map((p, index) =>
+        requireString(p, `导入路径[${index}]`, { maxLength: 32_767 }).trim(),
+      ))];
+      if (normalized.length > 100) {
+        throw new Error('单次最多导入 100 个文件');
+      }
       const preview = normalized.slice(0, 5).join('\n');
       const confirm = await dialog.showMessageBox({
         type: 'question',
@@ -52,11 +66,9 @@ export function registerWorkspaceIpc() {
     },
   );
 
-  ipcMain.handle('workspace:openRelative', async (_event, relativePath: string) => {
-    if (typeof relativePath !== 'string' || !relativePath.trim()) {
-      return { ok: false, error: '无效路径' };
-    }
+  ipcMain.handle('workspace:openRelative', async (_event, rawPath: unknown) => {
     try {
+      const relativePath = requireString(rawPath, '工作区路径', { maxLength: 4_096 });
       const root = ensureWorkspaceDir();
       const absolute = resolveWorkspacePath(root, relativePath);
       const err = await shell.openPath(absolute);
@@ -67,11 +79,9 @@ export function registerWorkspaceIpc() {
     }
   });
 
-  ipcMain.handle('workspace:showRelative', async (_event, relativePath: string) => {
-    if (typeof relativePath !== 'string' || !relativePath.trim()) {
-      return { ok: false, error: '无效路径' };
-    }
+  ipcMain.handle('workspace:showRelative', async (_event, rawPath: unknown) => {
     try {
+      const relativePath = requireString(rawPath, '工作区路径', { maxLength: 4_096 });
       const root = ensureWorkspaceDir();
       const absolute = resolveWorkspacePath(root, relativePath);
       shell.showItemInFolder(absolute);
@@ -82,11 +92,9 @@ export function registerWorkspaceIpc() {
     }
   });
 
-  ipcMain.handle('workspace:getFileInfo', async (_event, relativePath: string) => {
-    if (typeof relativePath !== 'string' || !relativePath.trim()) {
-      return null;
-    }
+  ipcMain.handle('workspace:getFileInfo', async (_event, rawPath: unknown) => {
     try {
+      const relativePath = requireString(rawPath, '工作区路径', { maxLength: 4_096 });
       const root = ensureWorkspaceDir();
       const absolute = resolveWorkspacePath(root, relativePath);
       const stat = await fs.stat(absolute);

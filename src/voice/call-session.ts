@@ -9,8 +9,6 @@ import {
 } from '../agent/session-run-lock';
 import type { AgUiEvent, CallState } from '../agent/types';
 import { getVoiceSettings } from '../config/voice';
-import { getModelConfigSafe } from '../models/config';
-import { recordTokenUsage } from '../db/token-usage';
 import { createTtsStreamSession, type TtsStreamSession } from './tts-engine';
 import { DeltaSentenceBuffer } from './delta-sentence-buffer';
 import { synthesizeVoiceChunk } from './synthesize-chunk';
@@ -35,7 +33,7 @@ export interface CallSessionHost {
   onRunError(): void;
 }
 
-type StreamMode = 'ws' | 'rest-fallback';
+type StreamMode = 'ws' | 'rest-fallback' | 'disabled';
 
 interface CallTurnContext {
   sentenceBuffer: DeltaSentenceBuffer;
@@ -44,7 +42,10 @@ interface CallTurnContext {
   speakingStarted: boolean;
   streamMode: StreamMode;
   assistantText: string;
+  audioBytes: number;
 }
+
+const MAX_CALL_TTS_AUDIO_BYTES = 20 * 1024 * 1024;
 
 function buildTtsOptions(): TtsOptions | null {
   const settings = getVoiceSettings();
@@ -89,6 +90,9 @@ class CallSessionManager {
     if (!session) {
       return { ok: false, error: '会话不存在' };
     }
+    if (this.isActive(session.id)) {
+      return { ok: false, error: '该会话的通话已在进行' };
+    }
 
     const callId = createCallId();
     const record: CallSessionRecord = {
@@ -119,6 +123,14 @@ class CallSessionManager {
     this.streamFailureCounts.delete(callId);
   }
 
+  private degradeTtsStream(record: CallSessionRecord, ctx: CallTurnContext): void {
+    if (ctx.streamMode !== 'ws') return;
+    ctx.ttsStream?.abort();
+    ctx.ttsStream = null;
+    ctx.streamMode = ctx.speakingStarted ? 'disabled' : 'rest-fallback';
+    this.noteStreamFailure(record.callId);
+  }
+
   private createTurnContext(): CallTurnContext {
     return {
       sentenceBuffer: new DeltaSentenceBuffer(),
@@ -127,6 +139,7 @@ class CallSessionManager {
       speakingStarted: false,
       streamMode: 'ws',
       assistantText: '',
+      audioBytes: 0,
     };
   }
 
@@ -144,6 +157,12 @@ class CallSessionManager {
     audio: ArrayBuffer,
     mime: string,
   ): void {
+    if (ctx.audioBytes + audio.byteLength > MAX_CALL_TTS_AUDIO_BYTES) {
+      this.degradeTtsStream(record, ctx);
+      this.host.broadcast(ev.callError(record.callId, '本轮合成音频超过大小限制，已停止继续接收'));
+      return;
+    }
+    ctx.audioBytes += audio.byteLength;
     const seq = ctx.audioSeq;
     ctx.audioSeq += 1;
     if (!ctx.speakingStarted) {
@@ -167,17 +186,11 @@ class CallSessionManager {
           this.emitAudioChunk(record, ctx, audio, 'audio/mpeg');
         },
         onError: () => {
-          ctx.ttsStream?.abort();
-          ctx.ttsStream = null;
-          if (!ctx.speakingStarted) {
-            ctx.streamMode = 'rest-fallback';
-            this.noteStreamFailure(record.callId);
-          }
+          this.degradeTtsStream(record, ctx);
         },
       });
     } catch {
-      ctx.streamMode = 'rest-fallback';
-      this.noteStreamFailure(record.callId);
+      this.degradeTtsStream(record, ctx);
     }
   }
 
@@ -188,13 +201,18 @@ class CallSessionManager {
     options: TtsOptions | null,
   ): Promise<void> {
     if (sentences.length === 0) return;
-    if (ctx.streamMode === 'rest-fallback' || !options) return;
+    if (ctx.streamMode !== 'ws' || !options) return;
 
     await this.ensureTtsStream(record, ctx, options);
     if (!ctx.ttsStream) return;
 
     for (const sentence of sentences) {
-      await ctx.ttsStream.pushText(sentence);
+      try {
+        await ctx.ttsStream.pushText(sentence);
+      } catch {
+        this.degradeTtsStream(record, ctx);
+        return;
+      }
     }
   }
 
@@ -213,6 +231,15 @@ class CallSessionManager {
     }
 
     this.host.broadcast(ev.callTranscript(record.callId, 'assistant', finalText, true));
+
+    if (ctx.streamMode === 'disabled') {
+      if (!ctx.speakingStarted) {
+        record.state = 'listening';
+        this.host.broadcast(ev.callState(record.callId, 'listening'));
+      }
+      this.host.broadcast(ev.callSpeechEnd(record.callId));
+      return;
+    }
 
     if (ctx.streamMode === 'rest-fallback' || !options) {
       try {
@@ -314,19 +341,6 @@ class CallSessionManager {
           await this.pushSentences(record, turn, sentences, ttsOptions);
         }
 
-        if (agEvent.type === 'usage') {
-          const config = getModelConfigSafe();
-          if (config) {
-            recordTokenUsage({
-              sessionId: record.sessionId,
-              model: config.model,
-              promptTokens: agEvent.promptTokens,
-              completionTokens: agEvent.completionTokens,
-              cachedTokens: agEvent.cachedTokens,
-            });
-          }
-        }
-
         if (agEvent.type === 'run_finished') {
           await this.finalizeAssistantSpeech(record, turn, ttsOptions, controller.signal);
           this.resetStreamFailures(callId);
@@ -354,6 +368,16 @@ class CallSessionManager {
         this.host.broadcast(ev.callState(callId, 'listening'));
         this.host.broadcast(ev.callError(callId, terminalError));
         return { ok: false, error: terminalError };
+      }
+
+      if (!presenceSettled) {
+        const message = '通话运行未正常结束，请重试';
+        this.host.onRunError();
+        presenceSettled = true;
+        record.state = 'listening';
+        this.host.broadcast(ev.callState(callId, 'listening'));
+        this.host.broadcast(ev.callError(callId, message));
+        return { ok: false, error: message };
       }
 
       return { ok: true };
@@ -440,6 +464,12 @@ class CallSessionManager {
     this.sessions.delete(callId);
     return { ok: true };
   }
+
+  endAll(): void {
+    for (const callId of [...this.sessions.keys()]) {
+      this.end(callId);
+    }
+  }
 }
 
 let manager: CallSessionManager | null = null;
@@ -457,6 +487,10 @@ export function getCallSessionManager(host?: CallSessionHost): CallSessionManage
 /** Test-only reset. */
 export function resetCallSessionManager(): void {
   manager = null;
+}
+
+export function shutdownCallSessions(): void {
+  manager?.endAll();
 }
 
 export function createCallSessionManager(host: CallSessionHost): CallSessionManager {
