@@ -162,7 +162,16 @@ export function openNativeDatabase(
 
     if (options.initialize !== false) {
       db.exec(INIT_SQL);
-      runMigrations(db, { beforeMigrate: options.beforeMigrate });
+      runMigrations(db, {
+        beforeMigrate: () => {
+          // INIT_SQL and SQLite's WAL recovery may have already written through this
+          // connection. Flush those committed pages before the migration backup copies
+          // the main database file, otherwise our own WAL is mistaken for an external
+          // writer and startup is blocked on every schema upgrade.
+          db.checkpoint('TRUNCATE');
+          options.beforeMigrate?.();
+        },
+      });
       ensurePersonaUpToDate(db);
     }
     return db;

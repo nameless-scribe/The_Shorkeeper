@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { openDatabase, type AppDatabase } from '../index';
+import { createDatabaseBackup, openDatabase, type AppDatabase } from '../index';
 import { openNativeDatabase } from '../native-adapter';
 import { createBookkeepingEntry, listBookkeepingEntries } from '../repositories/bookkeeping';
 import {
@@ -191,6 +191,45 @@ describe('better-sqlite3 existing database protection', () => {
         'Opening an existing database with the native adapter requires allowExisting.',
       );
       expect(fs.readFileSync(dbPath)).toEqual(original);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('checkpoints its own WAL before creating a migration backup', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shorekeeper-native-wal-backup-'));
+    const dbPath = path.join(tempDir, 'existing.db');
+    let backupPath: string | null = null;
+    try {
+      const initial = openNativeDatabase(dbPath);
+      initial.close();
+
+      // Model an older installation: the new P0 tables and their ledger entry do not
+      // exist yet. INIT_SQL recreates them in WAL before runMigrations requests backup.
+      const legacy = openNativeDatabase(dbPath, { allowExisting: true, initialize: false });
+      legacy.exec(`
+        DROP TABLE artifacts;
+        DROP TABLE approvals;
+        DROP TABLE task_run_steps;
+        DROP TABLE task_runs;
+        DELETE FROM schema_migrations WHERE name = '0021_task_runs.sql';
+      `);
+      legacy.close();
+
+      const migrated = openNativeDatabase(dbPath, {
+        allowExisting: true,
+        beforeMigrate: () => {
+          backupPath = createDatabaseBackup(dbPath);
+        },
+      });
+
+      expect(backupPath).not.toBeNull();
+      expect(fs.statSync(backupPath!).size).toBeGreaterThan(0);
+      expect(
+        migrated.prepare('SELECT status FROM schema_migrations WHERE name = ?')
+          .get('0021_task_runs.sql')?.status,
+      ).toBe('applied');
+      migrated.close();
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
