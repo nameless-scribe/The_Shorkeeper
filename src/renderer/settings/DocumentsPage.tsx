@@ -3,6 +3,7 @@ import type { DocumentInfo, EmbeddingSettingsInfo, ImportProgress, ReindexProgre
 import { SettingsSegmented } from './components/SettingsSegmented';
 import {
   SettingsActionLink,
+  SettingsBadge,
   SettingsEmpty,
   SettingsField,
   SettingsIntro,
@@ -75,6 +76,17 @@ function formatDate(ms: number): string {
   });
 }
 
+function freshnessView(doc: DocumentInfo): { label: string; tone: 'cyan' | 'green' | 'amber' | 'muted' } {
+  if (doc.sourceKind === 'snapshot') return { label: '独立快照', tone: 'muted' };
+  switch (doc.freshnessStatus) {
+    case 'current': return { label: '来源一致', tone: 'green' };
+    case 'changed': return { label: '来源已变化', tone: 'amber' };
+    case 'missing': return { label: '来源丢失', tone: 'amber' };
+    case 'unknown': return { label: '尚未检查', tone: 'cyan' };
+    default: return { label: '独立快照', tone: 'muted' };
+  }
+}
+
 export function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [embedding, setEmbedding] = useState<EmbeddingSettingsInfo | null>(null);
@@ -92,6 +104,9 @@ export function DocumentsPage() {
   const [importing, setImporting] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const [reindexingDocId, setReindexingDocId] = useState<string | null>(null);
+  const [checkingDocId, setCheckingDocId] = useState<string | null>(null);
+  const [syncingDocId, setSyncingDocId] = useState<string | null>(null);
+  const [policyDocId, setPolicyDocId] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [reindexProgress, setReindexProgress] = useState<ReindexProgress | null>(null);
   const [embeddingMismatch, setEmbeddingMismatch] = useState(false);
@@ -133,8 +148,10 @@ export function DocumentsPage() {
   }, []);
 
   useEffect(() => {
-    refresh().catch(console.error);
-    loadEmbedding().catch(console.error);
+    Promise.all([refresh(), loadEmbedding()]).catch((loadError) => {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+      setLoading(false);
+    });
   }, [refresh, loadEmbedding]);
 
   useEffect(() => {
@@ -252,6 +269,62 @@ export function DocumentsPage() {
       await refresh();
     } finally {
       setReindexingDocId(null);
+    }
+  };
+
+  const replaceDocument = (updated: DocumentInfo) => {
+    setDocuments((items) => items.map((item) => item.id === updated.id ? updated : item));
+  };
+
+  const handleCheckFreshness = async (id: string) => {
+    setError(null);
+    setCheckingDocId(id);
+    try {
+      replaceDocument(await window.shorekeeper.documents.checkFreshness(id));
+    } catch (checkError) {
+      setError(checkError instanceof Error ? checkError.message : String(checkError));
+    } finally {
+      setCheckingDocId(null);
+    }
+  };
+
+  const handleSyncSource = async (id: string) => {
+    setError(null);
+    setSyncingDocId(id);
+    setProgress(null);
+    try {
+      await window.shorekeeper.documents.syncSource(id);
+      await refresh();
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : String(syncError));
+      await refresh();
+    } finally {
+      setSyncingDocId(null);
+    }
+  };
+
+  const handleSyncPolicy = async (doc: DocumentInfo) => {
+    setError(null);
+    setPolicyDocId(doc.id);
+    try {
+      replaceDocument(await window.shorekeeper.documents.setSyncPolicy(
+        doc.id,
+        doc.syncPolicy === 'auto' ? 'manual' : 'auto',
+      ));
+    } catch (policyError) {
+      setError(policyError instanceof Error ? policyError.message : String(policyError));
+    } finally {
+      setPolicyDocId(null);
+    }
+  };
+
+  const handleRelinkSource = async (id: string) => {
+    setError(null);
+    try {
+      const updated = await window.shorekeeper.documents.relinkSource(id);
+      if (updated) replaceDocument(updated);
+    } catch (relinkError) {
+      setError(relinkError instanceof Error ? relinkError.message : String(relinkError));
     }
   };
 
@@ -446,9 +519,40 @@ export function DocumentsPage() {
               <SettingsListCard
                 key={doc.id}
                 title={`${doc.title} · v${doc.version}`}
-                meta={`${doc.filename} · ${formatDocumentStatus(doc)} · ${doc.chunkCount} 块 · ${formatDate(doc.importedAt)}${doc.statusError ? ` · ${doc.statusError}` : ''}`}
+                subtitle={doc.staleReason ?? (doc.sourcePath ? `来源：${doc.sourcePath}` : undefined)}
+                meta={`${doc.filename} · ${formatDocumentStatus(doc)} · ${doc.chunkCount} 块 · ${formatDate(doc.importedAt)}${doc.lastCheckedAt ? ` · 检查 ${formatDate(doc.lastCheckedAt)}` : ''}${doc.statusError ? ` · ${doc.statusError}` : ''}`}
+                badge={<SettingsBadge tone={freshnessView(doc).tone}>{freshnessView(doc).label}</SettingsBadge>}
                 actions={
                   <>
+                    {doc.sourceKind === 'local_file' && (
+                      <SettingsActionLink
+                        onClick={() => void handleCheckFreshness(doc.id)}
+                        disabled={checkingDocId === doc.id || syncingDocId === doc.id}
+                      >
+                        {checkingDocId === doc.id ? '检查中…' : '检查来源'}
+                      </SettingsActionLink>
+                    )}
+                    {doc.sourceKind === 'local_file' && doc.freshnessStatus !== 'missing' && (
+                      <SettingsActionLink
+                        onClick={() => void handleSyncSource(doc.id)}
+                        disabled={syncingDocId === doc.id || checkingDocId === doc.id}
+                      >
+                        {syncingDocId === doc.id ? '同步中…' : '同步新版本'}
+                      </SettingsActionLink>
+                    )}
+                    {doc.sourceKind === 'local_file' && doc.freshnessStatus === 'missing' && (
+                      <SettingsActionLink onClick={() => void handleRelinkSource(doc.id)}>
+                        重新定位
+                      </SettingsActionLink>
+                    )}
+                    {doc.sourceKind === 'local_file' && (
+                      <SettingsActionLink
+                        onClick={() => void handleSyncPolicy(doc)}
+                        disabled={policyDocId === doc.id}
+                      >
+                        {policyDocId === doc.id ? '设置中…' : doc.syncPolicy === 'auto' ? '改为手动' : '开启自动'}
+                      </SettingsActionLink>
+                    )}
                     {doc.status !== 'indexed' && (
                       <SettingsActionLink
                         onClick={() => void handleReindexOne(doc.id)}

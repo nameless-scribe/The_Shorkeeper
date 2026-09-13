@@ -4,6 +4,7 @@ import path from 'node:path';
 import { getWorkspaceDir } from '../config/paths';
 import { loadEmbeddingConfig } from '../models/embedding-config';
 import { AbortSignalError } from '../agent/abort';
+import type { DocumentSyncPolicy } from '../shared/types';
 import { CHUNK_OVERLAP, CHUNK_SIZE, splitIntoChunks } from './chunker';
 import { embedText, embedTexts } from './embedding';
 import { retryEmbeddingOperation } from './embedding-retry';
@@ -43,6 +44,10 @@ export interface ImportTextOptions {
   signal?: AbortSignal;
   sourcePath?: string;
   title?: string;
+  sourceModifiedAt?: number;
+  sourceSize?: number;
+  lastCheckedAt?: number;
+  syncPolicy?: DocumentSyncPolicy;
 }
 
 export const MAX_KNOWLEDGE_TEXT_BYTES = 10 * 1024 * 1024;
@@ -132,6 +137,14 @@ async function importTextAsKnowledgeUnlocked(
       version: versionPlan.version,
       chunkSize: CHUNK_SIZE,
       chunkOverlap: CHUNK_OVERLAP,
+      sourceKind: sourcePath ? 'local_file' : 'snapshot',
+      sourceModifiedAt: options?.sourceModifiedAt ?? null,
+      sourceSize: options?.sourceSize ?? null,
+      lastCheckedAt: sourcePath ? (options?.lastCheckedAt ?? null) : null,
+      freshnessStatus: sourcePath && options?.sourceModifiedAt != null
+        ? 'current'
+        : sourcePath ? 'unknown' : 'snapshot',
+      syncPolicy: options?.syncPolicy ?? 'manual',
     });
   } catch (error) {
     try {

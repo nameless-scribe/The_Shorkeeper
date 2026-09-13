@@ -22,6 +22,9 @@ export interface RetrievedChunk {
   chunkIndex: number;
   content: string;
   score: number;
+  documentVersion?: number;
+  freshnessStatus?: DocumentInfo['freshnessStatus'];
+  lastCheckedAt?: number | null;
 }
 
 const DENSE_CANDIDATES = 20;
@@ -369,9 +372,13 @@ export function formatDocumentCatalogForPrompt(documents: DocumentInfo[]): strin
 
   const lines = documents.map((d, i) => {
     const summary = d.summary?.trim();
+    const freshness = d.sourceKind === 'snapshot'
+      ? '独立快照'
+      : d.freshnessStatus === 'current' ? '来源已检查'
+        : `来源状态：${d.freshnessStatus}`;
     return summary ?
-        `${i + 1}. ${d.filename} — ${summary}`
-      : `${i + 1}. ${d.filename}`;
+        `${i + 1}. ${d.filename} — ${summary}（v${d.version}，${freshness}）`
+      : `${i + 1}. ${d.filename}（v${d.version}，${freshness}）`;
   });
 
   return (
@@ -404,9 +411,9 @@ export function formatRagForPrompt(chunks: RetrievedChunk[]): string | null {
   const body = chunks
     .map(
       (c, i) =>
-        `<ref index="${i + 1}" source="${escapeXmlAttr(c.filename)}" score="${c.score.toFixed(2)}">\n${c.content}\n</ref>`,
+        `<ref index="${i + 1}" ref="doc:${escapeXmlAttr(c.documentId)}#chunk:${c.chunkIndex}" source="${escapeXmlAttr(c.filename)}" version="${c.documentVersion ?? 1}" freshness="${c.freshnessStatus ?? 'unknown'}" checked_at="${c.lastCheckedAt ?? ''}" score="${c.score.toFixed(2)}">\n${c.content}\n</ref>`,
     )
     .join('\n\n');
 
-  return `【参考文档】\n以下是从用户导入文档中检索到的相关片段，回答时请优先依据这些内容，并注明来源文件名：\n\n<reference>\n${body}\n</reference>`;
+  return `【参考文档】\n以下是从用户导入文档中检索到的相关片段。使用片段事实时，请在相关句末附上对应 ref（例如 〔doc:…#chunk:0〕）；freshness 非 current/snapshot 时还要明确提醒来源文件可能已变化：\n\n<reference>\n${body}\n</reference>`;
 }

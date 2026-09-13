@@ -6,6 +6,7 @@ import { FileAttachmentCard } from './FileAttachmentCard';
 import { MessageSpeechButton } from './MessageSpeechButton';
 import { collectMessageFiles } from './file-attachment-utils';
 import type { UiMessage } from '../hooks/useAgentEvents';
+import { MessageContent } from './MessageContent';
 
 interface MessageListProps {
   messages: UiMessage[];
@@ -152,12 +153,12 @@ export function MessageList({
                         </span>
                       </span>
                     ) : (
-                      <p className="whitespace-pre-wrap break-words">
-                        {msg.content}
+                      <div>
+                        <MessageContent content={msg.content} />
                         {msg.streaming && (
                           <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-keeper-cyan shadow-accent-sm" />
                         )}
-                      </p>
+                      </div>
                     )}
                   </div>
                   {voiceEnabled &&

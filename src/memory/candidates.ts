@@ -5,10 +5,13 @@ import {
   setMemoryCandidateStatus,
 } from '../db/repositories/memory-candidates';
 import type {
+  MemoryCandidateResolution,
   MemoryCandidateInfo,
   MemoryCandidateStatus,
 } from '../shared/types';
-import { upsertMemory } from './long-term';
+import {
+  resolveMemoryCandidate as applyMemoryCandidateResolution,
+} from './personal-memory-service';
 
 export {
   createMemoryCandidate,
@@ -23,18 +26,10 @@ export async function confirmMemoryCandidate(id: string): Promise<MemoryCandidat
   if (candidate.status === 'rejected') throw new Error('该记忆候选已被拒绝');
 
   if (candidate.status === 'pending') {
-    await upsertMemory(candidate.memoryKey, candidate.content, candidate.confidence, candidate.sourceSessionId ?? undefined, {
-      skipEmbedding: true,
-      memoryType: candidate.memoryType,
-      confidence: candidate.confidence,
-      sensitivity: candidate.sensitivity,
-      modelUsePolicy: candidate.modelUsePolicy,
-      validFrom: candidate.validFrom ?? undefined,
-      expiresAt: candidate.expiresAt,
-    });
-    const confirmed = setMemoryCandidateStatus(id, 'confirmed');
-    if (!confirmed) throw new Error('记忆候选在确认后消失');
-    return confirmed;
+    if (candidate.conflictsWithMemoryId) {
+      throw new Error('该候选与现有事实冲突，请明确选择保留、替换或并存');
+    }
+    return applyMemoryCandidateResolution(id, 'replace').candidate;
   }
 
   return candidate;
@@ -45,9 +40,14 @@ export function rejectMemoryCandidate(id: string): MemoryCandidateInfo {
   if (!candidate) throw new Error('记忆候选不存在');
   if (candidate.status === 'confirmed') throw new Error('该记忆候选已确认，不能拒绝');
 
-  const rejected = setMemoryCandidateStatus(id, 'rejected');
-  if (!rejected) throw new Error('记忆候选在拒绝后消失');
-  return rejected;
+  return applyMemoryCandidateResolution(id, 'keep_original').candidate;
+}
+
+export function resolveMemoryCandidate(
+  id: string,
+  resolution: MemoryCandidateResolution,
+): MemoryCandidateInfo {
+  return applyMemoryCandidateResolution(id, resolution).candidate;
 }
 
 export function listPendingMemoryCandidates(limit = 100): MemoryCandidateInfo[] {

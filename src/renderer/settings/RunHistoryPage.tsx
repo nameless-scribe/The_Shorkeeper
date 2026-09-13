@@ -4,6 +4,8 @@ import type {
   TaskRunDetail,
   TaskRunInfo,
   TaskRunStepInfo,
+  TaskRunContextSourceInfo,
+  ContextSourceDetailInfo,
 } from '@/shared/types';
 import { FileAttachmentCard } from '../components/FileAttachmentCard';
 import { toolDisplayName } from '../components/tool-labels';
@@ -81,8 +83,56 @@ function StepList({ steps }: { steps: TaskRunStepInfo[] }) {
   );
 }
 
+const CONTEXT_SOURCE_LABELS: Record<TaskRunContextSourceInfo['sourceType'], string> = {
+  memory: '记忆', document: '文档', goal: '目标', commitment: '承诺',
+};
+
+function ContextSourcesList({ sources }: { sources: TaskRunContextSourceInfo[] }) {
+  const [expandedRef, setExpandedRef] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ContextSourceDetailInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const open = async (source: TaskRunContextSourceInfo) => {
+    if (expandedRef === source.sourceRef) {
+      setExpandedRef(null);
+      return;
+    }
+    setExpandedRef(source.sourceRef);
+    setDetail(null);
+    setError(null);
+    try {
+      setDetail(await window.shorekeeper.agent.sourceDetail(source.sourceRef));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    }
+  };
+
+  if (!sources.length) return <SettingsEmpty title="本次运行没有注入可追踪来源" />;
+  return <div className="space-y-2">{sources.map((source) => (
+    <div key={source.id}>
+      <SettingsListCard
+        title={source.label}
+        subtitle={source.summary ?? undefined}
+        meta={`${source.sourceRef}${source.documentVersion ? ` · 文档 v${source.documentVersion}` : ''}${source.sourceUpdatedAt ? ` · ${formatRunTime(source.sourceUpdatedAt)}` : ''}`}
+        badge={<SettingsBadge tone={source.sourceType === 'document' ? 'cyan' : 'muted'}>{CONTEXT_SOURCE_LABELS[source.sourceType]}</SettingsBadge>}
+        onClick={() => void open(source)}
+      />
+      {expandedRef === source.sourceRef && (
+        <div className="mx-2 rounded-b-xl border border-t-0 border-keeper-cyan/15 bg-keeper-navyDeep/35 px-3 py-2 text-xs leading-relaxed">
+          {error && <p className="text-red-300/80">来源读取失败：{error}</p>}
+          {!error && !detail && <p className="text-keeper-ice/45">正在读取来源…</p>}
+          {detail && <>
+            {detail.content && <p className="max-h-44 overflow-y-auto whitespace-pre-wrap text-keeper-ice/75">{detail.content}</p>}
+            {detail.meta && <p className="mt-1 text-[10px] text-keeper-ice/45">{detail.meta}</p>}
+          </>}
+        </div>
+      )}
+    </div>
+  ))}</div>;
+}
+
 function RunDetailView({ detail, onBack }: { detail: TaskRunDetail; onBack: () => void }) {
-  const { run, steps, approvals, artifacts } = detail;
+  const { run, steps, approvals, artifacts, contextSources } = detail;
   const runIssue = formatRunIssue(run);
   return (
     <SettingsPageShell>
@@ -112,6 +162,10 @@ function RunDetailView({ detail, onBack }: { detail: TaskRunDetail; onBack: () =
 
       <SettingsSection title="工具步骤" hint={`${steps.length} 项`}>
         <StepList steps={steps} />
+      </SettingsSection>
+
+      <SettingsSection title="使用的上下文" hint={`${contextSources.length} 项`}>
+        <ContextSourcesList sources={contextSources} />
       </SettingsSection>
 
       <SettingsSection title="审批记录" hint={`${approvals.length} 项`}>

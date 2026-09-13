@@ -48,7 +48,7 @@ export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawer
       <SettingsSidebar tab={tab} onTabChange={setTab} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between border-b border-keeper-cyan/12 bg-keeper-navyDeep/40 px-6 py-4">
+        <header className="flex shrink-0 items-center justify-between border-b border-keeper-cyan/12 bg-keeper-navyDeep/40 px-3 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             {tab === 'about' ? (
               <TethysEmblem size="md" />
@@ -72,7 +72,7 @@ export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawer
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5 sm:px-6">
           <ErrorBoundary>
             <Suspense fallback={<SettingsLoading />}>
               {tab === 'plugins' && <PluginsPage />}

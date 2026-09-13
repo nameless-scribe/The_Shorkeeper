@@ -206,6 +206,13 @@ describe('formatDocumentCatalogForPrompt', () => {
         supersededBy: null,
         chunkSize: 800,
         chunkOverlap: 64,
+        sourceKind: 'snapshot',
+        sourceModifiedAt: null,
+        sourceSize: null,
+        lastCheckedAt: null,
+        freshnessStatus: 'snapshot',
+        staleReason: null,
+        syncPolicy: 'manual',
       },
     ]);
     expect(catalog).toContain('需求.md — 产品需求与登录模块说明');

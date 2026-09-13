@@ -1,5 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, type AppDatabase, type DatabaseStatement } from '../index';
+import type {
+  DocumentFreshnessStatus,
+  DocumentSourceKind,
+  DocumentSyncPolicy,
+} from '../../shared/types';
 
 export type DocumentStatus =
   | 'importing'
@@ -33,6 +38,13 @@ export interface DocumentInfo {
   supersededBy: string | null;
   chunkSize: number;
   chunkOverlap: number;
+  sourceKind: DocumentSourceKind;
+  sourceModifiedAt: number | null;
+  sourceSize: number | null;
+  lastCheckedAt: number | null;
+  freshnessStatus: DocumentFreshnessStatus;
+  staleReason: string | null;
+  syncPolicy: DocumentSyncPolicy;
 }
 
 export interface RagChunkInput {
@@ -60,6 +72,13 @@ export interface InsertDocumentInput {
   version?: number;
   chunkSize?: number;
   chunkOverlap?: number;
+  sourceKind?: DocumentSourceKind;
+  sourceModifiedAt?: number | null;
+  sourceSize?: number | null;
+  lastCheckedAt?: number | null;
+  freshnessStatus?: DocumentFreshnessStatus;
+  staleReason?: string | null;
+  syncPolicy?: DocumentSyncPolicy;
 }
 
 export interface DocumentMetaPatch {
@@ -72,6 +91,14 @@ export interface DocumentMetaPatch {
   statusError?: string | null;
   indexedAt?: number | null;
   deletedAt?: number | null;
+  sourceModifiedAt?: number | null;
+  sourceSize?: number | null;
+  lastCheckedAt?: number | null;
+  freshnessStatus?: DocumentFreshnessStatus;
+  staleReason?: string | null;
+  syncPolicy?: DocumentSyncPolicy;
+  sourcePath?: string | null;
+  sourceKind?: DocumentSourceKind;
 }
 
 export interface ReplaceDocumentChunksMeta extends DocumentMetaPatch {
@@ -159,13 +186,37 @@ interface DocumentRow {
   superseded_by?: string | null;
   chunk_size?: number | null;
   chunk_overlap?: number | null;
+  source_kind?: string | null;
+  source_modified_at?: number | null;
+  source_size?: number | null;
+  last_checked_at?: number | null;
+  freshness_status?: string | null;
+  stale_reason?: string | null;
+  sync_policy?: string | null;
 }
 
 const DOCUMENT_SELECT =
   `id, filename, filepath, mime_type, chunk_count, imported_at, content_hash,
    embedding_model, embedding_dim, summary, outline, status, status_error,
    updated_at, indexed_at, deleted_at, source_path, title, title_key,
-   document_version, superseded_by, chunk_size, chunk_overlap`;
+   document_version, superseded_by, chunk_size, chunk_overlap, source_kind,
+   source_modified_at, source_size, last_checked_at, freshness_status,
+   stale_reason, sync_policy`;
+
+function normalizeSourceKind(value: string | null | undefined): DocumentSourceKind {
+  return value === 'local_file' ? 'local_file' : 'snapshot';
+}
+
+function normalizeFreshnessStatus(value: string | null | undefined): DocumentFreshnessStatus {
+  if (value === 'unknown' || value === 'current' || value === 'changed' || value === 'missing') {
+    return value;
+  }
+  return 'snapshot';
+}
+
+function normalizeSyncPolicy(value: string | null | undefined): DocumentSyncPolicy {
+  return value === 'auto' ? 'auto' : 'manual';
+}
 
 function toOptionalBlob(value: unknown): Uint8Array | null {
   if (value == null) return null;
@@ -212,6 +263,13 @@ function rowToDocument(row: DocumentRow): DocumentInfo {
     supersededBy: row.superseded_by == null ? null : String(row.superseded_by),
     chunkSize: Number(row.chunk_size ?? 800),
     chunkOverlap: Number(row.chunk_overlap ?? 64),
+    sourceKind: normalizeSourceKind(row.source_kind),
+    sourceModifiedAt: row.source_modified_at == null ? null : Number(row.source_modified_at),
+    sourceSize: row.source_size == null ? null : Number(row.source_size),
+    lastCheckedAt: row.last_checked_at == null ? null : Number(row.last_checked_at),
+    freshnessStatus: normalizeFreshnessStatus(row.freshness_status),
+    staleReason: row.stale_reason == null ? null : String(row.stale_reason),
+    syncPolicy: normalizeSyncPolicy(row.sync_policy),
   };
 }
 
@@ -438,6 +496,18 @@ export function getAdjacentChunks(
   }));
 }
 
+export function getDocumentChunk(
+  documentId: string,
+  chunkIndex: number,
+  db: AppDatabase = getDatabase(),
+): { chunkIndex: number; content: string } | null {
+  const row = db.prepare(
+    `SELECT chunk_index, content FROM document_chunks
+     WHERE document_id = ? AND chunk_index = ? LIMIT 1`,
+  ).get(documentId, chunkIndex) as { chunk_index: number; content: string } | undefined;
+  return row ? { chunkIndex: Number(row.chunk_index), content: String(row.content) } : null;
+}
+
 function prepareChunkFtsInsert(db: AppDatabase): DatabaseStatement {
   return db.prepare(
     `INSERT INTO document_chunks_fts (chunk_id, document_id, content, filename)
@@ -504,6 +574,13 @@ export function insertDocumentWithChunks(
     supersededBy: null,
     chunkSize: input.chunkSize ?? 800,
     chunkOverlap: input.chunkOverlap ?? 64,
+    sourceKind: input.sourceKind ?? (input.sourcePath ? 'local_file' : 'snapshot'),
+    sourceModifiedAt: input.sourceModifiedAt ?? null,
+    sourceSize: input.sourceSize ?? null,
+    lastCheckedAt: input.lastCheckedAt ?? null,
+    freshnessStatus: input.freshnessStatus ?? (input.sourcePath ? 'unknown' : 'snapshot'),
+    staleReason: input.staleReason ?? null,
+    syncPolicy: input.syncPolicy ?? 'manual',
   };
   const hasFts = hasDocumentChunksFts(db);
 
@@ -514,8 +591,9 @@ export function insertDocumentWithChunks(
          content_hash, embedding_model, embedding_dim, summary, outline, embedding,
          status, status_error, updated_at, indexed_at, deleted_at,
          source_path, title, title_key, document_version, superseded_by,
-         chunk_size, chunk_overlap
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         chunk_size, chunk_overlap, source_kind, source_modified_at, source_size,
+         last_checked_at, freshness_status, stale_reason, sync_policy
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       document.id,
       document.filename,
@@ -541,6 +619,13 @@ export function insertDocumentWithChunks(
       document.supersededBy,
       document.chunkSize,
       document.chunkOverlap,
+      document.sourceKind,
+      document.sourceModifiedAt,
+      document.sourceSize,
+      document.lastCheckedAt,
+      document.freshnessStatus,
+      document.staleReason,
+      document.syncPolicy,
     );
 
     const insertChunk = db.prepare(
@@ -609,6 +694,38 @@ export function updateDocumentMeta(
   if (meta.deletedAt !== undefined) {
     sets.push('deleted_at = ?');
     params.push(meta.deletedAt);
+  }
+  if (meta.sourcePath !== undefined) {
+    sets.push('source_path = ?');
+    params.push(meta.sourcePath);
+  }
+  if (meta.sourceKind !== undefined) {
+    sets.push('source_kind = ?');
+    params.push(meta.sourceKind);
+  }
+  if (meta.sourceModifiedAt !== undefined) {
+    sets.push('source_modified_at = ?');
+    params.push(meta.sourceModifiedAt);
+  }
+  if (meta.sourceSize !== undefined) {
+    sets.push('source_size = ?');
+    params.push(meta.sourceSize);
+  }
+  if (meta.lastCheckedAt !== undefined) {
+    sets.push('last_checked_at = ?');
+    params.push(meta.lastCheckedAt);
+  }
+  if (meta.freshnessStatus !== undefined) {
+    sets.push('freshness_status = ?');
+    params.push(meta.freshnessStatus);
+  }
+  if (meta.staleReason !== undefined) {
+    sets.push('stale_reason = ?');
+    params.push(meta.staleReason);
+  }
+  if (meta.syncPolicy !== undefined) {
+    sets.push('sync_policy = ?');
+    params.push(meta.syncPolicy);
   }
   if (!sets.length) return;
   sets.push('updated_at = ?');

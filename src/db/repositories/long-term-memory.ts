@@ -142,10 +142,23 @@ function escapeLikePattern(value: string): string {
 }
 
 export function listMemories(limit = 50, db: AppDatabase = getDatabase()): MemoryEntry[] {
+  const now = Date.now();
   const rows = db.prepare(
     `SELECT ${MEMORY_SELECT} FROM long_term_memory
-     WHERE status = 'active'
+     WHERE status = 'active' AND model_use_policy = 'allow'
+       AND (expires_at IS NULL OR expires_at > ?)
      ORDER BY importance DESC, created_at DESC LIMIT ?`,
+  ).all(now, limit) as unknown as MemoryRow[];
+  return rows.map(rowToEntry);
+}
+
+export function listActiveMemories(
+  limit = 50,
+  db: AppDatabase = getDatabase(),
+): MemoryEntry[] {
+  const rows = db.prepare(
+    `SELECT ${MEMORY_SELECT} FROM long_term_memory
+     WHERE status = 'active' ORDER BY importance DESC, created_at DESC LIMIT ?`,
   ).all(limit) as unknown as MemoryRow[];
   return rows.map(rowToEntry);
 }
@@ -171,6 +184,18 @@ export function getMemoryByKey(
   return row ? rowToEntry(row) : undefined;
 }
 
+export function getCurrentMemoryByKey(
+  memoryKey: string,
+  db: AppDatabase = getDatabase(),
+): MemoryEntry | undefined {
+  const row = db.prepare(
+    `SELECT ${MEMORY_SELECT} FROM long_term_memory
+     WHERE memory_key = ? AND status IN ('active', 'disputed')
+     ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1`,
+  ).get(memoryKey) as unknown as MemoryRow | undefined;
+  return row ? rowToEntry(row) : undefined;
+}
+
 export function getMemoryWithEmbeddingByKey(
   memoryKey: string,
   db: AppDatabase = getDatabase(),
@@ -189,13 +214,15 @@ export function searchMemoryEntries(
 ): MemoryEntry[] {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  const now = Date.now();
   const pattern = `%${escapeLikePattern(trimmed)}%`;
   const rows = db.prepare(
     `SELECT ${MEMORY_SELECT} FROM long_term_memory
-     WHERE status = 'active'
+     WHERE status = 'active' AND model_use_policy = 'allow'
+       AND (expires_at IS NULL OR expires_at > ?)
        AND (content LIKE ? ESCAPE '\\' OR memory_key LIKE ? ESCAPE '\\')
      ORDER BY importance DESC, created_at DESC LIMIT ?`,
-  ).all(pattern, pattern, limit) as unknown as MemoryRow[];
+  ).all(now, pattern, pattern, limit) as unknown as MemoryRow[];
   return rows.map(rowToEntry);
 }
 
@@ -203,10 +230,13 @@ export function listMemoryEmbeddings(
   limit = 200,
   db: AppDatabase = getDatabase(),
 ): MemoryEmbeddingEntry[] {
+  const now = Date.now();
   const rows = db.prepare(
     `SELECT ${MEMORY_SELECT}, embedding FROM long_term_memory
-     WHERE status = 'active' ORDER BY created_at DESC LIMIT ?`,
-  ).all(limit) as unknown as MemoryRow[];
+     WHERE status = 'active' AND model_use_policy = 'allow'
+       AND (expires_at IS NULL OR expires_at > ?)
+     ORDER BY created_at DESC LIMIT ?`,
+  ).all(now, limit) as unknown as MemoryRow[];
   return rows.map(rowToEmbeddingEntry);
 }
 
@@ -313,6 +343,22 @@ export function updateMemoryContentById(
     `UPDATE long_term_memory SET content = ?, embedding = ?, updated_at = ? WHERE id = ?`,
   ).run(updated.content, embedding, updated.updatedAt, id);
   return updated;
+}
+
+export function setMemoryStatusById(
+  id: string,
+  status: PersonalMemoryStatus,
+  supersededBy: string | null = null,
+  db: AppDatabase = getDatabase(),
+): MemoryEntry | undefined {
+  const existing = getMemoryById(id, db);
+  if (!existing) return undefined;
+  const updatedAt = Date.now();
+  db.prepare(
+    `UPDATE long_term_memory
+     SET status = ?, superseded_by = ?, updated_at = ? WHERE id = ?`,
+  ).run(status, supersededBy, updatedAt, id);
+  return getMemoryById(id, db);
 }
 
 export function deleteMemoryById(

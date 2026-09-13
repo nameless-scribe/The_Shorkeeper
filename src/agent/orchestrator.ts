@@ -229,6 +229,7 @@ export async function* runOrchestrator(
       maxTokens: systemBudget,
       runKind: options?.kind ?? 'chat',
     });
+    recorder.context(systemParts.contextSources);
     const historyBudget = Math.max(1, textBudget - systemParts.budget.estimatedTokens);
     const budgetedHistory = trimMessagesToTokenBudget(rawHistory, historyBudget);
     const estimatedInputTokens = systemParts.budget.estimatedTokens +

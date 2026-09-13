@@ -28,6 +28,9 @@ import {
   type ContextSection,
 } from './context-budget';
 import { peekInterruptedRunNotice } from './run-recovery';
+import { listGoals } from '../db/repositories/goals';
+import { listCommitments } from '../db/repositories/commitments';
+import type { CreateTaskRunContextSourceInput } from '../db/repositories/context-sources';
 
 export interface ContextBuildInput {
   userMessage: string;
@@ -60,6 +63,8 @@ export interface SystemPromptParts {
   budget: ContextBudgetReport;
   /** 本轮注入了哪次中断 run 的说明；调用方在成功收口后确认 */
   interruptedRunId?: string;
+  /** 只包含经过预算裁剪后真正进入本轮 prompt 的来源。 */
+  contextSources: CreateTaskRunContextSourceInput[];
 }
 
 export async function buildSystemPromptParts(
@@ -74,6 +79,7 @@ export async function buildSystemPromptParts(
     required: true,
     group: 'stable',
   }];
+  const sourcesBySection = new Map<string, CreateTaskRunContextSourceInput[]>();
   sections.push({
     id: 'assistant_mode',
     text: getAssistantModePrompt(normalizeAssistantMode(input.assistantMode)),
@@ -163,6 +169,51 @@ export async function buildSystemPromptParts(
       priority: 70,
       group: 'dynamic',
     });
+    sourcesBySection.set('long_term_memory', memories.map((memory) => ({
+        sourceType: 'memory' as const,
+        sourceId: memory.id,
+        sourceRef: `mem:${memory.id}`,
+        label: memory.memoryKey ?? '长期记忆',
+        summary: memory.sensitivity === 'private'
+          ? '已注入一条私密记忆（内容不写入运行审计）'
+          : memory.content,
+        sourceUpdatedAt: memory.updatedAt,
+    })));
+  }
+
+  const escapeContext = (value: string) => value
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  try {
+    const goals = listGoals({ status: 'active', limit: 5 });
+    if (goals.length) {
+    sections.push({
+      id: 'active_goals',
+      text: `【当前目标】\n使用目标信息时在相关句末附上对应 ref。\n${goals.map((goal) => `<goal ref="goal:${goal.id}" priority="${goal.priority}">${escapeContext(goal.title)}${goal.description ? ` — ${escapeContext(goal.description)}` : ''}</goal>`).join('\n')}`,
+      priority: 68,
+      group: 'dynamic',
+    });
+    sourcesBySection.set('active_goals', goals.map((goal) => ({
+      sourceType: 'goal', sourceId: goal.id, sourceRef: `goal:${goal.id}`,
+      label: goal.title, summary: goal.description, sourceUpdatedAt: goal.updatedAt,
+    })));
+    }
+
+    const commitments = listCommitments({ statuses: ['proposed', 'open'], limit: 5 });
+    if (commitments.length) {
+    sections.push({
+      id: 'open_commitments',
+      text: `【未完成承诺】\n使用承诺信息时在相关句末附上对应 ref。\n${commitments.map((item) => `<commitment ref="commitment:${item.id}" owner="${item.owner}" status="${item.status}">${escapeContext(item.title)}</commitment>`).join('\n')}`,
+      priority: 72,
+      group: 'dynamic',
+    });
+    sourcesBySection.set('open_commitments', commitments.map((item) => ({
+      sourceType: 'commitment', sourceId: item.id, sourceRef: `commitment:${item.id}`,
+      label: item.title, summary: item.promisedTo ? `承诺对象：${item.promisedTo}` : null,
+      sourceUpdatedAt: item.updatedAt,
+    })));
+    }
+  } catch (error) {
+    console.warn('[context] 目标与承诺读取失败，跳过注入:', error);
   }
 
   const worldbookHits = matchWorldbook(input.userMessage, 5);
@@ -192,8 +243,17 @@ export async function buildSystemPromptParts(
       }
     }
     if (shouldAutoRetrieveRag(input.userMessage, hasDocuments, filenames)) {
-      const ragChunks = await retrieveRelevantChunks(retrievalQuery, 5, {
+      const documentById = new Map(documents.map((document) => [document.id, document]));
+      const ragChunks = (await retrieveRelevantChunks(retrievalQuery, 5, {
         signal: input.signal,
+      })).map((chunk) => {
+        const document = documentById.get(chunk.documentId);
+        return {
+          ...chunk,
+          documentVersion: document?.version,
+          freshnessStatus: document?.freshnessStatus,
+          lastCheckedAt: document?.lastCheckedAt,
+        };
       });
       const ragBlock = formatRagForPrompt(ragChunks);
       if (ragBlock) {
@@ -203,6 +263,15 @@ export async function buildSystemPromptParts(
           priority: 90,
           group: 'dynamic',
         });
+        sourcesBySection.set('rag_references', ragChunks.map((chunk) => ({
+          sourceType: 'document',
+          sourceId: chunk.documentId,
+          sourceRef: `doc:${chunk.documentId}#chunk:${chunk.chunkIndex}`,
+          label: `${chunk.filename} · 片段 ${chunk.chunkIndex + 1}`,
+          summary: `相关度 ${chunk.score.toFixed(2)} · 来源状态 ${chunk.freshnessStatus ?? 'unknown'}`,
+          documentVersion: chunk.documentVersion ?? null,
+          sourceUpdatedAt: chunk.lastCheckedAt ?? null,
+        })));
       }
     }
   } catch (err) {
@@ -233,6 +302,9 @@ export async function buildSystemPromptParts(
     dynamic,
     combined,
     budget: budgeted.report,
+    contextSources: budgeted.report.includedSectionIds.flatMap(
+      (sectionId) => sourcesBySection.get(sectionId) ?? [],
+    ),
     ...(interruptedInjected ? { interruptedRunId: interrupted.runId } : {}),
   };
 }

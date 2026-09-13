@@ -68,6 +68,7 @@ vi.mock('../context-builder', () => ({
       droppedSectionIds: [],
       truncatedSectionIds: [],
     },
+    contextSources: [],
   })),
 }));
 vi.mock('../../tools/agent-registry', () => ({
@@ -171,6 +172,7 @@ describe('orchestrator runtime boundaries', () => {
         truncatedSectionIds: [],
       },
       interruptedRunId: 'left-over-run',
+      contextSources: [],
     });
 
     const emitted = [];
@@ -204,6 +206,7 @@ describe('orchestrator runtime boundaries', () => {
         truncatedSectionIds: [],
       },
       interruptedRunId: 'left-over-run',
+      contextSources: [],
     });
     state.insertMessage.mockImplementation((_sessionId: string, role: string) => {
       if (role === 'assistant') throw new Error('写入失败');

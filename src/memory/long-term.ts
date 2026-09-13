@@ -1,18 +1,17 @@
 import {
   createMemory,
-  deleteMemoryById,
   getMemoryById,
   getMemoryByKey,
   getMemoryWithEmbeddingByKey,
+  listActiveMemories,
   listMemories,
   listMemoryEmbeddings,
   searchMemoryEntries,
   updateMemoryByKey,
-  updateMemoryContentById,
   type MemoryEntry,
 } from '../db/repositories/long-term-memory';
-import { rejectMemoryFact } from '../db/repositories/memory-candidates';
-import { classifyMemoryKey } from './candidate-policy';
+import { runInDatabaseTransaction } from '../db/transaction';
+import { createMemorySource } from '../db/repositories/memory-sources';
 import { embedText } from '../rag/embedding';
 import { serializeEmbedding } from '../rag/vector';
 import { deserializeEmbedding, topKBySimilarity } from '../rag/vector';
@@ -23,14 +22,53 @@ import type {
   MemorySensitivity,
   PersonalMemoryType,
 } from '../shared/types';
+import {
+  rejectMemoryByUser,
+  replaceMemoryFromUserEdit,
+} from './personal-memory-service';
 
 export { getMemoryByKey, listMemories, type MemoryEntry };
 
 export const MANAGED_MEMORY_MAX_CONTENT_LENGTH = 2000;
 export const MANAGED_MEMORY_LIST_LIMIT = 200;
 
+function lexicalRelevance(query: string, memory: MemoryEntry): number {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return 0;
+  const haystack = `${memory.memoryKey ?? ''} ${memory.content}`.toLocaleLowerCase();
+  if (haystack.includes(normalizedQuery)) return 1;
+  const terms = normalizedQuery.split(/[\s,，。！？、;；:：]+/).filter(Boolean);
+  if (!terms.length) return 0;
+  return terms.filter((term) => haystack.includes(term)).length / terms.length;
+}
+
+function rankMemories(
+  query: string,
+  candidates: Array<{ memory: MemoryEntry; semantic?: number }>,
+  limit: number,
+): MemoryEntry[] {
+  const now = Date.now();
+  return candidates
+    .map(({ memory, semantic }) => {
+      const ageDays = Math.max(0, now - memory.updatedAt) / 86_400_000;
+      const freshness = 1 / (1 + ageDays / 90);
+      const relevance = semantic ?? lexicalRelevance(query, memory);
+      return {
+        memory,
+        score: relevance * 0.5 + memory.importance * 0.2 + memory.confidence * 0.2 + freshness * 0.1,
+      };
+    })
+    .sort((a, b) => b.score - a.score || b.memory.updatedAt - a.memory.updatedAt)
+    .slice(0, Math.max(1, Math.min(20, limit)))
+    .map(({ memory }) => memory);
+}
+
 export function searchMemories(query: string, limit = 5): MemoryEntry[] {
-  return searchMemoryEntries(query, limit);
+  return rankMemories(
+    query,
+    searchMemoryEntries(query, 50).map((memory) => ({ memory })),
+    limit,
+  );
 }
 
 /** LIKE 无结果时用语义向量检索补充 */
@@ -40,11 +78,10 @@ export async function searchMemoriesWithEmbedding(
   signal?: AbortSignal,
 ): Promise<MemoryEntry[]> {
   const likeHits = searchMemories(query, limit);
-  if (likeHits.length) return likeHits;
 
   const stored = listMemoryEmbeddings(500);
   const withVec = stored.filter((s) => s.embedding);
-  if (!withVec.length) return [];
+  if (!withVec.length) return likeHits;
 
   try {
     const queryVec = new Float32Array(await embedText(query.trim(), signal));
@@ -57,13 +94,16 @@ export async function searchMemoriesWithEmbedding(
       limit,
     ).filter((h) => h.score >= 0.5);
 
-    if (!hits.length) return [];
+    if (!hits.length) return likeHits;
 
-    return hits.map((hit) => hit.item);
+    const combined = new Map<string, { memory: MemoryEntry; semantic?: number }>();
+    for (const memory of likeHits) combined.set(memory.id, { memory });
+    for (const hit of hits) combined.set(hit.item.id, { memory: hit.item, semantic: hit.score });
+    return rankMemories(query, [...combined.values()], limit);
   } catch (err) {
     if (signal?.aborted) throw err;
     console.warn('[memory] 向量检索失败，回退 LIKE:', err);
-    return [];
+    return likeHits;
   }
 }
 
@@ -98,6 +138,8 @@ export async function upsertMemory(
     modelUsePolicy?: MemoryModelUsePolicy;
     validFrom?: number;
     expiresAt?: number | null;
+    sourceMessageId?: string | null;
+    sourceRunId?: string | null;
   },
 ): Promise<MemoryEntry> {
   const key = memoryKey.trim();
@@ -113,19 +155,53 @@ export async function upsertMemory(
 
   if (existing) {
     const contentChanged = existing.content !== trimmed;
+    if (contentChanged) {
+      throw new Error(`同一主题已有不同事实，请先走冲突确认: ${key}`);
+    }
     let embeddingToWrite: Uint8Array | null;
 
     if (options?.skipEmbedding) {
-      if (contentChanged) {
-        embeddingToWrite = null;
-      } else {
-        embeddingToWrite = existing.embedding;
-      }
+      embeddingToWrite = existing.embedding;
     } else {
       embeddingToWrite = embeddingBlob ?? existing.embedding;
     }
 
-    const updated = updateMemoryByKey(key, {
+    const updated = runInDatabaseTransaction((db) => {
+      const result = updateMemoryByKey(key, {
+        content: trimmed,
+        importance: clampedImportance,
+        sourceSessionId: sessionId,
+        updatedAt: now,
+        memoryType: options?.memoryType,
+        confidence: options?.confidence,
+        sensitivity: options?.sensitivity,
+        modelUsePolicy: options?.modelUsePolicy,
+        validFrom: options?.validFrom,
+        expiresAt: options?.expiresAt,
+        embedding: embeddingToWrite,
+      }, db);
+      if (!result) throw new Error(`长期记忆在更新前消失: ${key}`);
+      createMemorySource({
+        memoryId: result.id,
+        sourceType: 'conversation',
+        sourceSessionId: sessionId ?? null,
+        sourceMessageId: options?.sourceMessageId ?? null,
+        sourceRunId: options?.sourceRunId ?? null,
+        sourceRef: options?.sourceMessageId
+          ? `conversation:${sessionId ?? 'unknown'}:${options.sourceMessageId}`
+          : sessionId ? `conversation:${sessionId}` : null,
+        summary: '重复来源确认',
+        createdAt: now,
+      }, db);
+      return result;
+    });
+
+    return updated;
+  }
+
+  const created = runInDatabaseTransaction((db) => {
+    const result = createMemory({
+      memoryKey: key,
       content: trimmed,
       importance: clampedImportance,
       sourceSessionId: sessionId,
@@ -137,33 +213,21 @@ export async function upsertMemory(
       modelUsePolicy: options?.modelUsePolicy,
       validFrom: options?.validFrom,
       expiresAt: options?.expiresAt,
-      embedding: embeddingToWrite,
-    });
-    if (!updated) {
-      throw new Error(`长期记忆在更新前消失: ${key}`);
-    }
-
-    if (options?.skipEmbedding && contentChanged) {
-      queueMemoryReembed(key, trimmed);
-    }
-
-    return updated;
-  }
-
-  const created = createMemory({
-    memoryKey: key,
-    content: trimmed,
-    importance: clampedImportance,
-    sourceSessionId: sessionId,
-    createdAt: now,
-    updatedAt: now,
-    memoryType: options?.memoryType,
-    confidence: options?.confidence,
-    sensitivity: options?.sensitivity,
-    modelUsePolicy: options?.modelUsePolicy,
-    validFrom: options?.validFrom,
-    expiresAt: options?.expiresAt,
-    embedding: embeddingBlob,
+      embedding: embeddingBlob,
+    }, db);
+    createMemorySource({
+      memoryId: result.id,
+      sourceType: 'conversation',
+      sourceSessionId: sessionId ?? null,
+      sourceMessageId: options?.sourceMessageId ?? null,
+      sourceRunId: options?.sourceRunId ?? null,
+      sourceRef: options?.sourceMessageId
+        ? `conversation:${sessionId ?? 'unknown'}:${options.sourceMessageId}`
+        : sessionId ? `conversation:${sessionId}` : null,
+      summary: '长期记忆首次写入',
+      createdAt: now,
+    }, db);
+    return result;
   });
 
   if (options?.skipEmbedding) {
@@ -210,21 +274,44 @@ export async function saveMemory(
   const now = Date.now();
   const clampedImportance = Math.max(0, Math.min(1, importance));
 
-  return createMemory({
-    content: trimmed,
-    importance: clampedImportance,
-    sourceSessionId: sessionId ?? null,
-    createdAt: now,
-    embedding: embeddingBlob,
+  const created = runInDatabaseTransaction((db) => {
+    const result = createMemory({
+      content: trimmed,
+      importance: clampedImportance,
+      sourceSessionId: sessionId ?? null,
+      createdAt: now,
+      embedding: embeddingBlob,
+    }, db);
+    createMemorySource({
+      memoryId: result.id,
+      sourceType: 'conversation',
+      sourceSessionId: sessionId ?? null,
+      sourceRef: sessionId ? `conversation:${sessionId}` : null,
+      summary: '自由文本长期记忆写入',
+      createdAt: now,
+    }, db);
+    return result;
   });
+  return created;
 }
 
 export function formatMemoriesForPrompt(memories: MemoryEntry[]): string | null {
-  if (!memories.length) return null;
-  const lines = memories.map((m) =>
-    m.memoryKey ? `- [${m.memoryKey}] ${m.content}` : `- ${m.content}`,
-  );
-  return `【长期记忆】\n${lines.join('\n')}`;
+  const now = Date.now();
+  const eligible = memories.filter((memory) =>
+    memory.status === 'active' &&
+    memory.modelUsePolicy === 'allow' &&
+    (memory.expiresAt == null || memory.expiresAt > now));
+  if (!eligible.length) return null;
+  const escape = (value: string) => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const lines = eligible.map((m) => {
+    const key = m.memoryKey ? ` key="${escape(m.memoryKey)}"` : '';
+    return `<memory ref="mem:${escape(m.id)}" type="${m.memoryType}"${key}>${escape(m.content)}</memory>`;
+  });
+  return `【长期记忆】\n以下是可用于回答的已确认记忆。使用其中事实时，请在相关句末附上对应 ref（例如 〔mem:…〕）。\n${lines.join('\n')}`;
 }
 
 export function formatMemoriesForExtraction(memories: MemoryEntry[]): string {
@@ -239,22 +326,11 @@ export function listMemoryContents(): string[] {
 }
 
 export function listManagedMemories(limit = MANAGED_MEMORY_LIST_LIMIT): MemoryEntry[] {
-  return listMemories(Math.max(1, Math.min(500, limit)));
+  return listActiveMemories(Math.max(1, Math.min(500, limit)));
 }
 
-function rejectManagedMemoryFact(
-  memoryKey: string | null,
-  content: string,
-  reason: string,
-): void {
-  if (!memoryKey) return;
-  rejectMemoryFact({
-    memoryKey,
-    content,
-    category: classifyMemoryKey(memoryKey) ?? 'other',
-    confidence: 1,
-    reason,
-  });
+export function getManagedMemory(id: string): MemoryEntry | null {
+  return getMemoryById(id) ?? null;
 }
 
 export async function updateManagedMemory(id: string, content: string): Promise<MemoryEntry> {
@@ -268,10 +344,7 @@ export async function updateManagedMemory(id: string, content: string): Promise<
   if (!existing) throw new Error('长期记忆不存在');
   if (existing.content === trimmed) return existing;
 
-  const updated = updateMemoryContentById(id, trimmed, null);
-  if (!updated) throw new Error('长期记忆在更新后消失');
-
-  rejectManagedMemoryFact(existing.memoryKey, existing.content, '用户从设置中修改');
+  const updated = replaceMemoryFromUserEdit(existing, trimmed);
 
   if (updated.memoryKey) {
     queueMemoryReembed(updated.memoryKey, trimmed);
@@ -281,9 +354,5 @@ export async function updateManagedMemory(id: string, content: string): Promise<
 }
 
 export function deleteManagedMemory(id: string): MemoryEntry {
-  const deleted = deleteMemoryById(id);
-  if (!deleted) throw new Error('长期记忆不存在');
-
-  rejectManagedMemoryFact(deleted.memoryKey, deleted.content, '用户从设置中删除');
-  return deleted;
+  return rejectMemoryByUser(id);
 }

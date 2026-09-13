@@ -15,6 +15,14 @@ function formatMemoryMeta(memory: MemoryInfo): string {
   return memory.memoryKey ? `${memory.memoryKey} · ${time}` : time;
 }
 
+export function replaceVersionedMemory(
+  memories: MemoryInfo[],
+  previousId: string,
+  replacement: MemoryInfo,
+): MemoryInfo[] {
+  return memories.map((memory) => (memory.id === previousId ? replacement : memory));
+}
+
 export function LongTermMemoryPanel() {
   const [memories, setMemories] = useState<MemoryInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +52,7 @@ export function LongTermMemoryPanel() {
     setError(null);
     try {
       const updated = await window.shorekeeper.memories.update(memory.id, editValue);
-      setMemories((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setMemories((current) => replaceVersionedMemory(current, memory.id, updated));
       setEditingId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

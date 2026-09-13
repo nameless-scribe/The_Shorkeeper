@@ -130,6 +130,33 @@ export interface TaskRunDetail {
   steps: TaskRunStepInfo[];
   artifacts: ArtifactInfo[];
   approvals: ApprovalInfo[];
+  contextSources: TaskRunContextSourceInfo[];
+}
+
+export type ContextSourceType = 'memory' | 'document' | 'goal' | 'commitment';
+
+export interface TaskRunContextSourceInfo {
+  id: string;
+  runId: string;
+  sourceType: ContextSourceType;
+  sourceId: string;
+  sourceRef: string;
+  label: string;
+  /** 脱敏、限长后的审计摘要，不保存完整 prompt。 */
+  summary: string | null;
+  documentVersion: number | null;
+  sourceUpdatedAt: number | null;
+  createdAt: number;
+}
+
+export interface ContextSourceDetailInfo {
+  sourceType: ContextSourceType;
+  sourceId: string;
+  sourceRef: string;
+  title: string;
+  content: string | null;
+  meta: string | null;
+  available: boolean;
 }
 
 export interface AgentSendPayload {
@@ -329,6 +356,7 @@ export type PersonalMemoryStatus =
 export type MemorySensitivity = 'normal' | 'private' | 'sensitive';
 export type MemoryModelUsePolicy = 'allow' | 'deny';
 export type MemoryProposedAction = 'create' | 'replace' | 'merge' | 'ignore';
+export type MemoryCandidateResolution = 'keep_original' | 'replace' | 'coexist';
 export type MemorySourceType =
   | 'conversation'
   | 'user_edit'
@@ -574,6 +602,10 @@ export type DocumentStatus =
   | 'superseded'
   | 'deleted';
 
+export type DocumentSourceKind = 'snapshot' | 'local_file';
+export type DocumentFreshnessStatus = 'snapshot' | 'unknown' | 'current' | 'changed' | 'missing';
+export type DocumentSyncPolicy = 'manual' | 'auto';
+
 export interface DocumentInfo {
   id: string;
   filename: string;
@@ -593,6 +625,13 @@ export interface DocumentInfo {
   supersededBy: string | null;
   chunkSize: number;
   chunkOverlap: number;
+  sourceKind: DocumentSourceKind;
+  sourceModifiedAt: number | null;
+  sourceSize: number | null;
+  lastCheckedAt: number | null;
+  freshnessStatus: DocumentFreshnessStatus;
+  staleReason: string | null;
+  syncPolicy: DocumentSyncPolicy;
 }
 
 export type ImportProgress =

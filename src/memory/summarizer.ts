@@ -18,14 +18,22 @@ import {
   upsertMemory,
 } from './long-term';
 import { createMemoryCandidate, hasRejectedMemoryFact } from '../db/repositories/memory-candidates';
+import {
+  getCurrentMemoryByKey,
+  listMemoryEmbeddings,
+} from '../db/repositories/long-term-memory';
 import { allowsAutoMemoryExtraction } from '../assistant/mode';
 import type { AssistantMode } from '../shared/types';
 import {
   clampMemoryConfidence,
+  assessMemoryFactRelation,
   evaluateMemoryCandidate,
   type MemoryCandidateDraft,
 } from './candidate-policy';
 import { parseCommitmentDrafts, proposeCommitmentsFromDrafts } from './commitment-extraction';
+import { stageMemoryConflict } from './personal-memory-service';
+import { embedText } from '../rag/embedding';
+import { isSemanticallyDuplicateMemory } from './dedupe';
 
 export interface ExtractMemoriesOptions {
   assistantMode?: AssistantMode;
@@ -48,20 +56,25 @@ ${existingMemories}
 3. 若无任何新事实或更新，输出 []
 4. 不要编造对话中未出现的信息
 5. 置信度必须是 0 到 1 的数字；reason 简述为什么这是稳定事实
-6. memory_key 命名规范：
-   - user.nickname — 称呼/名字
-   - user.preference.* — 偏好（如 user.preference.drink）
-   - user.schedule.* — 作息/忙碌时段
-   - user.relationship.* — 与助手的关系、情感
-   - user.habit.* — 习惯
-   - user.other.* — 其他（尽量用具体子 key，如 user.other.weekend_activity）
-7. 另外识别用户在本轮明确答应别人或自己要做的事（如"我周五前把报告发给老板""明天给妈妈打电话"），
+6. 每条事实必须给出 memory_type，只能是 identity / preference / relationship / event / goal / habit / procedure：
+   - user.identity.* 或 user.nickname — 身份、名字、称呼
+   - user.preference.* — 稳定偏好
+   - user.relationship.* — 人物或与助手的关系
+   - user.event.* — 有时间边界的个人事件
+   - user.goal.* — 用户目标；确认后进入目标系统，不复制成长期记忆
+   - user.habit.* / user.schedule.* — 习惯、作息、周期行为
+   - user.procedure.* — 用户希望助手以后如何做事
+   不得输出 user.other.*；无法归类就不要提取。
+7. sensitivity 只能是 normal / private / sensitive。关系与行程至少 private；健康、财务等为 sensitive。
+8. model_use_policy 只能是 allow / deny；sensitive 必须 deny。密码、Token、验证码、密钥、身份证号、银行卡号不得输出。
+9. 事件可输出 expires_at，稳定事实可输出 valid_from；均使用 Unix 毫秒时间戳，不确定则省略。
+10. 另外识别用户在本轮明确答应别人或自己要做的事（如"我周五前把报告发给老板""明天给妈妈打电话"），
    以 {"type":"commitment","title":"…","due":"YYYY-MM-DD 或 ISO 时间，不确定则省略","promised_to":"对象，可省略","confidence":0.9,"reason":"…"} 输出。
    只记用户自己的承诺，不记助手答应的事；假设、犹豫或已完成的事不算承诺。
 
 【输出格式】
 仅输出 JSON 数组，例如：
-[{"key":"user.nickname","content":"用户名叫汐","confidence":0.95,"reason":"用户明确自我介绍"},
+[{"key":"user.nickname","content":"用户名叫汐","memory_type":"identity","sensitivity":"normal","model_use_policy":"allow","confidence":0.95,"reason":"用户明确自我介绍"},
  {"type":"commitment","title":"周五前把报告发给老板","due":"2026-09-18","promised_to":"老板","confidence":0.9,"reason":"用户明确说要在周五前发"}]`;
 }
 
@@ -77,9 +90,18 @@ function parseStructuredArray(raw: string): unknown[] {
   }
 }
 
-function parseStructuredFacts(items: unknown[]): StructuredMemoryFact[] {
+function parseOptionalTimestamp(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.floor(value);
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+export function parseStructuredFacts(items: unknown[]): StructuredMemoryFact[] {
   return items
-    .filter((item): item is { key?: string; content?: string; confidence?: unknown; reason?: unknown; type?: unknown } => {
+    .filter((item): item is Record<string, unknown> => {
       return typeof item === 'object' && item !== null;
     })
     .filter((item) => item.type !== 'commitment')
@@ -88,8 +110,29 @@ function parseStructuredFacts(items: unknown[]): StructuredMemoryFact[] {
       content: String(item.content ?? '').trim(),
       confidence: clampMemoryConfidence(item.confidence),
       reason: typeof item.reason === 'string' ? item.reason.trim().slice(0, 240) : '',
+      memoryType: item.memory_type,
+      sensitivity: item.sensitivity,
+      modelUsePolicy: item.model_use_policy,
+      validFrom: parseOptionalTimestamp(item.valid_from),
+      expiresAt: parseOptionalTimestamp(item.expires_at),
     }))
     .filter((item) => item.key && item.content);
+}
+
+async function isSemanticDuplicate(
+  content: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const existing = listMemoryEmbeddings(200).filter((memory) => memory.embedding);
+  if (!existing.length) return false;
+  try {
+    const vector = new Float32Array(await embedText(content, signal));
+    return isSemanticallyDuplicateMemory(vector, existing);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    console.warn('[memory] 语义去重失败，继续使用确定性 key/content 判定:', error);
+    return false;
+  }
 }
 
 function formatTurnDialogue(
@@ -184,14 +227,56 @@ export async function extractMemoriesFromSession(
   }
 
   let saved = 0;
+  const acceptedInBatch = new Set<string>();
   for (const fact of facts) {
     const evaluation = evaluateMemoryCandidate(fact);
     if (evaluation.decision === 'deny') continue;
+
+    const batchKey = `${evaluation.key}\u0000${evaluation.content.trim().toLowerCase()}`;
+    if (acceptedInBatch.has(batchKey)) continue;
+    acceptedInBatch.add(batchKey);
+
+    const existing = getCurrentMemoryByKey(evaluation.key);
+    if (existing) {
+      const relation = assessMemoryFactRelation(
+        evaluation.key,
+        evaluation.content,
+        existing.memoryKey ?? '',
+        existing.content,
+      );
+      if (relation === 'duplicate') continue;
+      stageMemoryConflict({
+        memoryKey: evaluation.key,
+        content: evaluation.content,
+        category: evaluation.category,
+        confidence: evaluation.confidence,
+        reason: evaluation.reason,
+        sourceSessionId: sessionId,
+        sourceMessageId: latestUserMessage.id,
+        memoryType: evaluation.memoryType,
+        sensitivity: evaluation.sensitivity,
+        modelUsePolicy: evaluation.modelUsePolicy,
+        validFrom: evaluation.validFrom,
+        expiresAt: evaluation.expiresAt,
+        conflictsWithMemoryId: existing.id,
+        proposedAction: relation === 'supplement' ? 'merge' : 'replace',
+      });
+      continue;
+    }
+
+    if (await isSemanticDuplicate(evaluation.content, signal)) continue;
 
     if (evaluation.decision === 'silent') {
       if (hasRejectedMemoryFact(evaluation.key, evaluation.content)) continue;
       await upsertMemory(evaluation.key, evaluation.content, evaluation.confidence, sessionId, {
         skipEmbedding: true,
+        memoryType: evaluation.memoryType,
+        confidence: evaluation.confidence,
+        sensitivity: evaluation.sensitivity,
+        modelUsePolicy: evaluation.modelUsePolicy,
+        validFrom: evaluation.validFrom ?? undefined,
+        expiresAt: evaluation.expiresAt,
+        sourceMessageId: latestUserMessage.id,
       });
       saved += 1;
       continue;
@@ -204,6 +289,12 @@ export async function extractMemoriesFromSession(
       confidence: evaluation.confidence,
       reason: evaluation.reason,
       sourceSessionId: sessionId,
+      sourceMessageId: latestUserMessage.id,
+      memoryType: evaluation.memoryType,
+      sensitivity: evaluation.sensitivity,
+      modelUsePolicy: evaluation.modelUsePolicy,
+      validFrom: evaluation.validFrom,
+      expiresAt: evaluation.expiresAt,
     });
   }
 

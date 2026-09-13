@@ -17,6 +17,7 @@ import {
 } from '../../db/repositories/task-runs';
 import { LOCAL_APPEND_CONTRACT, READ_ONLY_CONTRACT, WORKSPACE_WRITE_CONTRACT } from '../../tools/contract';
 import { createRunRecorder } from '../run-record';
+import { listTaskRunContextSources } from '../../db/repositories/context-sources';
 
 describe('run recorder', () => {
   let tempDir: string;
@@ -35,6 +36,10 @@ describe('run recorder', () => {
     const recorder = createRunRecorder({ runId: 'run-1', sessionId: 's', kind: 'scheduled', triggerRef: 'task-9', enabled: true });
     recorder.start();
     recorder.setModel('model-x');
+    recorder.context([{
+      sourceType: 'memory', sourceId: 'memory-1', sourceRef: 'mem:memory-1',
+      label: '偏好', summary: '用户喜欢拿铁', sourceUpdatedAt: 123,
+    }]);
     recorder.phase('running');
     recorder.stepStart('c1', 'write_file', WORKSPACE_WRITE_CONTRACT);
     recorder.stepEnd('c1', 'write_file', {
@@ -89,6 +94,9 @@ describe('run recorder', () => {
       ['create_user_task', 'skipped', 'low'],
     ]);
     expect(listRunArtifacts('run-1').map((artifact) => artifact.relativePath)).toEqual(['a.md']);
+    expect(listTaskRunContextSources('run-1')).toMatchObject([{
+      sourceRef: 'mem:memory-1', label: '偏好', summary: '用户喜欢拿铁',
+    }]);
   });
 
   it('never throws into the run when persistence fails, and degrades after the first failure', () => {

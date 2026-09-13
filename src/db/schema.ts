@@ -100,6 +100,13 @@ export interface DocumentRow {
   superseded_by?: string | null;
   chunk_size?: number;
   chunk_overlap?: number;
+  source_kind?: string;
+  source_modified_at?: number | null;
+  source_size?: number | null;
+  last_checked_at?: number | null;
+  freshness_status?: string;
+  stale_reason?: string | null;
+  sync_policy?: string;
 }
 
 export interface DocumentChunkRow {
@@ -210,6 +217,19 @@ export interface TaskRunRow {
   updated_at: number;
   terminal_at: number | null;
   acknowledged_at: number | null;
+}
+
+export interface TaskRunContextSourceRow {
+  id: string;
+  run_id: string;
+  source_type: string;
+  source_id: string;
+  source_ref: string;
+  label: string;
+  summary: string | null;
+  document_version: number | null;
+  source_updated_at: number | null;
+  created_at: number;
 }
 
 export interface TaskRunStepRow {

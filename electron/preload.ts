@@ -14,6 +14,7 @@ import type {
   SessionInfo,
   AssistantMode,
   MemoryCandidateInfo,
+  MemoryCandidateResolution,
   MemoryCandidateStatus,
   MemoryInfo,
   SessionListOptions,
@@ -74,6 +75,7 @@ import type {
   TaskRunDetail,
   TaskRunInfo,
   DailyStewardSettingsInfo,
+  ContextSourceDetailInfo,
 } from '../src/shared/types';
 import type { RunTelemetrySnapshot } from '../src/agent/run-observability';
 
@@ -90,6 +92,8 @@ const shorekeeperApi = {
     ): Promise<TaskRunInfo[]> => ipcRenderer.invoke('agent:runHistory', query),
     runDetail: (runId: string): Promise<TaskRunDetail | null> =>
       ipcRenderer.invoke('agent:runDetail', runId),
+    sourceDetail: (sourceRef: string): Promise<ContextSourceDetailInfo> =>
+      ipcRenderer.invoke('agent:sourceDetail', sourceRef),
     onEvent: (callback: (event: unknown) => void) => {
       const listener = (_: Electron.IpcRendererEvent, data: unknown) => callback(data);
       ipcRenderer.on('agent:event', listener);
@@ -184,9 +188,12 @@ const shorekeeperApi = {
       ipcRenderer.invoke('memory:candidates:confirm', id),
     reject: (id: string): Promise<MemoryCandidateInfo> =>
       ipcRenderer.invoke('memory:candidates:reject', id),
+    resolve: (id: string, resolution: MemoryCandidateResolution): Promise<MemoryCandidateInfo> =>
+      ipcRenderer.invoke('memory:candidates:resolve', id, resolution),
   },
   memories: {
     list: (limit?: number): Promise<MemoryInfo[]> => ipcRenderer.invoke('memory:list', limit),
+    get: (id: string): Promise<MemoryInfo | null> => ipcRenderer.invoke('memory:get', id),
     update: (id: string, content: string): Promise<MemoryInfo> =>
       ipcRenderer.invoke('memory:update', id, content),
     delete: (id: string): Promise<MemoryInfo> => ipcRenderer.invoke('memory:delete', id),
@@ -198,6 +205,14 @@ const shorekeeperApi = {
     reindex: (): Promise<{ ok: boolean } & ReindexResult> => ipcRenderer.invoke('documents:reindex'),
     reindexOne: (id: string): Promise<DocumentInfo> =>
       ipcRenderer.invoke('documents:reindexOne', id),
+    checkFreshness: (id: string): Promise<DocumentInfo> =>
+      ipcRenderer.invoke('documents:checkFreshness', id),
+    syncSource: (id: string): Promise<DocumentInfo> =>
+      ipcRenderer.invoke('documents:syncSource', id),
+    setSyncPolicy: (id: string, policy: 'manual' | 'auto'): Promise<DocumentInfo> =>
+      ipcRenderer.invoke('documents:setSyncPolicy', id, policy),
+    relinkSource: (id: string): Promise<DocumentInfo | null> =>
+      ipcRenderer.invoke('documents:relinkSource', id),
     embeddingMismatch: (): Promise<KnowledgeIndexCompatibilityInfo> =>
       ipcRenderer.invoke('documents:embeddingMismatch'),
     onImportProgress: (callback: (progress: ImportProgress) => void) => {

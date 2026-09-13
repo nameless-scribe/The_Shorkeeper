@@ -8,6 +8,10 @@ import {
   startTaskRunStep,
   updateTaskRunPhase,
 } from '../db/repositories/task-runs';
+import {
+  recordTaskRunContextSources,
+  type CreateTaskRunContextSourceInput,
+} from '../db/repositories/context-sources';
 import type { TaskRunKind, TaskRunPhase } from '../shared/types';
 import type { ToolResult, ToolSideEffectContract } from '../tools/types';
 import type { RunPhase } from './run-lifecycle';
@@ -84,6 +88,13 @@ export class RunRecorder {
   setModel(modelId: string | undefined): void {
     if (!this.started || this.finished || !modelId) return;
     this.guard('task_runs.model', () => setTaskRunModel(this.input.runId, modelId));
+  }
+
+  context(sources: CreateTaskRunContextSourceInput[]): void {
+    if (!this.started || this.finished || !sources.length) return;
+    this.guard('task_run_context_sources.insert', () => {
+      recordTaskRunContextSources(this.input.runId, sources);
+    });
   }
 
   phase(phase: RunPhase | NonTerminalPhase): void {

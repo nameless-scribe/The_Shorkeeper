@@ -213,10 +213,10 @@
       <div class="phase-tabs" role="tablist" aria-label="P1 实施阶段">
         <button class="phase-tab active" data-phase="0" role="tab" aria-selected="true">P1.0 ✓<br />契约样本</button>
         <button class="phase-tab" data-phase="1" role="tab">P1.1 ✓<br />数据底座</button>
-        <button class="phase-tab" data-phase="2" role="tab">P1.2<br />冲突闭环</button>
-        <button class="phase-tab" data-phase="3" role="tab">P1.3<br />引用解释</button>
-        <button class="phase-tab" data-phase="4" role="tab">P1.4<br />知识新鲜度</button>
-        <button class="phase-tab" data-phase="5" role="tab">P1.5<br />总体验收</button>
+        <button class="phase-tab" data-phase="2" role="tab">P1.2 ✓<br />冲突闭环</button>
+        <button class="phase-tab" data-phase="3" role="tab">P1.3 ✓<br />引用解释</button>
+        <button class="phase-tab" data-phase="4" role="tab">P1.4 ✓<br />知识新鲜度</button>
+        <button class="phase-tab" data-phase="5" role="tab">P1.5 ✓<br />工程验收</button>
       </div>
       <div class="phase-panel glass active" data-panel="0" role="tabpanel">
         <div class="phase-number">00</div>
@@ -231,22 +231,22 @@
       <div class="phase-panel glass" data-panel="2" role="tabpanel">
         <div class="phase-number">02</div>
         <div class="phase-copy"><h3>冲突识别与用户裁决</h3><p>新值不再直接覆盖同 key 旧值。先区分重复、补充与真实冲突，再让用户选择保留、替代或并存。</p><ul><li>关系、敏感、低置信和冲突必须确认</li><li>替代在单一事务内完成</li><li>手工编辑也进入版本化服务</li></ul></div>
-        <div class="exit"><b>阶段出口</b><p>冲突样本零静默覆盖；拒绝不复活；重复确认和重启恢复幂等。</p></div>
+        <div class="exit"><b>已完成</b><p>冲突样本零静默覆盖；拒绝不复活；事务化版本链、重复确认和真实 Electron 三种裁决验收通过。</p></div>
       </div>
       <div class="phase-panel glass" data-panel="3" role="tabpanel">
         <div class="phase-number">03</div>
         <div class="phase-copy"><h3>0024 · 使用来源与回答回链</h3><p>只选择 active、未过期且 model_use_policy 允许的事实；把实际使用的记忆、文档、目标与承诺写入 run 上下文来源。</p><ul><li>相关度 × 重要度 × 置信度 × 新鲜度</li><li>稳定 memory/document 引用标签</li><li>回答引用卡片与运行详情回链</li></ul></div>
-        <div class="exit"><b>阶段出口</b><p>一次回答可追溯到实际上下文；过期、冲突和敏感事实不会误注入。</p></div>
+        <div class="exit"><b>已完成</b><p>预算后来源账本、四类稳定引用、回答卡片和运行详情回链已通过自动化与 Electron 验收。</p></div>
       </div>
       <div class="phase-panel glass" data-panel="4" role="tabpanel">
         <div class="phase-number">04</div>
         <div class="phase-copy"><h3>0025 · 本地知识新鲜度</h3><p>记录来源 mtime/size/hash 与检查时间；来源变化先标记 changed，重建成功后才原子切换新版本。</p><ul><li>默认手工检查，显式开启低频同步</li><li>变化、缺失、重建失败都有状态</li><li>外部邮箱/云盘同步留给 P2</li></ul></div>
-        <div class="exit"><b>阶段出口</b><p>未变化不重复索引；失败不破坏上一可用版本；旧引用明确标注过期。</p></div>
+        <div class="exit"><b>已完成</b><p>未变化不重复索引；changed/missing、重新定位、低频同步和旧版本保护已接入。</p></div>
       </div>
       <div class="phase-panel glass" data-panel="5" role="tabpanel">
         <div class="phase-number">05</div>
-        <div class="phase-copy"><h3>真实 Electron 与一周使用验收</h3><p>覆盖记忆筛选、冲突确认、来源详情、过期状态、知识更新和运行引用，再用真实对话观察错误引用与候选打扰。</p><ul><li><code>test:p1</code> + <code>test:p1:ui</code></li><li>P0/S2/S4/S5 与全量回归</li><li>真实样本而非只看 mock</li></ul></div>
-        <div class="exit"><b>最终出口</b><p>能解释用了哪条记忆；偏好变化后不再使用冲突旧事实。</p></div>
+        <div class="phase-copy"><h3>真实 Electron 与总体工程验收</h3><p>覆盖记忆筛选、冲突确认、来源详情、过期状态、知识更新和运行引用；一周真实使用作为上线后的独立观察窗口持续记录。</p><ul><li><code>test:p1</code> + <code>test:p1:ui</code></li><li>P0/S2/S4/S5 与全量回归</li><li>观察结论不由 mock 冒充</li></ul></div>
+        <div class="exit"><b>工程已完成</b><p>个人模型端到端闭环可用；一周观察在实际使用满周期后补录结论。</p></div>
       </div>
     </section>
 
@@ -274,12 +274,12 @@
 
     <section class="section">
       <div class="decision glass">
-        <div><h3>第一轮已完成</h3><p>P1.0 + P1.1 已落地，现有模型上下文保持不变；数据库和 Repository 已具备类型、状态、时效、敏感策略与来源链底座。</p></div>
-        <div class="start">下一步：P1.2 七类提取 → 冲突确认 → 事务化版本替代</div>
+        <div><h3>P1 工程闭环已完成</h3><p>P1.0—P1.5 已落地：个人事实、冲突裁决、上下文来源、稳定引用和知识新鲜度已经贯通。</p></div>
+        <div class="start">下一步：实际使用观察可与 P2 方案设计并行，问题按契约回补 P1</div>
       </div>
     </section>
 
-    <footer>计划版本 0.1.0 · 2026-09-13 · 详细字段、文件落点与验收矩阵见 P1-PERSONAL-MODEL-PLAN.md</footer>
+    <footer>计划版本 1.0.0 · 2026-09-13 · 详细字段、文件落点与验收矩阵见 P1-PERSONAL-MODEL-PLAN.md</footer>
   </main>
   <script>
     const tabs = [...document.querySelectorAll('.phase-tab')];

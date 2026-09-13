@@ -39,7 +39,11 @@ import { emitInitialState } from './state/presence';
 import { setTaskChangeHandler } from '../src/scheduler/task-events';
 import { registerWorkspaceIpc } from './ipc/workspace';
 import { registerDockIpc } from './ipc/dock';
-import { registerDocumentsIpc, shutdownDocumentsRuntime } from './ipc/documents';
+import {
+  registerDocumentsIpc,
+  scheduleAutomaticDocumentSync,
+  shutdownDocumentsRuntime,
+} from './ipc/documents';
 import { registerEmbeddingIpc } from './ipc/embedding';
 import { registerMcpIpc, initMcpOnStartup } from './ipc/mcp';
 import { registerSkillsIpc } from './ipc/skills';
@@ -238,6 +242,9 @@ app.whenReady().then(async () => {
         if (isAppQuitting()) return;
         reloadScheduler();
         getWindowManager().reconcileVisibility();
+        void scheduleAutomaticDocumentSync().catch((error) => {
+          console.warn('[rag] 唤醒后的自动来源检查失败:', error instanceof Error ? error.message : error);
+        });
       },
     });
   }

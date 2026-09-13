@@ -7,6 +7,7 @@ import {
   getAdjacentChunks,
   getChunkSearchRows,
   getDocument,
+  getDocumentChunk,
   getDocumentIncludingDeleted,
   getDocumentVersionPlan,
   getPreviousDocumentVersionIds,
@@ -30,6 +31,11 @@ import {
   type RagChunkInput,
   type ReplaceDocumentChunksMeta,
 } from '../db/repositories/rag-documents';
+import type {
+  DocumentFreshnessStatus,
+  DocumentSourceKind,
+  DocumentSyncPolicy,
+} from '../shared/types';
 import { invalidateDocCache } from './doc-cache';
 import { invalidateChunkCache } from './chunk-cache';
 import {
@@ -49,6 +55,7 @@ export {
   findDocumentByContentHash,
   getAdjacentChunks,
   getDocument,
+  getDocumentChunk,
   getDocumentIncludingDeleted,
   getDocumentVersionPlan,
   getPreviousDocumentVersionIds,
@@ -341,6 +348,13 @@ export function insertDocumentWithChunks(input: {
   version?: number;
   chunkSize?: number;
   chunkOverlap?: number;
+  sourceKind?: DocumentSourceKind;
+  sourceModifiedAt?: number | null;
+  sourceSize?: number | null;
+  lastCheckedAt?: number | null;
+  freshnessStatus?: DocumentFreshnessStatus;
+  staleReason?: string | null;
+  syncPolicy?: DocumentSyncPolicy;
 }): DocumentInfo {
   const document = insertDocumentRecords(input);
 

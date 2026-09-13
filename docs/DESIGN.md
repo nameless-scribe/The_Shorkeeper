@@ -1,6 +1,6 @@
 # The Shorekeeper 设计文档
 
-> 版本：0.3.3
+> 版本：0.3.4
 > 更新日期：2026-09-13
 > 状态：**M1–M7 已完成**；**稳定化 S0–S5 已收口**；**语音** TTS 与通话已落地。推送仓库时勿提交 `.env` / 真实 Key（见根目录 README「仓库安全」）。
 
@@ -339,12 +339,14 @@ MCP 工具在运行时动态合并，与内置工具同名时 MCP 优先或加�
 | 长期记忆 | `long_term_memory` 表 | 持久 | 检索 top-K 注入 system |
 | 检索记忆 | RAG chunks + Worldbook | 持久 | 检索后注入 system |
 
-**长期记忆写入时机**：
+**长期记忆写入时机与边界**：
 
-- 每次 `run_finished` 后，异步任务仅分析**本轮** user+assistant 消息，LLM 输出 `[{key, content}]`，经 `upsertMemory` 写入（同 `memory_key` 更新而非新增）
-- 提取前将已有记忆列表注入 prompt，避免重复提取同一主题
-- 每条用户消息通过 `extraction-state` 仅触发一次提取
-- 或通过工具 `save_memory` 显式写入（推荐带 `key`；无 key 时走自由文本 + 子串去重）
+- 每次 `run_finished` 后，异步任务仅分析**本轮** user+assistant 消息；LLM 输出 key、content、七类事实类型、置信度、敏感度、模型使用策略和可选有效期
+- 写入前依次做标准化、完全重复、embedding 语义重复、补充信息和真实冲突判断；同 key 不同内容进入候选，不直接覆盖
+- 普通高置信偏好、习惯和做事方式可按策略静默保存；身份、关系、事件、目标、私密/敏感、低置信和冲突事实必须确认
+- 密码、Token、密钥和验证码等凭据直接拒绝，不进入长期记忆或候选；健康、财务等敏感事实即使确认，也默认 `model_use_policy = deny`
+- 每条用户消息通过 `extraction-state` 仅触发一次提取；`save_memory` 复用相同策略和冲突服务
+- Goal / Commitment 保持各自领域表为真源；目标候选确认后写入 `goals`，不复制为长期记忆
 
 **memory_key 命名（示例）**：
 
@@ -352,14 +354,20 @@ MCP 工具在运行时动态合并，与内置工具同名时 MCP 优先或加�
 |-----|------|
 | `user.nickname` | 称呼 / 名字 |
 | `user.preference.*` | 偏好 |
-| `user.schedule.*` | 作息、忙碌时段 |
+| `user.relationship.*` | 人际关系 |
+| `user.event.*` | 有时效的事件 / 行程 |
+| `user.goal.*` | 目标候选（确认后写入 goals） |
 | `user.habit.*` | 习惯 |
-| `user.other.*` | 其他事实 |
+| `user.procedure.*` | 做事方式 / 稳定流程 |
+| `user.other.*` | 旧版兼容事实；新提取不会生成 |
 
-**去重策略**：
+**冲突、去重与版本策略**：
 
-- M3：结构化 **key upsert**（主路径）+ 无 key 文本的子串匹配（兜底）
-- M5：向量语义相似度合并（如不同表述的同一偏好）
+- 完全相同或高相似语义重复直接跳过，不制造候选
+- 补充信息与真实冲突进入 `memory_candidates`；原 active 事实先转为 `disputed`，不再提供给模型
+- 用户可选择保留原事实、用新事实替代或两条并存；状态转换、候选确认和来源记录在单一事务内提交
+- 替代保留旧行并以 `superseded_by` 指向新版本；设置页手工编辑也创建版本，删除使用 `rejected` 软状态
+- 模型检索仅选择 active、允许模型使用且未过期的事实
 
 **压缩策略**：
 
@@ -688,11 +696,30 @@ interface AgentPresenceState {
 | 列 | 类型 | 说明 |
 |----|------|------|
 | id | TEXT PK | UUID |
-| memory_key | TEXT | 可选；结构化键（如 `user.nickname`），唯一索引，同 key upsert |
+| memory_key | TEXT | 可选；结构化键（如 `user.nickname`），仅 active 行唯一 |
 | content | TEXT | 记忆内容 |
 | importance | REAL | 0-1 |
 | source_session_id | TEXT | 来源会话 |
-| created_at | INTEGER | Unix ms（更新时刷新） |
+| memory_type | TEXT | identity / preference / relationship / event / goal / habit / procedure / other |
+| confidence | REAL | 事实可信度，独立于 importance |
+| sensitivity | TEXT | normal / private / sensitive |
+| model_use_policy | TEXT | allow / deny |
+| status | TEXT | active / disputed / superseded / rejected |
+| valid_from / expires_at | INTEGER | 生效和过期时间（Unix ms，可空） |
+| superseded_by | TEXT FK | 替代该事实的新版本 id |
+| created_at / updated_at | INTEGER | Unix ms |
+
+#### memory_candidates / memory_sources
+
+- `memory_candidates` 保存待确认事实的类型、置信度、敏感/模型策略、有效期、冲突对象与建议动作；已确认或拒绝的候选保留状态，用于幂等与防止拒绝事实自动复活。
+- `memory_sources` 为每个事实记录 conversation、run、document、tool、goal、commitment 或 user_edit 等稳定来源；事实删除时来源级联清理。
+- 冲突候选写入与原事实进入 disputed，以及替代版本、来源和候选终态，均由领域服务在数据库事务内完成。
+
+#### task_run_context_sources 与稳定引用
+
+- 上下文预算裁剪完成后，实际进入 prompt 的记忆、检索片段、active goal 和未完成 commitment 会写入 run 来源账本；完整 prompt 与私密记忆正文不进入审计。
+- 稳定引用为 `mem:<id>`、`doc:<documentId>#chunk:<index>`、`goal:<id>`、`commitment:<id>`。回答中的 `〔…〕` 引用由 renderer 转成来源卡片，运行详情也可回查同一来源。
+- 记忆选择综合相关度、importance、confidence 与更新时间；状态非 active、策略 deny 或已过期的事实仍在检索入口前被排除。
 
 #### session_summaries
 
@@ -740,6 +767,13 @@ interface AgentPresenceState {
 | content_hash | TEXT | SHA-256，导入去重 |
 | embedding_model | TEXT | 嵌入模型 ID |
 | embedding_dim | INTEGER | 向量维度 |
+| source_kind | TEXT | `snapshot / local_file` |
+| source_modified_at / source_size | INTEGER | 上次成功索引时的来源基线 |
+| last_checked_at | INTEGER | 最近来源检查时间 |
+| freshness_status / stale_reason | TEXT | `snapshot / unknown / current / changed / missing` 与可解释原因 |
+| sync_policy | TEXT | `manual / auto`，默认手工 |
+
+本地来源只在手工动作或用户显式开启后的启动/唤醒低频检查点比较 mtime/size；不建立无界 watcher。变化先标记 `changed`，只有新版本完整索引成功后才沿既有版本事务切换；缺失、转换失败或向量失败都保留上一可用快照。重新定位来源后由用户确认同步生成新版本。
 
 #### document_chunks
 
@@ -1082,6 +1116,8 @@ TheShorekeeper/
 | 0.3.0 | 2026-07-02 | 语音 V1（百炼 TTS）、自动更新、Agent 工作流条；表结构补全（session_summaries、bookkeeping）；目录与 IPC 同步 |
 | 0.3.2 | 2026-09-11 | 同步 S0–S5：生产库改为 better-sqlite3；清理已完成的里程碑/专项计划文档 |
 | 0.3.3 | 2026-09-13 | 同步 H1 RAG/工作区一致性与 H2 IPC 零信任、窗口/媒体/更新生命周期契约 |
+| 0.3.4 | 2026-09-13 | 同步 P1.0—P1.2：个人事实类型/来源/时效、冲突候选、事务化版本链与模型检索过滤 |
+| 0.3.5 | 2026-09-13 | 完成 P1.3—P1.5 工程闭环：run 上下文来源、稳定引用卡片、本地知识新鲜度与低频同步 |
 
 ---
 

@@ -4,13 +4,20 @@ import {
   listMemoryCandidates,
   normalizeMemoryCandidateStatus,
   rejectMemoryCandidate,
+  resolveMemoryCandidate,
 } from '../../src/memory/candidates';
 import {
   deleteManagedMemory,
+  getManagedMemory,
   listManagedMemories,
   updateManagedMemory,
 } from '../../src/memory/long-term';
-import type { MemoryCandidateInfo, MemoryCandidateStatus, MemoryInfo } from '../../src/shared/types';
+import type {
+  MemoryCandidateInfo,
+  MemoryCandidateResolution,
+  MemoryCandidateStatus,
+  MemoryInfo,
+} from '../../src/shared/types';
 import { requireEnum, requireFiniteNumber, requireString } from '../../src/shared/ipc-validation';
 
 function requireCandidateId(id: unknown): string {
@@ -67,11 +74,29 @@ export function registerMemoryIpc() {
     rejectMemoryCandidate(requireCandidateId(id)),
   );
 
+  ipcMain.handle(
+    'memory:candidates:resolve',
+    (_event, id: unknown, resolution: unknown): MemoryCandidateInfo =>
+      resolveMemoryCandidate(
+        requireCandidateId(id),
+        requireEnum(resolution, '记忆冲突处理方式', [
+          'keep_original',
+          'replace',
+          'coexist',
+        ] as const) as MemoryCandidateResolution,
+      ),
+  );
+
   ipcMain.handle('memory:list', (_event, limit?: number): MemoryInfo[] =>
     listManagedMemories(
       limit === undefined ? 200 : Math.floor(requireFiniteNumber(limit, 'limit', { min: 1, max: 500 })),
     ).map(toMemoryInfo),
   );
+
+  ipcMain.handle('memory:get', (_event, id: unknown): MemoryInfo | null => {
+    const memory = getManagedMemory(requireMemoryId(id));
+    return memory ? toMemoryInfo(memory) : null;
+  });
 
   ipcMain.handle('memory:update', async (_event, id: unknown, content: unknown): Promise<MemoryInfo> => {
     const text = requireString(content, '记忆内容', { maxLength: 100_000 });

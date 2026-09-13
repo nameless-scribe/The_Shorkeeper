@@ -90,11 +90,11 @@ export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
   }, []);
 
   return (
-    <aside className="flex w-48 shrink-0 flex-col border-r border-keeper-cyan/10 bg-gradient-to-b from-keeper-navyDeep/80 to-keeper-navyDeep/95">
-      <div className="shrink-0 border-b border-keeper-cyan/10 px-4 py-4">
-        <div className="flex items-center gap-2.5">
+    <aside className="flex w-[68px] shrink-0 flex-col border-r border-keeper-cyan/10 bg-gradient-to-b from-keeper-navyDeep/80 to-keeper-navyDeep/95 sm:w-48">
+      <div className="shrink-0 border-b border-keeper-cyan/10 px-2 py-4 sm:px-4">
+        <div className="flex items-center justify-center gap-2.5 sm:justify-start">
           <TethysEmblem size="sm" />
-          <div>
+          <div className="hidden sm:block">
             <p className="text-sm font-semibold text-keeper-ice">守岸人</p>
             <p className="text-[10px] text-keeper-ice/45">设置中心</p>
           </div>
@@ -104,7 +104,7 @@ export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {NAV_GROUPS.map((group) => (
           <div key={group.label} className="mb-3 last:mb-0">
-            <p className="mb-1.5 px-2 text-[10px] font-medium uppercase tracking-wider text-keeper-ice/30">
+            <p className="mb-1.5 hidden px-2 text-[10px] font-medium uppercase tracking-wider text-keeper-ice/30 sm:block">
               {group.label}
             </p>
             <ul className="space-y-0.5">
@@ -116,7 +116,9 @@ export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
                       type="button"
                       disabled={item.disabled}
                       onClick={() => onTabChange(item.id)}
-                      className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition ${
+                      title={item.label}
+                      aria-label={item.label}
+                      className={`flex w-full items-center justify-center gap-2.5 rounded-xl px-2 py-2 text-left text-xs transition sm:justify-start sm:px-2.5 ${
                         active
                           ? 'bg-gradient-to-r from-keeper-cyan/20 to-keeper-cyan/5 font-medium text-keeper-cyan shadow-inset-accent'
                           : 'text-keeper-ice/60 hover:bg-white/5 hover:text-keeper-ice'
@@ -129,7 +131,7 @@ export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
                       >
                         {item.icon}
                       </span>
-                      {item.label}
+                      <span className="hidden sm:inline">{item.label}</span>
                     </button>
                   </li>
                 );
@@ -139,7 +141,7 @@ export function SettingsSidebar({ tab, onTabChange }: SettingsSidebarProps) {
         ))}
       </nav>
 
-      <div className="shrink-0 border-t border-keeper-cyan/10 px-4 py-3">
+      <div className="hidden shrink-0 border-t border-keeper-cyan/10 px-4 py-3 sm:block">
         <p className="text-[10px] text-keeper-ice/30">The Shorekeeper</p>
         <p className="text-[10px] text-keeper-ice/20">{version ? `v${version}` : 'v…'}</p>
       </div>

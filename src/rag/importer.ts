@@ -3,6 +3,7 @@ import path from 'node:path';
 import { convertBinaryToMarkdown } from './format-converters';
 import { importTextAsKnowledge, type ImportProgress } from './text-import';
 import { AbortSignalError, awaitWithAbort } from '../agent/abort';
+import type { DocumentSyncPolicy } from '../shared/types';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const TEXT_EXT = new Set(['.md', '.txt']);
@@ -13,7 +14,11 @@ export type { ImportProgress };
 export async function importDocumentFromPath(
   sourcePath: string,
   onProgress?: (p: ImportProgress) => void,
-  options?: { signal?: AbortSignal },
+  options?: {
+    signal?: AbortSignal;
+    syncPolicy?: DocumentSyncPolicy;
+    skipHashDedup?: boolean;
+  },
 ): Promise<import('./documents').DocumentInfo> {
   if (options?.signal?.aborted) throw new AbortSignalError();
   onProgress?.({ phase: 'reading' });
@@ -30,6 +35,11 @@ export async function importDocumentFromPath(
     const text = await fs.readFile(resolved, { encoding: 'utf8', signal: options?.signal });
     return importTextAsKnowledge(text, filename, onProgress, {
       sourcePath: resolved,
+      skipHashDedup: options?.skipHashDedup,
+      sourceModifiedAt: Math.floor(stat.mtimeMs),
+      sourceSize: stat.size,
+      lastCheckedAt: Date.now(),
+      syncPolicy: options?.syncPolicy,
       signal: options?.signal,
     });
   }
@@ -43,6 +53,11 @@ export async function importDocumentFromPath(
     return importTextAsKnowledge(markdown, mdFilename, onProgress, {
       sourcePath: resolved,
       title: path.basename(filename, ext),
+      skipHashDedup: options?.skipHashDedup,
+      sourceModifiedAt: Math.floor(stat.mtimeMs),
+      sourceSize: stat.size,
+      lastCheckedAt: Date.now(),
+      syncPolicy: options?.syncPolicy,
       signal: options?.signal,
     });
   }

@@ -15,6 +15,27 @@ import { trackRagOperation, shutdownRagOperations } from '../../src/rag/operatio
 import type { WebContents } from 'electron';
 import { safeSendToWebContents } from '../windows/web-contents';
 import { requireString } from '../../src/shared/ipc-validation';
+import { requireEnum } from '../../src/shared/ipc-validation';
+import {
+  checkDocumentFreshness,
+  runAutomaticDocumentSync,
+  setDocumentSyncPolicy,
+  relinkDocumentSource,
+  syncDocumentSource,
+  type AutoDocumentSyncResult,
+} from '../../src/rag/freshness';
+
+let automaticSyncPromise: Promise<AutoDocumentSyncResult> | null = null;
+
+export function scheduleAutomaticDocumentSync(): Promise<AutoDocumentSyncResult> {
+  if (automaticSyncPromise) return automaticSyncPromise;
+  const task = trackRagOperation((signal) => runAutomaticDocumentSync({ signal }));
+  automaticSyncPromise = task;
+  void task.finally(() => {
+    if (automaticSyncPromise === task) automaticSyncPromise = null;
+  }).catch(() => undefined);
+  return task;
+}
 
 function safeSend(sender: WebContents, channel: string, payload: unknown): void {
   safeSendToWebContents(sender, channel, payload);
@@ -79,6 +100,35 @@ export async function registerDocumentsIpc() {
     return runForSender(event.sender, (signal) => reindexDocument(documentId, { signal }));
   });
 
+  ipcMain.handle('documents:checkFreshness', async (_event, id: unknown) =>
+    checkDocumentFreshness(requireString(id, '文档 ID', { maxLength: 200 })),
+  );
+
+  ipcMain.handle('documents:syncSource', async (event, id: unknown) => {
+    const documentId = requireString(id, '文档 ID', { maxLength: 200 });
+    const sender = event.sender;
+    return runForSender(sender, (signal) => syncDocumentSource(documentId, (progress) => {
+      safeSend(sender, 'documents:importProgress', progress);
+    }, { signal }));
+  });
+
+  ipcMain.handle('documents:setSyncPolicy', (_event, id: unknown, policy: unknown) =>
+    setDocumentSyncPolicy(
+      requireString(id, '文档 ID', { maxLength: 200 }),
+      requireEnum(policy, '同步策略', ['manual', 'auto'] as const),
+    ),
+  );
+
+  ipcMain.handle('documents:relinkSource', async (_event, id: unknown) => {
+    const documentId = requireString(id, '文档 ID', { maxLength: 200 });
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: '文档', extensions: ['md', 'txt', 'docx', 'doc', 'pdf'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return relinkDocumentSource(documentId, result.filePaths[0]);
+  });
+
   ipcMain.handle('documents:import', async (event) => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
@@ -94,5 +144,9 @@ export async function registerDocumentsIpc() {
       (progress) => safeSend(sender, 'documents:importProgress', progress),
       { signal },
     ));
+  });
+
+  void scheduleAutomaticDocumentSync().catch((error) => {
+    console.warn('[rag] 自动来源检查失败:', error instanceof Error ? error.message : error);
   });
 }

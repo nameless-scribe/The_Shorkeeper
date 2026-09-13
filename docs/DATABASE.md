@@ -85,6 +85,8 @@ pnpm db:seed
 | `0021_task_runs.sql` | `task_runs`、`task_run_steps`、`artifacts`、`approvals`（P0 闭环骨架） |
 | `0022_goals_commitments.sql` | `goals`、`commitments`、`briefings`，`user_tasks.goal_id`（P0 每日管家） |
 | `0023_personal_memory_model.sql` | P1 个人事实类型/状态/敏感与时效字段、仅 active key 唯一、候选冲突元数据、`memory_sources` 来源链 |
+| `0024_context_sources.sql` | P1 每次 run 实际注入的记忆、文档、目标与承诺来源账本 |
+| `0025_document_freshness.sql` | P1 本地文档来源、mtime/size、检查状态与手工/自动同步策略 |
 
 打包时 migration 以 `extraResources/db-migrations/` 形式随安装包分发；开发态直接读 `src/db/migrations/`。
 
@@ -125,6 +127,7 @@ pnpm db:seed
 | `goals` | 中长期目标：状态 `active / paused / done / dropped`、优先级、目标日期；待办和承诺通过 `goal_id` 分组 |
 | `commitments` | 承诺：`owner = user` 必挂一条待办（`task_id`），`owner = assistant` 指向提醒（`scheduled_task_id`）；状态 `proposed / open / done / missed / cancelled`，完成时记录 `evidence_run_id` |
 | `briefings` | 每日简报记录，`(brief_date, kind)` 唯一，保证早/晚简报每天只生成一次 |
+| `task_run_context_sources` | run 实际使用的上下文来源；只保存稳定引用和限长脱敏摘要，不保存完整 prompt |
 
 ### 运行记录的生命周期
 
@@ -133,6 +136,7 @@ pnpm db:seed
 - 应用启动时 `reconcileInterruptedRuns()` 把所有非终态 run 标为 `interrupted`（`terminal_reason = process_exit`），运行中的步骤标为 `interrupted`，pending 审批标为 `interrupted / startup`。
 - 下一次同会话对话会注入“上次运行中断”说明；只有那一轮成功产生回复后才写入 `acknowledged_at`，之后不再注入。若那一轮本身失败，说明会保留到再下一轮。
 - 记录写入失败不会影响 run 本身：记录器在首次失败后停止本次 run 的持久化并打印告警。
+- 上下文预算完成后，只有真正进入 prompt 的 memory/document/goal/commitment 才写入 `task_run_context_sources`；运行详情可据稳定引用回查当前来源。
 
 ### 查看长期记忆示例
 
@@ -143,7 +147,11 @@ FROM long_term_memory
 ORDER BY updated_at DESC;
 ```
 
-`importance` 是检索重要度，`confidence` 是事实可信度，两者不可混用。0023 将既有记忆回填为 `other / active / normal / allow`，置信度使用中性默认值 `0.5`，不会把旧 `importance` 冒充为置信度。Repository 的常规列表、检索与按 key 读取只返回 `active`；历史版本通过专用历史查询读取。
+`importance` 是检索重要度，`confidence` 是事实可信度，两者不可混用。0023 将既有记忆回填为 `other / active / normal / allow`，置信度使用中性默认值 `0.5`，不会把旧 `importance` 冒充为置信度。
+
+P1.2 之后，提供给模型的常规列表、向量检索和 embedding 列表只返回 `status = active`、`model_use_policy = allow` 且未过期的事实。设置页使用独立管理查询，仍可查看 active 事实；`disputed / superseded / rejected` 与过期事实不会进入 prompt。同 key 新值不会直接更新旧行：冲突产生候选并把原事实标为 `disputed`，用户选择替代后旧行转为 `superseded`、新行成为 active，并通过 `superseded_by` 连接版本链。保留原事实会恢复 active；并存会为新事实生成独立情境 key。上述状态、候选和 `memory_sources` 来源写入在同一事务中完成，设置页手工编辑同样创建新版本，删除则软标记为 `rejected`。
+
+P1.3/P1.4 之后，预算裁剪后真正进入 prompt 的记忆、文档片段、目标和承诺会写入 `task_run_context_sources`，但完整 prompt 与私密正文不会写入运行审计。`documents` 同时记录来源类型、mtime/size 基线、最近检查、新鲜度原因和同步策略。本地来源变化先标 `changed`，同步成功后才切换新版本；缺失或索引失败时继续保留上一可用快照。自动同步仅处理用户显式设为 `auto` 的来源，并在启动/唤醒时按 6 小时间隔、每批最多 20 个执行。
 
 ## 用图形工具打开
 

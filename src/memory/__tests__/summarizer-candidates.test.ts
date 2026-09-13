@@ -5,6 +5,10 @@ const state = vi.hoisted(() => ({
   upsertMemory: vi.fn(async () => undefined),
   createMemoryCandidate: vi.fn(() => undefined),
   hasRejectedMemoryFact: vi.fn(() => false),
+  getCurrentMemoryByKey: vi.fn((..._args: unknown[]): unknown => undefined),
+  stageMemoryConflict: vi.fn(() => undefined),
+  listMemoryEmbeddings: vi.fn((..._args: unknown[]): unknown[] => []),
+  embedText: vi.fn(async () => [1, 0, 0, 0]),
   markExtractedUpToMessageId: vi.fn(),
   proposeCommitments: vi.fn((..._args: unknown[]) => ({ proposed: 0, skippedLowConfidence: 0, skippedDuplicate: 0 })),
 }));
@@ -51,6 +55,14 @@ vi.mock('../../db/repositories/memory-candidates', () => ({
   createMemoryCandidate: state.createMemoryCandidate,
   hasRejectedMemoryFact: state.hasRejectedMemoryFact,
 }));
+vi.mock('../../db/repositories/long-term-memory', () => ({
+  getCurrentMemoryByKey: state.getCurrentMemoryByKey,
+  listMemoryEmbeddings: state.listMemoryEmbeddings,
+}));
+vi.mock('../../rag/embedding', () => ({ embedText: state.embedText }));
+vi.mock('../personal-memory-service', () => ({
+  stageMemoryConflict: state.stageMemoryConflict,
+}));
 vi.mock('../commitment-extraction', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../commitment-extraction')>();
   return { ...actual, proposeCommitmentsFromDrafts: (...args: unknown[]) => state.proposeCommitments(...args) };
@@ -66,6 +78,12 @@ describe('summarizer candidate boundary', () => {
     state.createMemoryCandidate.mockClear();
     state.hasRejectedMemoryFact.mockClear();
     state.hasRejectedMemoryFact.mockReturnValue(false);
+    state.getCurrentMemoryByKey.mockReset();
+    state.getCurrentMemoryByKey.mockReturnValue(undefined);
+    state.stageMemoryConflict.mockClear();
+    state.listMemoryEmbeddings.mockReset();
+    state.listMemoryEmbeddings.mockReturnValue([]);
+    state.embedText.mockClear();
     state.markExtractedUpToMessageId.mockClear();
     vi.mocked(completeChat).mockClear();
   });
@@ -93,7 +111,12 @@ describe('summarizer candidate boundary', () => {
       '用户喜欢拿铁',
       0.95,
       'session-1',
-      { skipEmbedding: true },
+      expect.objectContaining({
+        skipEmbedding: true,
+        memoryType: 'preference',
+        confidence: 0.95,
+        sourceMessageId: 'user-1',
+      }),
     );
     expect(state.createMemoryCandidate).toHaveBeenCalledOnce();
     expect(state.createMemoryCandidate).toHaveBeenCalledWith(expect.objectContaining({
@@ -164,6 +187,69 @@ describe('summarizer candidate boundary', () => {
     ]);
 
     await expect(extractMemoriesFromSession('session-1')).resolves.toBe(0);
+    expect(state.upsertMemory).not.toHaveBeenCalled();
+    expect(state.createMemoryCandidate).not.toHaveBeenCalled();
+  });
+
+  it('stages a same-key conflict instead of silently overwriting the original', async () => {
+    state.getCurrentMemoryByKey.mockReturnValue({
+      id: 'memory-old',
+      memoryKey: 'user.preference.drink',
+      content: '用户喜欢拿铁',
+      status: 'active',
+    });
+    state.reply = JSON.stringify([{
+      key: 'user.preference.drink',
+      content: '用户现在改喝茶',
+      memory_type: 'preference',
+      confidence: 0.98,
+      reason: '用户明确纠正',
+    }]);
+
+    await expect(extractMemoriesFromSession('session-1')).resolves.toBe(0);
+    expect(state.upsertMemory).not.toHaveBeenCalled();
+    expect(state.stageMemoryConflict).toHaveBeenCalledWith(expect.objectContaining({
+      conflictsWithMemoryId: 'memory-old',
+      proposedAction: 'replace',
+      memoryType: 'preference',
+      sourceMessageId: 'user-1',
+    }));
+  });
+
+  it('drops exact duplicate output before creating a candidate', async () => {
+    state.getCurrentMemoryByKey.mockReturnValue({
+      id: 'memory-old',
+      memoryKey: 'user.preference.drink',
+      content: '用户喜欢拿铁',
+      status: 'active',
+    });
+    state.reply = JSON.stringify([{
+      key: 'user.preference.drink',
+      content: '用户喜欢拿铁',
+      confidence: 0.98,
+      reason: '重复提取',
+    }]);
+
+    await expect(extractMemoriesFromSession('session-1')).resolves.toBe(0);
+    expect(state.stageMemoryConflict).not.toHaveBeenCalled();
+    expect(state.createMemoryCandidate).not.toHaveBeenCalled();
+  });
+
+  it('drops a cross-key semantic duplicate when an embedding is available', async () => {
+    const embedding = new Uint8Array(new Float32Array([1, 0, 0, 0]).buffer);
+    state.listMemoryEmbeddings.mockReturnValue([{
+      content: '用户偏爱拿铁',
+      embedding,
+    }]);
+    state.reply = JSON.stringify([{
+      key: 'user.preference.coffee',
+      content: '用户喜欢喝拿铁',
+      confidence: 0.98,
+      reason: '同义表达',
+    }]);
+
+    await expect(extractMemoriesFromSession('session-1')).resolves.toBe(0);
+    expect(state.embedText).toHaveBeenCalledOnce();
     expect(state.upsertMemory).not.toHaveBeenCalled();
     expect(state.createMemoryCandidate).not.toHaveBeenCalled();
   });

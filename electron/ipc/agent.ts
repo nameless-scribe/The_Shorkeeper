@@ -26,6 +26,8 @@ import {
   listTaskRuns,
 } from '../../src/db/repositories/task-runs';
 import type { TaskRunDetail, TaskRunInfo } from '../../src/shared/types';
+import { listTaskRunContextSources } from '../../src/db/repositories/context-sources';
+import { resolveContextSourceRef } from '../../src/agent/context-sources';
 import {
   broadcastAgentEvent,
   onRunError,
@@ -161,7 +163,13 @@ export function registerAgentIpc() {
       steps: listTaskRunSteps(runId),
       artifacts: listRunArtifacts(runId),
       approvals: listApprovals({ runId }),
+      contextSources: listTaskRunContextSources(runId),
     };
+  });
+
+  ipcMain.handle('agent:sourceDetail', (_event, rawSourceRef: unknown) => {
+    const sourceRef = requireString(rawSourceRef, 'sourceRef', { maxLength: 240 }).trim();
+    return resolveContextSourceRef(sourceRef);
   });
 }
 

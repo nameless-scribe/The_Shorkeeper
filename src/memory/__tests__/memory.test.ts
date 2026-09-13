@@ -59,14 +59,20 @@ describe('long term memory', () => {
     expect(hits[0].content).toContain('拿铁');
   });
 
-  it('upserts by memory_key instead of duplicating', async () => {
+  it('refuses to silently overwrite a different fact with the same memory_key', async () => {
     await upsertMemory('user.nickname', '用户名叫汐', 0.8, 'session-1');
-    await upsertMemory('user.nickname', '用户名叫汐汐', 0.9, 'session-1', { skipEmbedding: true });
+    await expect(upsertMemory(
+      'user.nickname',
+      '用户名叫汐汐',
+      0.9,
+      'session-1',
+      { skipEmbedding: true },
+    )).rejects.toThrow('请先走冲突确认');
 
     const hits = searchMemories('汐');
     expect(hits).toHaveLength(1);
     expect(hits[0].memoryKey).toBe('user.nickname');
-    expect(hits[0].content).toBe('用户名叫汐汐');
+    expect(hits[0].content).toBe('用户名叫汐');
   });
 
   it('updates managed memory content', async () => {
@@ -96,9 +102,9 @@ describe('long term memory', () => {
     expect(restored.content).toBe('用户喜欢拿铁');
   });
 
-  it('clears embedding when content changes with skipEmbedding', async () => {
+  it('creates an embedding-free active version when the user edits content', async () => {
     const blob = serializeEmbedding([1, 0, 0, 0]);
-    createMemory({
+    const existing = createMemory({
       memoryKey: 'user.pref',
       content: '喜欢咖啡',
       importance: 0.8,
@@ -106,7 +112,7 @@ describe('long term memory', () => {
       embedding: blob,
     });
 
-    await upsertMemory('user.pref', '喜欢拿铁', 0.9, 'session-1', { skipEmbedding: true });
+    await updateManagedMemory(existing.id, '喜欢拿铁');
 
     expect(getMemoryWithEmbeddingByKey('user.pref')?.embedding).toBeNull();
   });
