@@ -54,6 +54,8 @@ describe('context-builder skills', () => {
           systemPromptFragment: '【技能：Excel】',
           trigger: 'auto',
           priority: 10,
+          kind: 'capability',
+          validationErrors: [],
         },
       ],
     });

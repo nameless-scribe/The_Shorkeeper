@@ -18,10 +18,12 @@ vi.mock('../../models/stream-chat', () => ({
 }));
 
 vi.mock('../../models/config', () => ({
-  loadModelConfig: vi.fn(() => ({
+  loadModelRuntimeConfig: vi.fn(() => ({
     apiKey: 'test-key',
     baseUrl: 'https://example.test',
     model: 'test-model',
+    protocol: 'openai',
+    profileId: 'profile-test',
   })),
 }));
 

@@ -6,6 +6,7 @@ import type { PermissionPolicy } from '../types';
 import { ToolRegistry } from '../../tools/registry';
 import type { ToolDefinition } from '../../tools/types';
 import { setPermissionConfirmer } from '../permissions';
+import { estimateTokens } from '../context-budget';
 
 const { streamChatMock } = vi.hoisted(() => ({
   streamChatMock: vi.fn(),
@@ -16,10 +17,12 @@ vi.mock('../../models/stream-chat', () => ({
 }));
 
 vi.mock('../../models/config', () => ({
-  loadModelConfig: vi.fn(() => ({
+  loadModelRuntimeConfig: vi.fn(() => ({
     apiKey: 'test-key',
     baseUrl: 'https://example.test',
     model: 'test-model',
+    protocol: 'openai',
+    profileId: 'profile-test',
   })),
 }));
 
@@ -105,6 +108,213 @@ describe('runAgentLoop lifecycle boundaries', () => {
       { type: 'text_delta', runId: 'run-1', delta: '完成' },
     ]);
     expect(phases).toContain('running');
+    expect(streamChatMock).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ model: 'test-model' }),
+      expect.objectContaining({ protocol: 'openai' }),
+    );
+  });
+
+  it('generates one stable call id when the provider omits it', async () => {
+    const tool: ToolDefinition = {
+      name: 'id_tool',
+      description: '测试调用编号',
+      parameters: { type: 'object', properties: {} },
+      category: 'skill',
+      requiresPermission: [],
+      execute: vi.fn(async () => ({ success: true, output: 'ok' })),
+    };
+    streamChatMock
+      .mockReturnValueOnce(modelEvents([{
+        type: 'round_complete',
+        content: null,
+        toolCalls: [{
+          id: '',
+          type: 'function',
+          function: { name: 'id_tool', arguments: '{}' },
+        }],
+      }, { type: 'done' }]))
+      .mockReturnValueOnce(modelEvents(textRound('完成')));
+
+    const registry = new ToolRegistry();
+    registry.register(tool);
+    await collectEvents(runAgentLoop({
+      sessionId: 'session-generated-id',
+      runId: 'run-generated-id',
+      messages: [{ role: 'user', content: '执行工具' }],
+      registry,
+      policy,
+    }));
+
+    const secondRoundMessages = streamChatMock.mock.calls[1][0];
+    const assistantCallId = secondRoundMessages.at(-2).tool_calls[0].id;
+    expect(assistantCallId).toBeTruthy();
+    expect(secondRoundMessages.at(-1).tool_call_id).toBe(assistantCallId);
+  });
+
+  it('replays a repeated tool call id without repeating its side effect', async () => {
+    const execute = vi.fn(async () => ({ success: true, output: 'written once' }));
+    const tool: ToolDefinition = {
+      name: 'side_effect_tool',
+      description: '测试重复调用',
+      parameters: { type: 'object', properties: {} },
+      category: 'skill',
+      requiresPermission: [],
+      execute,
+    };
+    const repeatedRound: ModelEvent[] = [{
+      type: 'round_complete',
+      content: null,
+      toolCalls: [{
+        id: 'same-call-id',
+        type: 'function',
+        function: { name: 'side_effect_tool', arguments: '{"value":1}' },
+      }],
+    }, { type: 'done' }];
+    streamChatMock
+      .mockReturnValueOnce(modelEvents(repeatedRound))
+      .mockReturnValueOnce(modelEvents(repeatedRound))
+      .mockReturnValueOnce(modelEvents(textRound('完成')));
+
+    const registry = new ToolRegistry();
+    registry.register(tool);
+    const events = await collectEvents(runAgentLoop({
+      sessionId: 'session-repeated-call',
+      runId: 'run-repeated-call',
+      messages: [{ role: 'user', content: '执行一次' }],
+      registry,
+      policy,
+    }));
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'tool_call_end',
+      callId: 'same-call-id',
+      result: expect.objectContaining({
+        metadata: expect.objectContaining({ replayedToolCall: true }),
+      }),
+    }));
+  });
+
+  it('bounds large tool output before returning it to the model', async () => {
+    const tool: ToolDefinition = {
+      name: 'large_output_tool',
+      description: '测试大输出',
+      parameters: { type: 'object', properties: {} },
+      category: 'skill',
+      requiresPermission: [],
+      execute: vi.fn(async () => ({ success: true, output: '数'.repeat(10_000) })),
+    };
+    streamChatMock
+      .mockReturnValueOnce(modelEvents([{
+        type: 'round_complete',
+        content: null,
+        toolCalls: [{
+          id: 'large-call',
+          type: 'function',
+          function: { name: 'large_output_tool', arguments: '{}' },
+        }],
+      }, { type: 'done' }]))
+      .mockReturnValueOnce(modelEvents(textRound('已读取')));
+
+    const registry = new ToolRegistry();
+    registry.register(tool);
+    await collectEvents(runAgentLoop({
+      sessionId: 'session-large-output',
+      runId: 'run-large-output',
+      messages: [{ role: 'user', content: '读取大结果' }],
+      registry,
+      policy,
+      toolResultContextBudgetTokens: 300,
+    }));
+
+    const toolMessage = streamChatMock.mock.calls[1][0].at(-1);
+    expect(toolMessage.content).toContain('内容因上下文预算截断');
+    expect(toolMessage.content.length).toBeLessThan(400);
+  });
+
+  it('keeps cumulative tool-result context inside one rolling budget', async () => {
+    const tool: ToolDefinition = {
+      name: 'rolling_output_tool',
+      description: '测试累计输出',
+      parameters: { type: 'object', properties: {} },
+      category: 'skill',
+      requiresPermission: [],
+      execute: vi.fn(async () => ({ success: true, output: '结'.repeat(400) })),
+    };
+    const toolRound = (id: string): ModelEvent[] => [{
+      type: 'round_complete',
+      content: null,
+      toolCalls: [{
+        id,
+        type: 'function',
+        function: { name: 'rolling_output_tool', arguments: '{}' },
+      }],
+    }, { type: 'done' }];
+    streamChatMock
+      .mockReturnValueOnce(modelEvents(toolRound('rolling-1')))
+      .mockReturnValueOnce(modelEvents(toolRound('rolling-2')))
+      .mockReturnValueOnce(modelEvents(textRound('完成')));
+
+    const registry = new ToolRegistry();
+    registry.register(tool);
+    await collectEvents(runAgentLoop({
+      sessionId: 'session-rolling-output',
+      runId: 'run-rolling-output',
+      messages: [{ role: 'user', content: '连续读取' }],
+      registry,
+      policy,
+      toolResultContextBudgetTokens: 500,
+    }));
+
+    const thirdRoundMessages = streamChatMock.mock.calls[2][0];
+    const totalToolTokens = thirdRoundMessages
+      .filter((message: { role: string }) => message.role === 'tool')
+      .reduce(
+        (total: number, message: { content: string }) => total + estimateTokens(message.content),
+        0,
+      );
+    expect(totalToolTokens).toBeLessThanOrEqual(500);
+  });
+
+  it('rejects a model tool-call flood before executing side effects', async () => {
+    const execute = vi.fn(async () => ({ success: true, output: 'ok' }));
+    const tool: ToolDefinition = {
+      name: 'flood_tool',
+      description: '测试调用洪泛',
+      parameters: { type: 'object', properties: {} },
+      category: 'skill',
+      requiresPermission: [],
+      execute,
+    };
+    streamChatMock.mockReturnValueOnce(modelEvents([{
+      type: 'round_complete',
+      content: null,
+      toolCalls: ['one', 'two'].map((id) => ({
+        id,
+        type: 'function' as const,
+        function: { name: 'flood_tool', arguments: '{}' },
+      })),
+    }, { type: 'done' }]));
+
+    const registry = new ToolRegistry();
+    registry.register(tool);
+    const events = await collectEvents(runAgentLoop({
+      sessionId: 'session-tool-flood',
+      runId: 'run-tool-flood',
+      messages: [{ role: 'user', content: '执行' }],
+      registry,
+      policy,
+      maxToolCallsPerRound: 1,
+    }));
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(events.at(-1)).toEqual({
+      type: 'run_error',
+      runId: 'run-tool-flood',
+      message: '单轮工具调用超过安全限制 (1)',
+      sessionId: 'session-tool-flood',
+    });
   });
 
   it('returns tool failures to the model for recovery', async () => {

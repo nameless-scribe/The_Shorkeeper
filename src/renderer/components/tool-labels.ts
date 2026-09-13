@@ -1,8 +1,10 @@
 export const TOOL_LABELS: Record<string, string> = {
   read_file: '读取文件',
   write_file: '写入文件',
+  replace_text: '精确替换文本',
   list_dir: '列出目录',
   read_xlsx: '读取 Excel',
+  update_xlsx_cells: '修改 Excel 单元格',
   convert_to_markdown: '转 Markdown',
   gen_markdown: '生成 Markdown',
   gen_docx: '生成 Word',

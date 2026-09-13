@@ -3,6 +3,7 @@ export type RunErrorCategory =
   | 'timeout'
   | 'permission_denied'
   | 'configuration'
+  | 'rate_limited'
   | 'network'
   | 'persistence'
   | 'tool'
@@ -13,6 +14,7 @@ export function classifyRunError(message: string): RunErrorCategory {
   if (/超时|timeout|timed out/i.test(message)) return 'timeout';
   if (/权限.*拒绝|拒绝.*操作|permission.*denied/i.test(message)) return 'permission_denied';
   if (/api key|未配置|配置.*模型|configuration|invalid.*key/i.test(message)) return 'configuration';
+  if (/429|请求过于频繁|额度不足|限流|rate.?limit/i.test(message)) return 'rate_limited';
   if (/数据库|持久化|sqlite|migration/i.test(message)) return 'persistence';
   if (/网络|network|fetch|连接|econn|http\s*\d{3}/i.test(message)) return 'network';
   if (/工具|tool|mcp/i.test(message)) return 'tool';
@@ -29,6 +31,8 @@ export function getRunRecoveryAdvice(category: RunErrorCategory): string | null 
       return '操作未执行。确认权限策略后重新发起即可。';
     case 'configuration':
       return '请检查设置中的 API Key、服务地址和模型名称。';
+    case 'rate_limited':
+      return '模型服务当前限流或额度不足，请稍后重试并检查账户额度。';
     case 'network':
       return '请检查网络连接和服务地址，然后重试。';
     case 'persistence':

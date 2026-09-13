@@ -32,6 +32,16 @@ describe('run observability', () => {
     });
 
     telemetry.recordPhase('running');
+    telemetry.setSkillDiagnostics([
+      {
+        skillId: 'skill-a',
+        skillName: 'Skill A',
+        trigger: 'auto',
+        status: 'active',
+        matchedKeyword: '表格',
+        reason: '命中触发词「表格」',
+      },
+    ], []);
     telemetry.recordToolStart('call-1', 'read_file');
     time = 140;
     telemetry.recordToolEnd('call-1', true);
@@ -44,6 +54,8 @@ describe('run observability', () => {
       sessionId: 'session-1',
       modelId: 'test-model',
       activeSkillIds: ['skill-a'],
+      skillDecisions: [expect.objectContaining({ skillId: 'skill-a', status: 'active' })],
+      skillWarnings: [],
       phase: 'finished',
       durationMs: 80,
       toolCallCount: 1,

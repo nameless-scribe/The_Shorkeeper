@@ -89,10 +89,37 @@ async function getBaseRegistry(): Promise<ToolRegistry> {
   return cachedBaseRegistry;
 }
 
-export async function getAgentRegistry(activeSkills?: Skill[]): Promise<ToolRegistry> {
+export interface AgentRegistryResolution {
+  registry: ToolRegistry;
+  activeSkills: Skill[];
+  skillWarnings: string[];
+}
+
+export async function resolveAgentRegistry(skills: Skill[]): Promise<AgentRegistryResolution> {
   const base = await getBaseRegistry();
+  const available = new Set(base.list().map((tool) => tool.name));
+  const activeSkills: Skill[] = [];
+  const skillWarnings: string[] = [];
+
+  for (const skill of skills) {
+    const missing = (skill.requiredTools ?? []).filter((toolName) => !available.has(toolName));
+    if (missing.length) {
+      skillWarnings.push(`技能「${skill.name}」未激活：缺少工具 ${missing.join(', ')}`);
+    } else {
+      activeSkills.push(skill);
+    }
+  }
+
+  return {
+    registry: applySkillToolFilter(base, activeSkills),
+    activeSkills,
+    skillWarnings,
+  };
+}
+
+export async function getAgentRegistry(activeSkills?: Skill[]): Promise<ToolRegistry> {
   const skills = activeSkills ?? getEnabledSkills();
-  return applySkillToolFilter(base, skills);
+  return (await resolveAgentRegistry(skills)).registry;
 }
 
 export function invalidateAgentRegistry(): void {

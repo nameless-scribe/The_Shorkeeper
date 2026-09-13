@@ -4,6 +4,7 @@ import {
   formatUserTaskList,
   getUserTask,
   listUserTasks,
+  runUserTaskTransaction,
   updateUserTask,
   type UserTaskStatus,
 } from '../../db/user-tasks';
@@ -31,9 +32,25 @@ const STATUS_ALIASES: Record<string, UserTaskStatus> = {
   取消: 'cancelled',
 };
 
-function normalizeStatus(raw: string): UserTaskStatus {
+export function normalizeImportedTaskStatus(raw: string): UserTaskStatus | null {
   const trimmed = raw.trim();
-  return STATUS_ALIASES[trimmed] ?? STATUS_ALIASES[trimmed.toLowerCase()] ?? 'pending';
+  if (!trimmed) return 'pending';
+  return STATUS_ALIASES[trimmed] ?? STATUS_ALIASES[trimmed.toLowerCase()] ?? null;
+}
+
+function normalizeImportedDueAt(raw: string): string | null | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})(?:T[\d:.+-]+Z?)?$/);
+  if (!match) return undefined;
+  const [year, month, day] = match[1].split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) return undefined;
+  return match[1];
 }
 
 function pickColumn(headers: string[], candidates: string[]): number {
@@ -47,18 +64,6 @@ function pickColumn(headers: string[], candidates: string[]): number {
     if (idx >= 0) return idx;
   }
   return -1;
-}
-
-async function syncTaskToXlsx(
-  workspaceRoot: string,
-  taskId: string,
-): Promise<string | null> {
-  void workspaceRoot;
-  try {
-    return await syncUserTaskStatusToXlsx(taskId);
-  } catch {
-    return null;
-  }
 }
 
 export const importTasksFromXlsxTool: ToolDefinition = {
@@ -89,8 +94,15 @@ export const importTasksFromXlsxTool: ToolDefinition = {
       if (!parsed.headers.length) {
         return { success: false, output: '', error: '表格无表头行' };
       }
+      if (parsed.has_more) {
+        return {
+          success: false,
+          output: '',
+          error: `表格共有 ${parsed.total_rows} 行，超过单次安全导入上限 5000 行；未写入任何待办`,
+        };
+      }
 
-      const titleCol = pickColumn(parsed.headers, ['任务', '标题', '名称', '模块', 'title', 'name']);
+      const titleCol = pickColumn(parsed.headers, ['任务', '任务名称', '标题', '事项', 'title', 'task']);
       const moduleCol = pickColumn(parsed.headers, ['模块', 'module', '业务模块']);
       const statusCol = pickColumn(parsed.headers, ['状态', '进度', 'status']);
       const dueCol = pickColumn(parsed.headers, ['截止', '日期', 'due', 'deadline']);
@@ -103,42 +115,72 @@ export const importTasksFromXlsxTool: ToolDefinition = {
         };
       }
 
-      let created = 0;
-      let updated = 0;
-
+      const candidates: Array<{
+        title: string;
+        moduleName: string | null;
+        status: UserTaskStatus;
+        dueAt: string | null;
+        sourceRow: number;
+      }> = [];
+      const validationErrors: string[] = [];
       for (let i = 0; i < parsed.rows.length; i += 1) {
         const row = parsed.rows[i];
         const title = (row[titleCol] ?? '').trim();
         if (!title) continue;
 
         const moduleName = moduleCol >= 0 ? (row[moduleCol] ?? '').trim() || null : null;
-        const status = statusCol >= 0 ? normalizeStatus(row[statusCol] ?? '') : 'pending';
-        const dueAt = dueCol >= 0 ? (row[dueCol] ?? '').trim() || null : null;
+        const statusRaw = statusCol >= 0 ? row[statusCol] ?? '' : '';
+        const status = normalizeImportedTaskStatus(statusRaw);
+        const dueRaw = dueCol >= 0 ? row[dueCol] ?? '' : '';
+        const dueAt = normalizeImportedDueAt(dueRaw);
         const sourceRow = i + 2;
-
-        const existing = findUserTaskBySource(filePath, sourceRow);
-        if (existing) {
-          updateUserTask(existing.id, {
-            title,
-            status,
-            module: moduleName,
-            dueAt,
-            sourceFile: filePath,
-            sourceRow,
-          });
-          updated += 1;
-        } else {
-          createUserTask({
-            title,
-            status,
-            module: moduleName,
-            dueAt,
-            sourceFile: filePath,
-            sourceRow,
-          });
-          created += 1;
+        if (!status) validationErrors.push(`第 ${sourceRow} 行状态无法识别：${statusRaw}`);
+        if (dueAt === undefined) validationErrors.push(`第 ${sourceRow} 行截止日期须为 YYYY-MM-DD：${dueRaw}`);
+        if (status && dueAt !== undefined) {
+          candidates.push({ title, moduleName, status, dueAt, sourceRow });
         }
       }
+
+      if (validationErrors.length) {
+        return {
+          success: false,
+          output: '',
+          error: `导入前校验失败，未写入任何待办：\n${validationErrors.slice(0, 10).join('\n')}${
+            validationErrors.length > 10 ? `\n另有 ${validationErrors.length - 10} 项错误` : ''
+          }`,
+        };
+      }
+
+      let created = 0;
+      let updated = 0;
+      runUserTaskTransaction(() => {
+        for (const candidate of candidates) {
+          const { title, moduleName, status, dueAt, sourceRow } = candidate;
+
+          const existing = findUserTaskBySource(filePath, sourceRow);
+          if (existing) {
+            updateUserTask(existing.id, {
+              title,
+              status,
+              module: moduleName,
+              dueAt,
+              sourceFile: filePath,
+              sourceRow,
+            });
+            updated += 1;
+          } else {
+            createUserTask({
+              title,
+              status,
+              module: moduleName,
+              dueAt,
+              sourceFile: filePath,
+              sourceRow,
+            });
+            created += 1;
+          }
+        }
+      });
 
       const tasks = listUserTasks();
       notifyUserTasksChanged();
@@ -211,11 +253,22 @@ export const updateUserTaskTool: ToolDefinition = {
       return { success: false, output: '', error: `未找到任务: ${id}` };
     }
 
+    const requestedStatus = typeof raw.status === 'string' ? raw.status : undefined;
+    if (requestedStatus && !['pending', 'in_progress', 'done', 'cancelled'].includes(requestedStatus)) {
+      return { success: false, output: '', error: `无效状态: ${requestedStatus}` };
+    }
+    const requestedDueAt = typeof raw.due_at === 'string'
+      ? normalizeImportedDueAt(raw.due_at)
+      : undefined;
+    if (typeof raw.due_at === 'string' && requestedDueAt === undefined) {
+      return { success: false, output: '', error: 'due_at 须为 YYYY-MM-DD' };
+    }
+
     const updated = updateUserTask(id, {
       title: typeof raw.title === 'string' ? raw.title : undefined,
-      status: typeof raw.status === 'string' ? (raw.status as UserTaskStatus) : undefined,
+      status: requestedStatus as UserTaskStatus | undefined,
       notes: typeof raw.notes === 'string' ? raw.notes : undefined,
-      dueAt: typeof raw.due_at === 'string' ? raw.due_at : undefined,
+      dueAt: typeof raw.due_at === 'string' ? requestedDueAt : undefined,
     });
 
     if (!updated) {
@@ -226,10 +279,24 @@ export const updateUserTaskTool: ToolDefinition = {
     const shouldSync = raw.sync_xlsx !== false && updated.sourceFile;
     if (shouldSync && updated.sourceFile) {
       try {
-        const synced = await syncTaskToXlsx(ctx.workspaceRoot, updated.id);
-        if (synced) syncNote = `\n已回写 Excel: ${synced}`;
-      } catch {
-        syncNote = '\n（Excel 回写跳过）';
+        const synced = await syncUserTaskStatusToXlsx(updated.id);
+        syncNote = `\n已回写 Excel: ${synced}`;
+      } catch (error) {
+        updateUserTask(existing.id, {
+          title: existing.title,
+          status: existing.status,
+          notes: existing.notes,
+          dueAt: existing.dueAt,
+          sourceFile: existing.sourceFile,
+          sourceRow: existing.sourceRow,
+          module: existing.module,
+        });
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          success: false,
+          output: '',
+          error: `Excel 回写失败，数据库更新已撤销：${message}`,
+        };
       }
     }
 

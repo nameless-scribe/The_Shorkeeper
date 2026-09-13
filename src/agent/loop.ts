@@ -8,15 +8,22 @@ import {
   ensureWorkspaceDir,
 } from './permissions';
 import type { AgUiEvent } from './types';
-import { loadModelConfig } from '../models/config';
+import {
+  loadModelRuntimeConfig,
+  type ModelRuntimeConfig,
+} from '../models/config';
 import { streamChat } from '../models/stream-chat';
 import type { ToolRegistry } from '../tools/registry';
 import type { ToolContext, ToolResult } from '../tools/types';
 import { createToolError, normalizeToolResult } from '../tools/result';
 import { awaitWithAbort, createLinkedTimeoutSignal } from './abort';
+import { estimateTokens, truncateToTokenBudget } from './context-budget';
 
 export const DEFAULT_MODEL_ROUND_TIMEOUT_MS = 120_000;
 export const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 120_000;
+export const DEFAULT_TOOL_RESULT_CONTEXT_BUDGET_TOKENS = 8_000;
+export const DEFAULT_MAX_TOOL_CALLS_PER_ROUND = 20;
+const OMITTED_TOOL_RESULT = '[较早工具结果已省略]';
 
 export interface AgentLoopOptions {
   sessionId: string;
@@ -42,6 +49,75 @@ export interface AgentLoopOptions {
   ) => void;
   modelTimeoutMs?: number;
   toolTimeoutMs?: number;
+  modelRuntime?: ModelRuntimeConfig;
+  toolResultContextBudgetTokens?: number;
+  maxToolCallsPerRound?: number;
+}
+
+interface CompletedToolCall {
+  signature: string;
+  result: ToolResult;
+}
+
+function normalizeRoundToolCalls(toolCalls: OpenAIToolCall[]): OpenAIToolCall[] {
+  const seen = new Set<string>();
+  const normalized: OpenAIToolCall[] = [];
+
+  for (const toolCall of toolCalls) {
+    const id = toolCall.id || createCallId();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    normalized.push({ ...toolCall, id });
+  }
+
+  return normalized;
+}
+
+function toolCallSignature(toolCall: OpenAIToolCall): string {
+  return `${toolCall.function.name}\0${toolCall.function.arguments}`;
+}
+
+function formatToolResultForModel(result: ToolResult, maxTokens: number): string {
+  const content = result.success
+    ? result.output
+    : `错误: ${result.error ?? '执行失败'}`;
+  return truncateToTokenBudget(content, Math.max(1, maxTokens));
+}
+
+function compactToolResults(
+  messages: LlmMessage[],
+  maxTokens: number,
+): LlmMessage[] {
+  const toolIndexes = messages
+    .map((message, index) => message.role === 'tool' ? index : -1)
+    .filter((index) => index >= 0);
+  if (!toolIndexes.length) return messages;
+
+  const limit = Math.max(1, Math.floor(maxTokens));
+  const markerTokens = estimateTokens(OMITTED_TOOL_RESULT);
+  let remaining = Math.max(0, limit - markerTokens * toolIndexes.length);
+  const compacted = [...messages];
+
+  for (let cursor = toolIndexes.length - 1; cursor >= 0; cursor -= 1) {
+    const index = toolIndexes[cursor];
+    const message = messages[index];
+    if (message.role !== 'tool') continue;
+
+    const originalTokens = estimateTokens(message.content);
+    if (remaining <= 0) {
+      compacted[index] = { ...message, content: OMITTED_TOOL_RESULT };
+      continue;
+    }
+
+    const allowed = markerTokens + remaining;
+    const content = originalTokens <= allowed
+      ? message.content
+      : truncateToTokenBudget(message.content, allowed);
+    remaining -= Math.max(0, estimateTokens(content) - markerTokens);
+    compacted[index] = { ...message, content };
+  }
+
+  return compacted;
 }
 
 function parseToolArgs(raw: string): { args: unknown; error?: string } {
@@ -124,13 +200,17 @@ export async function* runAgentLoop(
     signal,
     modelTimeoutMs = DEFAULT_MODEL_ROUND_TIMEOUT_MS,
     toolTimeoutMs = DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
+    toolResultContextBudgetTokens = DEFAULT_TOOL_RESULT_CONTEXT_BUDGET_TOKENS,
+    maxToolCallsPerRound = DEFAULT_MAX_TOOL_CALLS_PER_ROUND,
   } = options;
 
-  const config = loadModelConfig();
+  const modelRuntime = options.modelRuntime ?? loadModelRuntimeConfig();
+  const config = modelRuntime;
   const tools = registry.toOpenAITools();
   const workspaceRoot = ensureWorkspaceDir();
   let messages = [...options.messages];
   let rounds = 0;
+  const completedToolCalls = new Map<string, CompletedToolCall>();
 
   try {
   while (rounds < maxRounds) {
@@ -141,6 +221,7 @@ export async function* runAgentLoop(
     }
 
     rounds += 1;
+    messages = compactToolResults(messages, toolResultContextBudgetTokens);
     options.onModelRoundStart?.(rounds);
     let roundContent: string | null = null;
     let roundToolCalls: OpenAIToolCall[] = [];
@@ -150,6 +231,7 @@ export async function* runAgentLoop(
       tools,
       signal: modelTimeout.signal,
       cacheStablePrefix: options.cacheStablePrefix,
+      protocol: modelRuntime.protocol,
     });
     let modelError: string | null = null;
     const iterator = modelStream[Symbol.asyncIterator]();
@@ -210,6 +292,17 @@ export async function* runAgentLoop(
       return;
     }
 
+    roundToolCalls = normalizeRoundToolCalls(roundToolCalls);
+
+    if (roundToolCalls.length > Math.max(1, Math.floor(maxToolCallsPerRound))) {
+      yield ev.runError(
+        runId,
+        `单轮工具调用超过安全限制 (${maxToolCallsPerRound})`,
+        sessionId,
+      );
+      return;
+    }
+
     if (!roundToolCalls.length) {
       if (signal?.aborted) {
         yield ev.runError(runId, '已取消', sessionId);
@@ -238,14 +331,29 @@ export async function* runAgentLoop(
       }
 
       options.onPhaseChange?.('waiting_tool');
-      const callId = toolCall.id || createCallId();
+      const callId = toolCall.id;
       const parsedArgs = parseToolArgs(toolCall.function.arguments);
       const toolName = toolCall.function.name;
+      const signature = toolCallSignature(toolCall);
 
       yield ev.toolCallStart(runId, callId, toolName, parsedArgs.args);
 
       let result: ToolResult;
-      if (parsedArgs.error) {
+      const completed = completedToolCalls.get(callId);
+      if (completed?.signature === signature) {
+        result = {
+          ...completed.result,
+          metadata: {
+            ...completed.result.metadata,
+            replayedToolCall: true,
+          },
+        };
+      } else if (completed) {
+        result = createToolError(
+          '模型重复使用了相同的工具调用编号，但名称或参数不同；已拒绝重复执行',
+          'invalid_arguments',
+        );
+      } else if (parsedArgs.error) {
         result = createToolError(parsedArgs.error, 'invalid_arguments');
       } else {
         const toolTimeout = createLinkedTimeoutSignal(signal, toolTimeoutMs);
@@ -283,6 +391,10 @@ export async function* runAgentLoop(
         }
       }
 
+      if (!completed) {
+        completedToolCalls.set(callId, { signature, result });
+      }
+
       yield ev.toolCallEnd(runId, callId, result);
 
       if (signal?.aborted) {
@@ -299,9 +411,13 @@ export async function* runAgentLoop(
         {
           role: 'tool',
           tool_call_id: callId,
-          content: result.success
-            ? result.output
-            : `错误: ${result.error ?? '执行失败'}`,
+          content: formatToolResultForModel(
+            result,
+            Math.max(
+              256,
+              Math.floor(toolResultContextBudgetTokens / roundToolCalls.length),
+            ),
+          ),
         },
       ];
     }

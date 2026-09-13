@@ -10,6 +10,7 @@ import {
   getModelProfilesInfo,
   getModelSettingsInfo,
   loadModelConfig,
+  loadModelRuntimeConfig,
   maskApiKey,
   saveModelSettings,
   setActiveModelProfile,
@@ -103,6 +104,24 @@ describe('model config', () => {
       baseUrl: 'https://second.example.com/v1',
       model: 'model-b',
     });
+  });
+
+  it('loads protocol and connection settings from one active profile snapshot', () => {
+    createModelProfile({
+      name: 'anthropic profile',
+      baseUrl: 'https://anthropic.example.com/v1',
+      model: 'claude-test',
+      apiKey: 'sk-ant-key-55555555',
+      protocol: 'anthropic',
+    });
+
+    expect(loadModelRuntimeConfig()).toEqual(expect.objectContaining({
+      apiKey: 'sk-ant-key-55555555',
+      baseUrl: 'https://anthropic.example.com/v1',
+      model: 'claude-test',
+      protocol: 'anthropic',
+      profileId: expect.any(String),
+    }));
   });
 
   it('migrates legacy single settings into one profile', () => {

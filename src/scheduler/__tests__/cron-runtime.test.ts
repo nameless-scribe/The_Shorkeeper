@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScheduledTaskInfo } from '../../shared/types';
-import { isSessionRunActive } from '../../agent/session-run-lock';
+import {
+  acquireSessionRun,
+  isSessionRunActive,
+  releaseSessionRun,
+} from '../../agent/session-run-lock';
 
 const state = vi.hoisted(() => ({
   runOrchestrator: vi.fn(),
@@ -8,6 +12,9 @@ const state = vi.hoisted(() => ({
   onRunStarted: vi.fn(),
   onRunFinished: vi.fn(),
   onRunError: vi.fn(),
+  resolveReminderBody: vi.fn(async () => '提醒'),
+  showReminderPopup: vi.fn(async () => undefined),
+  enabledTasks: [] as ScheduledTaskInfo[],
   settings: {
     proactivityEnabled: true,
     quietHoursStart: '',
@@ -24,12 +31,12 @@ vi.mock('node-cron', () => ({
 }));
 vi.mock('../../db/scheduled-tasks', () => ({
   disableScheduledTask: vi.fn(),
-  listEnabledScheduledTasks: vi.fn(() => []),
+  listEnabledScheduledTasks: vi.fn(() => state.enabledTasks),
   markTaskRun: vi.fn(),
 }));
 vi.mock('../task-events', () => ({ notifyTasksChanged: vi.fn() }));
 vi.mock('../reminder-message', () => ({
-  resolveReminderBody: vi.fn(async () => '提醒'),
+  resolveReminderBody: state.resolveReminderBody,
 }));
 vi.mock('../../config/performance', () => ({
   getPerformanceSettings: vi.fn(() => ({ ...state.settings })),
@@ -47,11 +54,20 @@ vi.mock('../../../electron/state/presence', () => ({
   onRunError: (...args: unknown[]) => state.onRunError(...args),
 }));
 vi.mock('../../../electron/reminder/popup', () => ({
-  showReminderPopup: vi.fn(async () => undefined),
+  showReminderPopup: state.showReminderPopup,
 }));
 
-import { executeAgentPrompt, executeReminder } from '../../../electron/scheduler/cron';
+import {
+  BUSY_ONCE_TASK_RETRY_MS,
+  executeAgentPrompt,
+  executeReminder,
+  MAX_TIMER_DELAY_MS,
+  runScheduledTask,
+  startScheduler,
+  stopScheduler,
+} from '../../../electron/scheduler/cron';
 import { showReminderPopup } from '../../../electron/reminder/popup';
+import { disableScheduledTask, markTaskRun } from '../../db/scheduled-tasks';
 import {
   clearProactivityDecisions,
   listProactivityDecisions,
@@ -72,6 +88,12 @@ const task: ScheduledTaskInfo = {
 async function* events(items: Array<{ type: string; [key: string]: unknown }>) {
   for (const item of items) yield item;
 }
+
+beforeEach(() => {
+  state.enabledTasks = [];
+  state.resolveReminderBody.mockReset().mockResolvedValue('提醒');
+  state.showReminderPopup.mockReset().mockResolvedValue(undefined);
+});
 
 describe('scheduled Agent runs', () => {
   beforeEach(() => {
@@ -197,5 +219,107 @@ describe('scheduled reminder visibility', () => {
     });
     expect(state.onRunError).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+});
+
+describe('scheduler execution safety', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    state.settings.proactivityEnabled = true;
+    state.settings.quietHoursStart = '';
+    state.settings.quietHoursEnd = '';
+    state.settings.notificationDedupMinutes = 5;
+  });
+
+  it('chunks long one-time delays instead of overflowing the Node timer', async () => {
+    vi.useFakeTimers();
+    const now = new Date(2026, 0, 1, 9, 0).getTime();
+    vi.setSystemTime(now);
+    const fireAt = now + MAX_TIMER_DELAY_MS + 10_000;
+    state.enabledTasks = [{
+      ...task,
+      id: 'task-long-delay',
+      name: '远期提醒',
+      scheduleKind: 'once',
+      runAt: fireAt,
+      actionType: 'reminder',
+    }];
+
+    startScheduler();
+    await vi.advanceTimersByTimeAsync(MAX_TIMER_DELAY_MS);
+    expect(state.showReminderPopup).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(state.showReminderPopup).toHaveBeenCalledOnce();
+    expect(markTaskRun).toHaveBeenCalledWith('task-long-delay');
+    expect(disableScheduledTask).toHaveBeenCalledWith('task-long-delay');
+    stopScheduler();
+    vi.useRealTimers();
+  });
+
+  it('retries a busy one-time Agent task instead of stranding it', async () => {
+    vi.useFakeTimers();
+    const busyController = acquireSessionRun('scheduled-session');
+    expect(busyController).not.toBeNull();
+    const onceAgentTask: ScheduledTaskInfo = {
+      ...task,
+      id: 'task-busy-once',
+      scheduleKind: 'once',
+      runAt: Date.now(),
+    };
+
+    await runScheduledTask(onceAgentTask);
+    expect(state.runOrchestrator).not.toHaveBeenCalled();
+    releaseSessionRun('scheduled-session', busyController!);
+    state.runOrchestrator.mockReturnValue(events([
+      { type: 'run_started', runId: 'retried-run', sessionId: 'scheduled-session' },
+      { type: 'run_finished', runId: 'retried-run' },
+    ]));
+
+    await vi.advanceTimersByTimeAsync(BUSY_ONCE_TASK_RETRY_MS);
+    expect(state.runOrchestrator).toHaveBeenCalledOnce();
+    expect(markTaskRun).toHaveBeenCalledWith('task-busy-once');
+    expect(disableScheduledTask).toHaveBeenCalledWith('task-busy-once');
+    stopScheduler();
+    vi.useRealTimers();
+  });
+
+  it('prevents overlapping executions of the same reminder task', async () => {
+    let finishPopup: (() => void) | undefined;
+    state.showReminderPopup.mockImplementation(() => new Promise<undefined>((resolve) => {
+      finishPopup = () => resolve(undefined);
+    }));
+    const reminderTask: ScheduledTaskInfo = {
+      ...task,
+      id: 'task-overlap',
+      actionType: 'reminder',
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const first = runScheduledTask(reminderTask);
+    await vi.waitFor(() => expect(state.showReminderPopup).toHaveBeenCalledOnce());
+    await runScheduledTask(reminderTask);
+    expect(state.showReminderPopup).toHaveBeenCalledOnce();
+
+    finishPopup?.();
+    await first;
+    expect(markTaskRun).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it('does not mark unsupported actions as successfully consumed', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await runScheduledTask({
+      ...task,
+      id: 'task-unsupported',
+      scheduleKind: 'once',
+      actionType: 'unsupported',
+    });
+
+    expect(markTaskRun).not.toHaveBeenCalled();
+    expect(disableScheduledTask).not.toHaveBeenCalled();
+    error.mockRestore();
   });
 });

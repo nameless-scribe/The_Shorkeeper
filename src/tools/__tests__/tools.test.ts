@@ -2,11 +2,18 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ToolRegistry } from '../registry';
 import { readFileTool } from '../file/read-file';
 import { writeFileTool } from '../file/write-file';
+import { replaceTextTool } from '../file/replace-text';
 import { listDirTool } from '../file/list-dir';
 import { webSearchTool } from '../web/web-search';
 import { fetchUrlTool, isPublicAddress, readLimitedBody } from '../web/fetch-url';
 import { translateTool } from '../web/translate';
-import { genDocxTool, genMarkdownTool, genXlsxTool, readXlsxTool } from '../doc/gen-tools';
+import {
+  genDocxTool,
+  genMarkdownTool,
+  genXlsxTool,
+  readXlsxTool,
+  updateXlsxCellsTool,
+} from '../doc/gen-tools';
 import { loadExcelJS } from '../doc/exceljs-loader';
 import { convertToMarkdownTool } from '../doc/convert-markdown';
 import fs from 'node:fs/promises';
@@ -54,6 +61,23 @@ describe('read_file', () => {
 
     expect(result.success).toBe(true);
     expect(result.output).toBe('你好');
+  });
+
+  it('requires line ranges for very large text files', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-read-large-'));
+    await fs.writeFile(path.join(root, 'large.txt'), `${'x'.repeat(110_000)}\nsecond`, 'utf-8');
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+
+    const full = await readFileTool.execute({ path: 'large.txt' }, ctx);
+    expect(full.success).toBe(false);
+    expect(full.error).toContain('start_line/end_line');
+
+    const ranged = await readFileTool.execute(
+      { path: 'large.txt', start_line: 2, end_line: 2 },
+      ctx,
+    );
+    expect(ranged.success).toBe(true);
+    expect(ranged.output).toBe('second');
   });
 
   it('rejects path outside workspace', async () => {
@@ -151,6 +175,42 @@ describe('write_file', () => {
     expect(result.success).toBe(true);
     const content = await fs.readFile(path.join(root, 'out', 'note.txt'), 'utf-8');
     expect(content).toBe('hello');
+  });
+});
+
+describe('replace_text', () => {
+  it('writes only when the exact match count is satisfied', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-replace-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+    await fs.writeFile(path.join(root, 'note.md'), 'alpha\nbeta\nbeta', 'utf-8');
+
+    const rejected = await replaceTextTool.execute(
+      { path: 'note.md', old_text: 'beta', new_text: 'done' },
+      ctx,
+    );
+    expect(rejected.success).toBe(false);
+    expect(await fs.readFile(path.join(root, 'note.md'), 'utf-8')).toContain('beta');
+
+    const updated = await replaceTextTool.execute(
+      { path: 'note.md', old_text: 'beta', new_text: 'done', expected_replacements: 2 },
+      ctx,
+    );
+    expect(updated.success).toBe(true);
+    expect(await fs.readFile(path.join(root, 'note.md'), 'utf-8')).toBe('alpha\ndone\ndone');
+  });
+});
+
+describe('read_file ranges', () => {
+  it('rejects non-finite and non-positive line numbers', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-read-range-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+    await fs.writeFile(path.join(root, 'note.txt'), 'one\ntwo', 'utf-8');
+
+    const invalid = await readFileTool.execute({ path: 'note.txt', start_line: Number.NaN }, ctx);
+    expect(invalid).toMatchObject({ success: false });
+
+    const zero = await readFileTool.execute({ path: 'note.txt', end_line: 0 }, ctx);
+    expect(zero).toMatchObject({ success: false });
   });
 });
 
@@ -255,6 +315,71 @@ describe('read_xlsx / gen_xlsx', () => {
     expect(parsed.headers).toEqual(['产品', '数量']);
     expect(parsed.rows).toEqual([['键盘', '10'], ['鼠标', '20']]);
   });
+
+  it('reads large sheets page by page', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-xlsx-page-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+    const gen = await genXlsxTool.execute(
+      { path: 'rows.xlsx', headers: ['id'], rows: [['1'], ['2'], ['3'], ['4']] },
+      ctx,
+    );
+    expect(gen.success).toBe(true);
+
+    const result = await readXlsxTool.execute(
+      { path: 'rows.xlsx', start_row: 2, max_rows: 1 },
+      ctx,
+    );
+    const parsed = JSON.parse(result.output) as {
+      rows: string[][];
+      start_row: number;
+      returned_rows: number;
+      has_more: boolean;
+    };
+    expect(parsed).toMatchObject({ start_row: 2, returned_rows: 1, has_more: true });
+    expect(parsed.rows).toEqual([['3']]);
+  });
+
+  it('rejects invalid pagination values', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-xlsx-invalid-page-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+    const gen = await genXlsxTool.execute(
+      { path: 'rows.xlsx', headers: ['id'], rows: [['1']] },
+      ctx,
+    );
+    expect(gen.success).toBe(true);
+
+    const result = await readXlsxTool.execute(
+      { path: 'rows.xlsx', start_row: Number.NaN, max_rows: 1 },
+      ctx,
+    );
+    expect(result).toMatchObject({ success: false });
+  });
+
+  it('updates selected cells while preserving formulas, styles and other sheets', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-xlsx-update-'));
+    const ctx = { sessionId: 's1', workspaceRoot: root, signal: new AbortController().signal };
+    const ExcelJS = await loadExcelJS();
+    const workbook = new ExcelJS.Workbook();
+    const main = workbook.addWorksheet('Main');
+    main.getCell('A1').value = 'before';
+    main.getCell('B1').value = { formula: '1+1', result: 2 };
+    main.getCell('B1').font = { bold: true };
+    workbook.addWorksheet('Other').getCell('A1').value = 'keep';
+    await workbook.xlsx.writeFile(path.join(root, 'book.xlsx'));
+
+    const result = await updateXlsxCellsTool.execute(
+      { source_path: 'book.xlsx', sheet_name: 'Main', updates: [{ cell: 'A1', value: 'after' }] },
+      ctx,
+    );
+    expect(result.success).toBe(true);
+
+    const verified = new ExcelJS.Workbook();
+    await verified.xlsx.readFile(path.join(root, 'book.xlsx'));
+    expect(verified.getWorksheet('Main')?.getCell('A1').value).toBe('after');
+    expect(verified.getWorksheet('Main')?.getCell('B1').value).toMatchObject({ formula: '1+1' });
+    expect(verified.getWorksheet('Main')?.getCell('B1').font.bold).toBe(true);
+    expect(verified.getWorksheet('Other')?.getCell('A1').value).toBe('keep');
+  });
 });
 
 describe('convert_to_markdown', () => {
@@ -291,6 +416,7 @@ describe('convert_to_markdown', () => {
 
       const md = await fs.readFile(path.join(root, 'draft.md'), 'utf-8');
       expect(md.length).toBeGreaterThan(10);
+      expect(md).toContain('# 测试标题');
       expect(md).toMatch(/正文段落/);
     },
     15_000,

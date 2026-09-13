@@ -9,12 +9,17 @@ export interface ParsedXlsxSheet {
   headers: string[];
   rows: string[][];
   total_rows: number;
+  start_row: number;
+  returned_rows: number;
   truncated: boolean;
+  has_more: boolean;
 }
 
 export interface ParseXlsxOptions {
   sheet_name?: string;
   max_rows?: number;
+  /** Zero-based offset within data rows (the header is not counted). */
+  start_row?: number;
 }
 
 function cellToString(value: unknown): string {
@@ -34,7 +39,7 @@ export async function parseXlsxFile(
   filePath: string,
   options: ParseXlsxOptions = {},
 ): Promise<ParsedXlsxSheet> {
-  const { sheet_name, max_rows = 500 } = options;
+  const { sheet_name, max_rows = 500, start_row = 0 } = options;
 
   if (!filePath?.trim()) {
     throw new Error('缺少 path 参数');
@@ -43,7 +48,10 @@ export async function parseXlsxFile(
     throw new Error('仅支持 .xlsx 文件，请用 read_file 读取 CSV/文本');
   }
 
-  const rowLimit = Math.max(1, Math.min(max_rows, 5000));
+  const rowLimit = Number.isFinite(max_rows)
+    ? Math.max(1, Math.min(Math.floor(max_rows), 5000))
+    : 500;
+  const rowOffset = Number.isFinite(start_row) ? Math.max(0, Math.floor(start_row)) : 0;
   const absolute = resolveWorkspacePath(workspaceRoot, filePath);
   const ExcelJS = await loadExcelJS();
   const workbook = new ExcelJS.Workbook();
@@ -75,15 +83,19 @@ export async function parseXlsxFile(
       headers: [],
       rows: [],
       total_rows: 0,
+      start_row: rowOffset,
+      returned_rows: 0,
       truncated: false,
+      has_more: false,
     };
   }
 
   const headers = rawRows[0];
   const dataRows = rawRows.slice(1);
   const totalRows = dataRows.length;
-  const truncated = totalRows > rowLimit;
-  const rows = truncated ? dataRows.slice(0, rowLimit) : dataRows;
+  const rows = dataRows.slice(rowOffset, rowOffset + rowLimit);
+  const hasMore = rowOffset + rows.length < totalRows;
+  const truncated = rowOffset > 0 || hasMore;
 
   return {
     path: path.relative(workspaceRoot, absolute).replace(/\\/g, '/'),
@@ -92,7 +104,10 @@ export async function parseXlsxFile(
     headers,
     rows,
     total_rows: totalRows,
+    start_row: rowOffset,
+    returned_rows: rows.length,
     truncated,
+    has_more: hasMore,
   };
 }
 
@@ -101,9 +116,12 @@ export function formatParsedXlsxForPrompt(parsed: ParsedXlsxSheet): string {
     `文件: ${parsed.path}`,
     `工作表: ${parsed.sheet}`,
     `表头: ${JSON.stringify(parsed.headers)}`,
-    `数据行（${parsed.total_rows} 行${parsed.truncated ? `，已截断显示前 ${parsed.rows.length} 行` : ''}）:`,
-    ...parsed.rows.map((row, i) => `  ${i + 1}. ${JSON.stringify(row)}`),
+    `数据行（共 ${parsed.total_rows} 行，本页从第 ${parsed.start_row + 1} 条起返回 ${parsed.returned_rows} 行）:`,
+    ...parsed.rows.map((row, i) => `  ${parsed.start_row + i + 1}. ${JSON.stringify(row)}`),
   ];
+  if (parsed.has_more) {
+    lines.push(`仍有后续数据；下一页 start_row=${parsed.start_row + parsed.returned_rows}`);
+  }
   if (parsed.available_sheets.length > 1) {
     lines.push(`其他工作表: ${parsed.available_sheets.join(', ')}`);
   }

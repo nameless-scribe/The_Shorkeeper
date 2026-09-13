@@ -171,6 +171,8 @@ The Shorekeeper 是一款 **自用桌面 AI Agent 应用**，将完整的 Agent 
 
 统一输出为 `ModelEvent` 流：`text_delta`, `reasoning_delta`, `tool_call`, `usage`, `done`, `error`。
 
+每次 Agent run 在开始时由 `loadModelRuntimeConfig` 固定 profile、协议、服务地址、模型名与密钥快照，后续工具轮次不再重新读取活动 profile。初始 HTTP 请求只会在尚未消费响应流时对网络失败、429、408 和可恢复 5xx 做一次短重试；上游错误正文不会直接进入用户界面或运行诊断。
+
 ---
 
 ## 5. 核心模块设计
@@ -243,10 +245,13 @@ interface AgentRunRequest {
 **约束**：
 
 - 默认 `maxToolRounds = 10`，防止死循环
+- 单轮默认最多接受 20 个工具调用；相同 `tool_call_id` 的重复调用复用首次结果，不重复执行副作用
+- 多轮工具正文使用默认 8,000 Token 滚动预算；较早结果保留调用配对，但正文会按预算省略或截断
 - 同一会话通过 `session-run-lock` 串行运行，新消息需等待或中断当前 run
 - 用户可在设置中中断进行中的 run（`AbortController`）
 - 下一条消息前通过 `session-background` 等待同会话后台任务（记忆提取、摘要压缩）完成，避免竞态
 - 用户消息可触发 **定时提醒意图**（`scheduler/reminder-intent`）或 **对话归档知识库**（`rag/conversation-knowledge`），在 Agent loop 之前短路处理
+- 调度器按任务 ID 防重入；超过 Node 单次计时上限的远期任务分段等待；一次性 Agent 任务遇到会话忙碌时 60 秒后重试；AI 提醒文案失败或超时会回退静态正文
 
 ### 5.3 工具系统 (Tool Registry)
 
@@ -273,9 +278,9 @@ interface ToolContext {
 
 | 类别 | 工具 |
 |------|------|
-| 文件 | `read_file`, `write_file`, `list_dir` |
+| 文件 | `read_file`, `write_file`, `replace_text`, `list_dir` |
 | 网络 | `web_search`（博查）, `fetch_url`, `get_weather`, `translate` |
-| 文档 | `convert_to_markdown`, `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`, `read_xlsx`（工作区 Excel） |
+| 文档 | `convert_to_markdown`, `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`, `read_xlsx`, `update_xlsx_cells`（工作区 Excel） |
 | 记忆 / 知识 | `recall_memory`, `save_memory`, `search_worldbook`, `search_knowledge` |
 | 生活 | `bookkeeping`, `travel_plan` |
 | 日程 | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task` |
@@ -285,7 +290,7 @@ interface ToolContext {
 
 | 加载器 | 依赖 | 使用处 |
 |--------|------|--------|
-| `exceljs-loader.ts` → `loadExcelJS()` | exceljs | `parse-xlsx`, `gen_xlsx`, `xlsx-task-sync` |
+| `exceljs-loader.ts` → `loadExcelJS()` | exceljs | `parse-xlsx`, `gen_xlsx`, `update_xlsx_cells`, `xlsx-task-sync` |
 | `doc-loaders.ts` → `loadMammoth()` | mammoth | `convert-markdown`, RAG `format-converters` |
 | `doc-loaders.ts` → `loadWordExtractor()` | word-extractor | 同上 |
 
@@ -412,21 +417,31 @@ interface Skill {
   version: string;
   systemPromptFragment: string;
   allowedTools?: string[];       // 白名单，空=不限制
+  requiredTools?: string[];      // 缺少时不激活，并生成状态提示
+  conflictsWith?: string[];      // 互斥 Skill id
   trigger: 'manual' | 'auto';
   matchKeywords?: string[];      // auto 技能：用户消息命中任一关键词时激活
   priority: number;              // 注入顺序，高者优先
+  kind: 'capability' | 'workflow' | 'internal';
+  validationErrors: string[];
   enabled: boolean;
 }
 ```
 
 技能包目录：`skills/<skill-id>/SKILL.md`。
 
+文件顶层遵循标准 Agent Skill frontmatter（`name`、`description`、`metadata`）；上面的运行时字段由加载器从 `metadata.shorekeeper` 解析。`name` 使用 kebab-case 并与目录名一致，中文展示名使用 `metadata.shorekeeper.displayName`。
+
 **激活逻辑**（`resolveActiveSkills`）：
 
-- `manual`：用户开关后每轮注入 prompt，并参与工具白名单并集
-- `auto`：仅当 `userMessage` 命中 `matchKeywords` 时注入 prompt 且参与本轮白名单（附件预解析会追加 `[工作区附件已解析]`，相关技能关键词须覆盖该标记）
+- `manual`：常驻规则，用户开关后每轮注入；内置产品 Skill 默认不使用常驻模式
+- `auto`：仅当 `userMessage` 命中收窄后的 `matchKeywords` 时注入；附件通过真实扩展名触发格式能力，通用附件标记不触发业务工作流
+- `internal`：可供测试或开发参考，但不会出现在设置页、不会进入 Agent 上下文
+- 冲突 Skill 按优先级解析；必需工具被插件设置关闭时，该 Skill 不注入，并给模型可解释的缺失工具提示
 
 **注入位置**：`context-builder` 在稳定前缀（人设 + 上下文优先级）之后追加 `<skill>` 包裹的 fragment，再拼接工具说明；`stable-context` 中按已激活技能 ID 去重全局工具规则，避免与技能正文重复。
+
+**运行诊断**：`run-observability` 记录本轮激活 Skill、命中触发词、冲突、必需工具缺失、工具调用次数与稳定错误类别。诊断仅驻留内存、最多保留最近 100 次，不存储用户消息正文；设置 → 技能展示最近 5 次。
 
 **工具过滤**：多个带白名单的技能同时激活时，可用工具为各白名单的**并集**，外加 `CORE_TOOL_NAMES`（定时、计划、记忆、知识库、用户待办等）不受限制。
 
@@ -434,12 +449,12 @@ interface Skill {
 
 | id | 名称 | trigger | 说明 |
 |----|------|---------|------|
-| `excel` | Excel 表格处理 | auto | 读/写 `.xlsx`；关键词含 `表格`、`附件已解析` |
-| `task-execution` | 多步任务执行 | auto | 须先 `update_agent_plan` 再逐步执行 |
+| `excel` | Excel 表格处理 | auto | 分页读取、新建报表、保留结构的单元格修改 |
+| `task-execution` | 多步任务执行 | auto | 仅复杂/批量任务建立精简执行计划 |
 | `progress-tracker` | 进度与待办 | auto | Excel 导入待办、查询与回写 |
-| `workspace-doc-edit` | 工作区文档维护 | auto | 文本文件 read → write → 读回校验 |
+| `workspace-doc-edit` | 工作区文档维护 | auto | 局部精确替换优先，必要时才整文件重写 |
 | `doc-to-markdown` | 文档转 Markdown | auto | Word/文本转 `.md` |
-| `example` | 简洁助手 | manual | 演示用；建议单独启用以限制工具 |
+| `example` | 简洁助手 | manual/internal | 仅开发示例，不展示、不激活 |
 
 **模块**：`src/skills/loader.ts`（发现 + mtime 缓存）、`resolve.ts`（激活）、`state.ts`（启用状态 + `getActiveSkills`）。
 
@@ -1009,7 +1024,7 @@ TheShorekeeper/
 | Worldbook | 关键词触发的世界观/设定注入知识库 |
 | RAG | 检索增强生成，从导入文档检索相关内容 |
 | MCP | Model Context Protocol，外部工具服务协议 |
-| Skill | 可插拔的技能包（`skills/*/SKILL.md`），支持 manual 全量注入或 auto 关键词激活；可限制工具白名单 |
+| Skill | 可插拔技能包（`skills/*/SKILL.md`）；标准元数据下支持常驻（manual）或按需（auto）激活、工具契约、冲突声明和配置诊断 |
 
 ### 13.2 参考资源
 

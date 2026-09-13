@@ -1,42 +1,27 @@
 ---
-id: doc-to-markdown
-name: 文档转 Markdown
+name: doc-to-markdown
 description: 将 Word（doc/docx）及 txt、csv、html 等文本文件转换为工作区 .md 文档
-version: 1.0.0
-trigger: auto
-matchKeywords: 转 markdown, docx, word, 转换, .doc
-priority: 5
-allowedTools: convert_to_markdown, list_dir, read_file, gen_markdown
+metadata:
+  shorekeeper:
+    displayName: 文档转 Markdown
+    version: 1.1.0
+    trigger: auto
+    kind: capability
+    matchKeywords: [转 markdown, 转为 markdown, word 转换, docx 转换, .docx, .doc]
+    priority: 5
+    allowedTools: [convert_to_markdown, list_dir, read_file, replace_text, gen_markdown]
+    requiredTools: [convert_to_markdown]
 ---
 
 【技能：文档转 Markdown】
 
-## 前置条件
-- 设置 → 插件 → **多格式编写** 须已开启。
-- 源文件须在工作区内；先用 `list_dir` 确认路径。
+将工作区内的 Word 或文本类文件转换为 Markdown。只有路径不明确时才使用 `list_dir`；附件消息已经给出相对路径时直接使用该路径。
 
-## 转换流程
-1. 确认源文件路径与格式。
-2. 调用 `convert_to_markdown`：
-   - `source_path`：源文件，如 `docs/报告.docx`
-   - `output_path`：可选；省略则输出为同目录同名 `.md`（如 `docs/报告.md`）
-3. 转换完成后告知用户输出路径；聊天中会出现可点击打开的 .md 文件卡片。
+- 使用 `convert_to_markdown`；`source_path` 必填，`output_path` 省略时生成同目录同名 `.md`。
+- `.docx` 会尽量保留标题、段落、列表、链接和普通表格；复杂排版、浮动对象、批注及修订记录不保证保留。
+- `.doc` 仅提取正文，不能承诺保留结构。
+- `.txt`、`.md`、`.csv`、`.html`、`.json`、`.xml`、`.yaml` 等按对应文本规则转换；不支持 PDF、RTF 和 XLSX。
+- 转换成功只表示文件已生成。用户要求核对内容时，再读取输出文件的相关片段进行语义检查。
+- 多文件转换可逐个执行并汇总结果；任一文件失败时明确列出失败项，不把批次描述为全部成功。
 
-## 格式支持
-| 类型 | 方式 |
-|------|------|
-| `.docx` | 保留标题、列表、表格等结构（mammoth） |
-| `.doc` | 提取正文为 Markdown 段落（旧版 Word） |
-| `.txt` `.md` `.csv` `.html` `.json` `.xml` `.yaml` 等 | 按文本规则转为 Markdown |
-
-不支持：`.pdf`、`.xlsx`（请用 Excel 技能或请用户先另存为 docx/txt）。
-
-## 禁止事项
-- 不要用 `read_file` 读取 `.doc` / `.docx`（二进制会乱码）。
-- 不要只把内容贴在回复里而不落盘；用户要文件时应写入工作区。
-
-## 批量转换
-多个文件时逐个调用 `convert_to_markdown`，汇总列出输入→输出路径。
-
-## 微调
-转换后若需小改标题或补 frontmatter，可用 `read_file` 查看再用 `gen_markdown` 覆盖写入。
+不要用 `read_file` 读取二进制 Word 文件。转换后的局部修订应交给文本编辑能力；不要为了小改动用 `gen_markdown` 无条件覆盖整个文件。

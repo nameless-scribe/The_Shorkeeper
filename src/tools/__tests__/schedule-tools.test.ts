@@ -4,6 +4,7 @@ import { parseRunAtIso, formatScheduleLabel, validateScheduleInput } from '../..
 import { createScheduledTaskTool } from '../schedule/schedule-tools';
 import { setTaskChangeHandler, notifyTasksChanged } from '../../scheduler/task-events';
 import type { ScheduledTaskInfo } from '../../shared/types';
+import { createScheduledTask } from '../../db/scheduled-tasks';
 
 describe('workspace import helpers', () => {
   it('sanitizes unsafe filename characters', () => {
@@ -106,6 +107,16 @@ describe('create_scheduled_task', () => {
     );
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/run_at/);
+  });
+
+  it('rejects unsupported scheduler actions at the persistence boundary', () => {
+    expect(() => createScheduledTask({
+      name: 'unsupported',
+      scheduleKind: 'recurring',
+      cron: '0 9 * * *',
+      actionType: 'shell_command',
+      actionPayload: '{}',
+    })).toThrow(/不支持的定时任务动作/);
   });
 });
 

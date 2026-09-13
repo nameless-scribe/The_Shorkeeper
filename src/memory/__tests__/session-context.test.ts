@@ -23,7 +23,11 @@ vi.mock('../../models/complete-chat', () => ({
   completeChat: (...args: unknown[]) => state.complete(...args),
 }));
 vi.mock('../../models/config', () => ({
-  getModelConfigSafe: vi.fn(() => state.config),
+  getModelRuntimeConfigSafe: vi.fn(() => state.config ? {
+    ...state.config,
+    protocol: 'openai',
+    profileId: 'profile-test',
+  } : null),
 }));
 vi.mock('../../config/performance', () => ({
   getPerformanceSettings: vi.fn(() => ({
@@ -152,7 +156,7 @@ describe('session context compression', () => {
     expect(state.upsert).toHaveBeenCalledWith('session-1', '压缩后的摘要', 'm-4');
     expect(state.complete).toHaveBeenCalledWith(
       expect.any(Array),
-      state.config,
+      expect.objectContaining(state.config!),
       { sessionId: 'session-1', signal: controller.signal },
     );
   });

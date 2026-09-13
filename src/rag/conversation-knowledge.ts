@@ -1,6 +1,6 @@
 import { listMessages } from '../db/repositories/messages';
 import { completeChat } from '../models/complete-chat';
-import { getModelConfigSafe } from '../models/config';
+import { getModelRuntimeConfigSafe } from '../models/config';
 import { getPerformanceSettings } from '../config/performance';
 import { embedText } from './embedding';
 import { getDocument, loadAllChunkEmbeddings } from './documents';
@@ -167,7 +167,7 @@ export async function archiveConversationToKnowledge(
   scope: KnowledgeArchiveScope = 'session',
   signal?: AbortSignal,
 ): Promise<ArchiveConversationResult> {
-  const config = getModelConfigSafe();
+  const config = getModelRuntimeConfigSafe();
   if (!config) {
     throw new Error('未配置 LLM API，无法提炼对话内容');
   }

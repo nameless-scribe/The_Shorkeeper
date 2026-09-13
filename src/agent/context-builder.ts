@@ -33,6 +33,7 @@ export interface ContextBuildInput {
   sessionId: string;
   availableTools?: ToolDefinition[];
   activeSkills?: Skill[];
+  skillWarnings?: string[];
   assistantMode?: AssistantMode;
   signal?: AbortSignal;
   maxTokens?: number;
@@ -84,6 +85,15 @@ export async function buildSystemPromptParts(
       id: 'active_skills',
       text: skillsBlock,
       priority: 95,
+      required: true,
+      group: 'stable',
+    });
+  }
+  if (input.skillWarnings?.length) {
+    sections.push({
+      id: 'skill_warnings',
+      text: `【技能状态】\n${input.skillWarnings.map((warning) => `- ${warning}`).join('\n')}\n如用户正在请求这些能力，请明确说明缺少的工具或设置，不要假装技能已执行。`,
+      priority: 94,
       required: true,
       group: 'stable',
     });

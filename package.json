@@ -24,10 +24,14 @@
     "db:reset-keep-models": "tsx scripts/db-reset-keep-models.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:s2": "vitest run src/agent/__tests__/loop.test.ts src/agent/__tests__/orchestrator-runtime.test.ts src/agent/__tests__/run-lifecycle.test.ts src/agent/__tests__/run-errors.test.ts src/agent/__tests__/run-observability.test.ts src/agent/__tests__/session-run-lock.test.ts src/agent/__tests__/session-background.test.ts src/agent/__tests__/context-budget.test.ts src/agent/__tests__/context-builder-rag-modes.test.ts src/memory/__tests__/session-context.test.ts src/scheduler/__tests__/cron-runtime.test.ts src/voice/__tests__/call-session.test.ts src/config/__tests__/performance-runtime.test.ts src/models/__tests__/stream-resource.test.ts src/rag/__tests__/request-timeout.test.ts src/voice/__tests__/bailian-tts-stream.test.ts",
+    "test:s2": "vitest run src/agent/__tests__/loop.test.ts src/agent/__tests__/orchestrator-runtime.test.ts src/agent/__tests__/run-lifecycle.test.ts src/agent/__tests__/run-errors.test.ts src/agent/__tests__/run-observability.test.ts src/agent/__tests__/session-run-lock.test.ts src/agent/__tests__/session-background.test.ts src/agent/__tests__/context-budget.test.ts src/agent/__tests__/context-builder-rag-modes.test.ts src/memory/__tests__/session-context.test.ts src/scheduler/__tests__/cron-runtime.test.ts src/scheduler/__tests__/reminder-message.test.ts src/voice/__tests__/call-session.test.ts src/config/__tests__/performance-runtime.test.ts src/models/__tests__/config.test.ts src/models/__tests__/complete-chat.test.ts src/models/__tests__/http.test.ts src/models/__tests__/stream-resource.test.ts src/rag/__tests__/request-timeout.test.ts src/voice/__tests__/bailian-tts-stream.test.ts",
     "test:s3": "vitest run src/tools/__tests__/result.test.ts src/tools/__tests__/tools.test.ts src/tools/__tests__/agent-registry.test.ts src/tools/__tests__/schedule-tools.test.ts src/tools/__tests__/schedule-idempotency.test.ts src/tools/__tests__/s3-integration.test.ts src/tools/file/__tests__/artifact.test.ts src/agent/__tests__/loop.test.ts src/agent/__tests__/run-observability.test.ts src/agent/__tests__/permissions.test.ts src/agent/__tests__/context-builder-skills.test.ts src/agent/__tests__/context-budget.test.ts src/scheduler/__tests__/reminder-message.test.ts src/scheduler/__tests__/reminder-handler.test.ts src/skills/__tests__/loader.test.ts src/skills/__tests__/resolve.test.ts src/rag/__tests__/retriever.test.ts src/rag/__tests__/documents-transaction.test.ts src/mcp/__tests__/client.test.ts src/models/__tests__/stream-resource.test.ts src/workspace/__tests__/import.test.ts src/renderer/components/__tests__/file-attachment-utils.test.ts",
     "test:s4": "vitest run src/rag/__tests__/importer.test.ts src/rag/__tests__/document-identity.test.ts src/rag/__tests__/documents-transaction.test.ts src/rag/__tests__/documents-fts.test.ts src/rag/__tests__/knowledge-path.test.ts src/rag/__tests__/chunker.test.ts src/rag/__tests__/chunk-cache.test.ts src/rag/__tests__/embedding-store.test.ts src/rag/__tests__/embedding-retry.test.ts src/rag/__tests__/retriever.test.ts src/rag/__tests__/retrieval-baseline.test.ts src/db/repositories/__tests__/rag-documents.test.ts src/db/__tests__/native-migration.test.ts src/workspace/__tests__/import.test.ts src/workspace/__tests__/rules.test.ts src/tools/file/__tests__/artifact.test.ts",
     "test:s5": "vitest run src/assistant/__tests__/mode.test.ts src/assistant/__tests__/proactivity.test.ts src/assistant/__tests__/scenarios.test.ts src/memory/__tests__/candidate-policy.test.ts src/memory/__tests__/summarizer-candidates.test.ts src/memory/__tests__/memory.test.ts src/db/repositories/__tests__/memory-candidates.test.ts src/db/repositories/__tests__/long-term-memory.test.ts src/agent/__tests__/loop.test.ts src/agent/__tests__/orchestrator-runtime.test.ts src/agent/__tests__/context-builder-rag-modes.test.ts src/scheduler/__tests__/cron-runtime.test.ts src/scheduler/__tests__/reminder-handler.test.ts src/config/__tests__/performance-runtime.test.ts",
+    "test:skills": "vitest run src/skills/__tests__ src/tools/__tests__/tools.test.ts src/tools/__tests__/progress-skill-validation.test.ts src/tools/__tests__/agent-registry.test.ts src/agent/__tests__/context-builder-skills.test.ts",
+    "test:skills:acceptance": "tsx scripts/skill-acceptance.ts",
+    "test:skills:failure": "vitest run src/tools/file/__tests__/artifact.test.ts src/agent/__tests__/permissions.test.ts src/tools/__tests__/agent-registry.test.ts src/tools/__tests__/progress-skill-validation.test.ts src/agent/__tests__/run-observability.test.ts",
+    "test:skills:ui": "pnpm build && electron scripts/electron-skills-ui-smoke.cjs",
     "test:electron": "pnpm build && electron scripts/electron-runtime-smoke.cjs",
     "test:packaged-native": "node scripts/packaged-native-sqlite-smoke.cjs",
     "test:nsis-lifecycle": "node scripts/nsis-install-lifecycle-smoke.cjs"
@@ -41,6 +45,7 @@
     "dotenv": "^16.4.7",
     "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
+    "js-yaml": "4.3.2",
     "mammoth": "^1.12.2",
     "node-cron": "^4.6.0",
     "onnxruntime-web": "^1.27.0",
@@ -55,6 +60,7 @@
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@types/js-yaml": "4.0.9",
     "@types/node": "^22.10.0",
     "@types/node-cron": "^3.0.11",
     "@types/pdf-parse": "^1.1.5",

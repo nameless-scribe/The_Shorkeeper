@@ -1,5 +1,5 @@
 import type { LlmMessage } from '../agent/types';
-import type { ModelConfig, ModelEvent } from '../shared/types';
+import type { ModelConfig, ModelEvent, ModelProtocol } from '../shared/types';
 import type { OpenAIToolSchema } from '../tools/types';
 import { getModelProtocol } from './config';
 import { streamChatAnthropic } from './anthropic-like';
@@ -12,9 +12,10 @@ export async function* streamChat(
     tools?: OpenAIToolSchema[];
     signal?: AbortSignal;
     cacheStablePrefix?: string;
+    protocol?: ModelProtocol;
   },
 ): AsyncGenerator<ModelEvent> {
-  const protocol = getModelProtocol();
+  const protocol = options?.protocol ?? getModelProtocol();
   if (protocol === 'anthropic') {
     yield* streamChatAnthropic(messages, config, options);
     return;

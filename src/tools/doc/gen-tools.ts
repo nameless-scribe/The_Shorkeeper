@@ -111,14 +111,19 @@ export const readXlsxTool: ToolDefinition = {
         type: 'number',
         description: '最多返回的数据行数（不含表头），默认 500',
       },
+      start_row: {
+        type: 'number',
+        description: '从第几条数据行开始读取（从 0 计数，不含表头），默认 0',
+      },
     },
     required: ['path'],
   },
   async execute(args, ctx) {
-    const { path: filePath, sheet_name, max_rows = 500 } = args as {
+    const { path: filePath, sheet_name, max_rows = 500, start_row = 0 } = args as {
       path?: string;
       sheet_name?: string;
       max_rows?: number;
+      start_row?: number;
     };
 
     if (!filePath?.trim()) {
@@ -128,12 +133,20 @@ export const readXlsxTool: ToolDefinition = {
       return { success: false, output: '', error: '仅支持 .xlsx 文件，请用 read_file 读取 CSV/文本' };
     }
 
-    const rowLimit = Math.max(1, Math.min(max_rows, 5000));
+    if (!Number.isFinite(max_rows) || max_rows <= 0 || !Number.isFinite(start_row) || start_row < 0) {
+      return {
+        success: false,
+        output: '',
+        error: 'max_rows 须为有限数字，start_row 须为大于等于 0 的有限数字',
+      };
+    }
+    const rowLimit = Math.max(1, Math.min(Math.floor(max_rows), 5000));
 
     try {
       const parsed = await parseXlsxFile(ctx.workspaceRoot, filePath, {
         sheet_name,
         max_rows: rowLimit,
+        start_row,
       });
 
       const artifact = await buildFileArtifact(ctx.workspaceRoot, filePath);
@@ -141,6 +154,128 @@ export const readXlsxTool: ToolDefinition = {
         {
           success: true,
           output: JSON.stringify(parsed, null, 2),
+        },
+        artifact,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, output: '', error: message };
+    }
+  },
+};
+
+type XlsxCellValue = string | number | boolean | null;
+
+interface XlsxCellUpdate {
+  cell: string;
+  value: XlsxCellValue;
+}
+
+const CELL_ADDRESS = /^[A-Za-z]{1,3}[1-9]\d{0,6}$/;
+
+/** Update selected cells without rebuilding the workbook or discarding other sheets. */
+export const updateXlsxCellsTool: ToolDefinition = {
+  name: 'update_xlsx_cells',
+  description: '原位修改现有 Excel 工作簿中的指定单元格，并保留其他工作表、公式与格式',
+  category: 'doc',
+  requiresPermission: ['filesystem:read', 'filesystem:write'],
+  parameters: {
+    type: 'object',
+    properties: {
+      source_path: { type: 'string', description: '现有 .xlsx 文件的工作区相对路径' },
+      output_path: {
+        type: 'string',
+        description: '可选输出路径；省略则安全覆盖源文件并保留备份',
+      },
+      sheet_name: { type: 'string', description: '要修改的工作表；省略则使用第一个工作表' },
+      updates: {
+        type: 'array',
+        description: '单元格更新列表，最多 500 项',
+        items: {
+          type: 'object',
+          properties: {
+            cell: { type: 'string', description: 'A1 地址，如 C12' },
+            value: {
+              anyOf: [
+                { type: 'string' },
+                { type: 'number' },
+                { type: 'boolean' },
+                { type: 'null' },
+              ],
+              description: '新值；支持字符串、数字、布尔值或 null（清空）',
+            },
+          },
+          required: ['cell', 'value'],
+        },
+      },
+    },
+    required: ['source_path', 'updates'],
+  },
+  async execute(args, ctx) {
+    const { source_path, output_path, sheet_name, updates } = args as {
+      source_path?: string;
+      output_path?: string;
+      sheet_name?: string;
+      updates?: XlsxCellUpdate[];
+    };
+    const sourcePath = source_path?.trim().replace(/\\/g, '/');
+    const outputPath = (output_path?.trim() || sourcePath || '').replace(/\\/g, '/');
+
+    if (!sourcePath) return { success: false, output: '', error: '缺少 source_path 参数' };
+    if (!sourcePath.toLowerCase().endsWith('.xlsx') || !outputPath.toLowerCase().endsWith('.xlsx')) {
+      return { success: false, output: '', error: 'source_path 与 output_path 须为 .xlsx 文件' };
+    }
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return { success: false, output: '', error: 'updates 必须是非空数组' };
+    }
+    if (updates.length > 500) {
+      return { success: false, output: '', error: '单次最多修改 500 个单元格' };
+    }
+    for (const update of updates) {
+      if (!update || typeof update.cell !== 'string' || !CELL_ADDRESS.test(update.cell.trim())) {
+        return { success: false, output: '', error: `无效单元格地址: ${update?.cell ?? ''}` };
+      }
+      if (!['string', 'number', 'boolean'].includes(typeof update.value) && update.value !== null) {
+        return { success: false, output: '', error: `不支持的单元格值: ${update.cell}` };
+      }
+    }
+
+    try {
+      const sourceAbsolute = resolveWorkspacePath(ctx.workspaceRoot, sourcePath);
+      const outputAbsolute = resolveWorkspacePath(ctx.workspaceRoot, outputPath);
+      const overwritesSource = process.platform === 'win32'
+        ? sourceAbsolute.toLowerCase() === outputAbsolute.toLowerCase()
+        : sourceAbsolute === outputAbsolute;
+      const ExcelJS = await loadExcelJS();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(sourceAbsolute);
+      const sheet = sheet_name?.trim()
+        ? workbook.getWorksheet(sheet_name.trim())
+        : workbook.worksheets[0];
+      if (!sheet) {
+        const names = workbook.worksheets.map((item) => item.name).join(', ');
+        return {
+          success: false,
+          output: '',
+          error: sheet_name ? `未找到工作表「${sheet_name}」，可用：${names}` : '工作簿为空',
+        };
+      }
+
+      for (const update of updates) {
+        sheet.getCell(update.cell.trim().toUpperCase()).value = update.value;
+      }
+
+      const artifact = await writeWorkspaceFileAtomically(
+        ctx.workspaceRoot,
+        outputPath,
+        (temporaryPath) => workbook.xlsx.writeFile(temporaryPath),
+        { preserveBackup: overwritesSource },
+      );
+      return withFileArtifact(
+        {
+          success: true,
+          output: `已在 ${sheet.name} 修改 ${updates.length} 个单元格，保存至 ${outputPath}`,
+          metadata: { sheet: sheet.name, updatedCells: updates.map((item) => item.cell.toUpperCase()) },
         },
         artifact,
       );

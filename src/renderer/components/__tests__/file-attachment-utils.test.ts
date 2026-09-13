@@ -45,4 +45,22 @@ describe('extractFilesFromToolCall', () => {
     expect(files).toHaveLength(1);
     expect(files[0].relativePath).toBe('out.md');
   });
+
+  it('extracts the actual output path from update_xlsx_cells args', () => {
+    const tc: UiToolCall = {
+      callId: '3',
+      name: 'update_xlsx_cells',
+      args: {
+        source_path: 'data/source.xlsx',
+        output_path: 'output/updated.xlsx',
+        updates: [{ cell: 'A1', value: 'done' }],
+      },
+      status: 'done',
+      result: { success: true, output: '已更新' },
+    };
+
+    const files = extractFilesFromToolCall(tc);
+    expect(files).toHaveLength(1);
+    expect(files[0].relativePath).toBe('output/updated.xlsx');
+  });
 });

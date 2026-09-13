@@ -26,39 +26,35 @@ function statusLabel(status: UserTaskInfo['status']): string {
   return '⏳ 待开始';
 }
 
-export async function syncUserTaskStatusToXlsx(taskId: string): Promise<string | null> {
+export async function syncUserTaskStatusToXlsx(taskId: string): Promise<string> {
   const task = getUserTask(taskId);
-  if (!task?.sourceFile || task.sourceRow == null) return null;
+  if (!task?.sourceFile || task.sourceRow == null) {
+    throw new Error('任务没有可回写的 Excel 来源');
+  }
 
   const workspaceRoot = path.resolve(getWorkspaceDir());
   const parsed = await parseXlsxFile(workspaceRoot, task.sourceFile, { max_rows: 5000 });
   const statusCol = pickColumn(parsed.headers, ['状态', '进度', 'status']);
-  if (statusCol < 0) return null;
+  if (statusCol < 0) throw new Error('来源 Excel 没有状态/进度列');
 
   const rowIndex = task.sourceRow - 2;
-  if (rowIndex < 0 || rowIndex >= parsed.rows.length) return null;
-
-  const row = [...parsed.rows[rowIndex]];
-  while (row.length <= statusCol) row.push('');
-  row[statusCol] = statusLabel(task.status);
-  parsed.rows[rowIndex] = row;
+  if (rowIndex < 0 || rowIndex >= parsed.rows.length) throw new Error('来源行已移动或超出可读取范围');
 
   const absolute = resolveWorkspacePath(workspaceRoot, task.sourceFile);
   const ExcelJS = await loadExcelJS();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(absolute);
   const sheet = workbook.getWorksheet(parsed.sheet) ?? workbook.worksheets[0];
-  if (!sheet) return null;
+  if (!sheet) throw new Error('来源工作表不存在');
 
   const excelRow = sheet.getRow(task.sourceRow);
-  row.forEach((cell, colIdx) => {
-    excelRow.getCell(colIdx + 1).value = cell;
-  });
+  excelRow.getCell(statusCol + 1).value = statusLabel(task.status);
   excelRow.commit();
   await writeWorkspaceFileAtomically(
     workspaceRoot,
     task.sourceFile,
     (temporaryPath) => workbook.xlsx.writeFile(temporaryPath),
+    { preserveBackup: true },
   );
   return task.sourceFile;
 }

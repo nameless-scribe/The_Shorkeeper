@@ -4,6 +4,7 @@ import type { ToolDefinition } from '../types';
 import { withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
 import { loadMammoth, loadWordExtractor } from './doc-loaders';
+import { loadExcelJS } from './exceljs-loader';
 
 const DOCX_EXT = new Set(['.docx']);
 const DOC_EXT = new Set(['.doc']);
@@ -20,7 +21,6 @@ const PLAIN_TEXT_EXT = new Set([
   '.ini',
   '.html',
   '.htm',
-  '.rtf',
 ]);
 
 function defaultOutputPath(sourcePath: string): string {
@@ -37,7 +37,77 @@ function ensureTitle(markdown: string, title: string): string {
 }
 
 function escapeTableCell(value: string): string {
-  return value.replace(/\|/g, '\\|').trim();
+  return value.replace(/\r?\n/g, '<br>').replace(/\|/g, '\\|').trim();
+}
+
+function decodeHtmlEntities(value: string): string {
+  const decodeCodePoint = (code: number, fallback: string): string => {
+    if (!Number.isInteger(code) || code < 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+      return fallback;
+    }
+    return String.fromCodePoint(code);
+  };
+  return value
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (match, code: string) => decodeCodePoint(Number(code), match))
+    .replace(/&#x([0-9a-f]+);/gi, (match, code: string) => decodeCodePoint(Number.parseInt(code, 16), match));
+}
+
+function htmlInlineToText(value: string): string {
+  return decodeHtmlEntities(
+    value
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, ''),
+  ).trim();
+}
+
+/** Convert the common structural HTML emitted by Mammoth into Markdown. */
+export function htmlToMarkdown(html: string): string {
+  let value = html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+    .replace(/<table\b[^>]*>([\s\S]*?)<\/table>/gi, (_table, body: string) => {
+      const rows = [...body.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+        .map((match) => [...match[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)]
+          .map((cell) => escapeTableCell(htmlInlineToText(cell[1]))))
+        .filter((row) => row.length > 0);
+      if (!rows.length) return '';
+      const width = Math.max(...rows.map((row) => row.length));
+      const normalized = rows.map((row) => [
+        ...row,
+        ...Array.from({ length: width - row.length }, () => ''),
+      ]);
+      return `\n\n| ${normalized[0].join(' | ')} |\n| ${normalized[0].map(() => '---').join(' | ')} |\n${normalized
+        .slice(1)
+        .map((row) => `| ${row.join(' | ')} |`)
+        .join('\n')}\n\n`;
+    });
+
+  value = value
+    .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_match, level: string, body: string) =>
+      `\n\n${'#'.repeat(Number(level))} ${htmlInlineToText(body)}\n\n`)
+    .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_match, body: string) =>
+      `\n- ${htmlInlineToText(body)}`)
+    .replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+      (_match, href: string, body: string) => `[${htmlInlineToText(body)}](${href})`)
+    .replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_match, _tag: string, body: string) =>
+      `**${htmlInlineToText(body)}**`)
+    .replace(/<(em|i)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_match, _tag: string, body: string) =>
+      `*${htmlInlineToText(body)}*`)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|ul|ol)>/gi, '\n\n')
+    .replace(/<(p|div|ul|ol)\b[^>]*>/gi, '')
+    .replace(/<[^>]+>/g, '');
+
+  return decodeHtmlEntities(value)
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function plainTextToMarkdown(content: string, title: string, ext: string): string {
@@ -47,35 +117,8 @@ function plainTextToMarkdown(content: string, title: string, ext: string): strin
     return trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`;
   }
 
-  if (ext === '.csv') {
-    const lines = trimmed.split(/\r?\n/).filter(Boolean);
-    if (!lines.length) return `# ${title}\n\n`;
-    const rows = lines.map((line) => line.split(',').map(escapeTableCell));
-    const header = rows[0];
-    const sep = header.map(() => '---');
-    const body = rows.slice(1);
-    const table = [
-      `| ${header.join(' | ')} |`,
-      `| ${sep.join(' | ')} |`,
-      ...body.map((row) => `| ${row.join(' | ')} |`),
-    ].join('\n');
-    return `# ${title}\n\n${table}\n`;
-  }
-
   if (ext === '.html' || ext === '.htm') {
-    const text = trimmed
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-    return ensureTitle(text, title);
+    return ensureTitle(htmlToMarkdown(trimmed), title);
   }
 
   const paragraphs = trimmed
@@ -87,8 +130,8 @@ function plainTextToMarkdown(content: string, title: string, ext: string): strin
 
 async function convertDocx(absolute: string, title: string): Promise<string> {
   const mammoth = await loadMammoth();
-  const result = await mammoth.extractRawText({ path: absolute });
-  return plainTextToMarkdown(result.value, title, '.txt');
+  const result = await mammoth.convertToHtml({ path: absolute });
+  return ensureTitle(htmlToMarkdown(result.value), title);
 }
 
 async function convertDoc(absolute: string, title: string): Promise<string> {
@@ -97,6 +140,24 @@ async function convertDoc(absolute: string, title: string): Promise<string> {
   const doc = await extractor.extract(absolute);
   const body = doc.getBody().trim();
   return plainTextToMarkdown(body, title, '.txt');
+}
+
+async function convertCsv(absolute: string, title: string): Promise<string> {
+  const ExcelJS = await loadExcelJS();
+  const workbook = new ExcelJS.Workbook();
+  const sheet = await workbook.csv.readFile(absolute);
+  const rows: string[][] = [];
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    const values = Array.isArray(row.values) ? row.values.slice(1) : [];
+    rows.push(values.map((cell) => escapeTableCell(cell == null ? '' : String(cell))));
+  });
+  if (!rows.length) return `# ${title}\n\n`;
+  const width = Math.max(...rows.map((row) => row.length));
+  const normalized = rows.map((row) => [...row, ...Array.from({ length: width - row.length }, () => '')]);
+  return `# ${title}\n\n| ${normalized[0].join(' | ')} |\n| ${normalized[0].map(() => '---').join(' | ')} |\n${normalized
+    .slice(1)
+    .map((row) => `| ${row.join(' | ')} |`)
+    .join('\n')}\n`;
 }
 
 export const convertToMarkdownTool: ToolDefinition = {
@@ -154,6 +215,8 @@ export const convertToMarkdownTool: ToolDefinition = {
         markdown = await convertDocx(absolute, title);
       } else if (DOC_EXT.has(ext)) {
         markdown = await convertDoc(absolute, title);
+      } else if (ext === '.csv') {
+        markdown = await convertCsv(absolute, title);
       } else {
         const content = await fs.readFile(absolute, 'utf-8');
         markdown = plainTextToMarkdown(content, title, ext);

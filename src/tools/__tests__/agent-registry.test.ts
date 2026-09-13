@@ -44,7 +44,7 @@ vi.mock('../../skills/state', () => ({
 }));
 
 import { getEnabledSkills } from '../../skills/state';
-import { getAgentRegistry, invalidateAgentRegistry } from '../agent-registry';
+import { getAgentRegistry, invalidateAgentRegistry, resolveAgentRegistry } from '../agent-registry';
 
 describe('getAgentRegistry', () => {
   beforeEach(() => {
@@ -80,7 +80,9 @@ describe('getAgentRegistry', () => {
         systemPromptFragment: 'Keep responses concise.',
         allowedTools: undefined,
         trigger: 'manual',
-        priority: 0,
+      priority: 0,
+      kind: 'capability',
+      validationErrors: [],
       },
     ]);
 
@@ -101,7 +103,9 @@ describe('getAgentRegistry', () => {
         systemPromptFragment: 'Use Excel tools.',
         allowedTools: ['read_xlsx', 'gen_xlsx'],
         trigger: 'auto',
-        priority: 10,
+      priority: 10,
+      kind: 'capability',
+      validationErrors: [],
       },
     ];
 
@@ -111,5 +115,26 @@ describe('getAgentRegistry', () => {
     expect(names).toContain('read_xlsx');
     expect(names).not.toContain('web_search');
     expect(names).toContain('create_scheduled_task');
+  });
+
+  it('does not activate a skill when its required tool is unavailable', async () => {
+    const unavailable: Skill = {
+      id: 'missing-tool',
+      name: 'Missing tool',
+      description: 'Requires a disabled tool',
+      version: '1.0.0',
+      systemPromptFragment: 'Use it.',
+      allowedTools: ['not_installed'],
+      requiredTools: ['not_installed'],
+      trigger: 'manual',
+      priority: 1,
+      kind: 'capability',
+      validationErrors: [],
+    };
+
+    const result = await resolveAgentRegistry([unavailable]);
+    expect(result.activeSkills).toEqual([]);
+    expect(result.skillWarnings[0]).toContain('缺少工具 not_installed');
+    expect(result.registry.list().map((tool) => tool.name)).toContain('web_search');
   });
 });

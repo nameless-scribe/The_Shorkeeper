@@ -36,6 +36,11 @@ export interface ReminderExecutionResult {
 const cronJobs = new Map<string, ReturnType<typeof cron.schedule>>();
 const onceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const lastReminderNotificationAt = new Map<string, number>();
+const runningTaskIds = new Set<string>();
+
+/** Node timers cannot safely represent delays larger than a signed 32-bit integer. */
+export const MAX_TIMER_DELAY_MS = 2_147_000_000;
+export const BUSY_ONCE_TASK_RETRY_MS = 60_000;
 
 function parsePayload(raw: string): Record<string, unknown> {
   try {
@@ -145,7 +150,13 @@ export async function executeAgentPrompt(
   }
 }
 
-async function runTask(task: ScheduledTaskInfo): Promise<void> {
+export async function runScheduledTask(task: ScheduledTaskInfo): Promise<void> {
+  if (runningTaskIds.has(task.id)) {
+    console.warn(`[scheduler] 跳过重叠执行：「${task.name}」仍在运行`);
+    return;
+  }
+  runningTaskIds.add(task.id);
+
   const payload = parsePayload(task.actionPayload);
   try {
     let skipped = false;
@@ -159,10 +170,15 @@ async function runTask(task: ScheduledTaskInfo): Promise<void> {
       const result = await executeAgentPrompt(task, payload);
       skipped = result.skipped;
     } else {
-      console.warn(`[scheduler] 未知 action_type: ${task.actionType}`);
+      throw new Error(`未知 action_type: ${task.actionType}`);
     }
 
-    if (skipped) return;
+    if (skipped) {
+      if (task.scheduleKind === 'once') {
+        scheduleOnceAt(task, Date.now() + BUSY_ONCE_TASK_RETRY_MS);
+      }
+      return;
+    }
 
     markTaskRun(task.id);
 
@@ -172,6 +188,8 @@ async function runTask(task: ScheduledTaskInfo): Promise<void> {
     }
   } catch (err) {
     console.error(`[scheduler] 任务失败 ${task.name}:`, err);
+  } finally {
+    runningTaskIds.delete(task.id);
   }
 }
 
@@ -182,7 +200,7 @@ function scheduleRecurringTask(task: ScheduledTaskInfo): void {
   }
 
   const job = cron.schedule(task.cron, () => {
-    void runTask(task);
+    void runScheduledTask(task);
   });
   cronJobs.set(task.id, job);
 }
@@ -193,7 +211,11 @@ function scheduleOnceAt(task: ScheduledTaskInfo, fireAt: number): void {
 
   const trigger = () => {
     onceTimers.delete(task.id);
-    void runTask(task);
+    if (fireAt > Date.now()) {
+      scheduleOnceAt(task, fireAt);
+      return;
+    }
+    void runScheduledTask(task);
   };
 
   const delay = fireAt - Date.now();
@@ -202,7 +224,7 @@ function scheduleOnceAt(task: ScheduledTaskInfo, fireAt: number): void {
     return;
   }
 
-  onceTimers.set(task.id, setTimeout(trigger, delay));
+  onceTimers.set(task.id, setTimeout(trigger, Math.min(delay, MAX_TIMER_DELAY_MS)));
 }
 
 function scheduleDeferredReminder(task: ScheduledTaskInfo, fireAt?: number): void {

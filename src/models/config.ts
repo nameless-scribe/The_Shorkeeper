@@ -24,6 +24,17 @@ import {
 
 export type { ModelProtocol };
 
+/**
+ * 一次模型请求使用的不可变运行快照。
+ *
+ * 配置与协议必须来自同一次 profile 读取，避免运行过程中切换配置后，
+ * 旧的 API 地址/密钥被错误地交给新的协议适配器。
+ */
+export interface ModelRuntimeConfig extends ModelConfig {
+  protocol: ModelProtocol;
+  profileId: string | null;
+}
+
 export const MODEL_PROTOCOL_KEY = 'model.protocol';
 export const MODEL_API_KEY_SETTING = 'model.api_key';
 export const MODEL_BASE_URL_SETTING = 'model.base_url';
@@ -286,13 +297,16 @@ export function saveModelSettings(patch: ModelSettingsPatch): ModelSettingsInfo 
   return getModelSettingsInfo();
 }
 
-export function loadModelConfig(): ModelConfig {
-  const active = getActiveProfile(loadProfilesState());
+export function loadModelRuntimeConfig(): ModelRuntimeConfig {
+  const state = loadProfilesState();
+  const active = getActiveProfile(state);
   if (active?.apiKey && active.baseUrl) {
     return {
       apiKey: active.apiKey,
       baseUrl: normalizeBaseUrl(active.baseUrl),
       model: active.model,
+      protocol: active.protocol,
+      profileId: active.id,
     };
   }
 
@@ -313,12 +327,31 @@ export function loadModelConfig(): ModelConfig {
     );
   }
 
-  return { apiKey, baseUrl: normalizeBaseUrl(baseUrl), model };
+  return {
+    apiKey,
+    baseUrl: normalizeBaseUrl(baseUrl),
+    model,
+    protocol: active?.protocol ?? readGlobalProtocol(),
+    profileId: active?.id ?? null,
+  };
+}
+
+export function loadModelConfig(): ModelConfig {
+  const { protocol: _protocol, profileId: _profileId, ...config } = loadModelRuntimeConfig();
+  return config;
 }
 
 export function getModelConfigSafe(): ModelConfig | null {
   try {
     return loadModelConfig();
+  } catch {
+    return null;
+  }
+}
+
+export function getModelRuntimeConfigSafe(): ModelRuntimeConfig | null {
+  try {
+    return loadModelRuntimeConfig();
   } catch {
     return null;
   }

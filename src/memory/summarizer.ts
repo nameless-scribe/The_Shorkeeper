@@ -1,6 +1,6 @@
 import { listMessages } from '../db/repositories/messages';
 import { completeChat } from '../models/complete-chat';
-import { getModelConfigSafe } from '../models/config';
+import { getModelRuntimeConfigSafe } from '../models/config';
 import { getPerformanceSettings } from '../config/performance';
 import { getSetting, setSetting } from '../db/app-settings';
 import {
@@ -126,7 +126,7 @@ export async function extractMemoriesFromSession(
 ): Promise<number> {
   if (!allowsAutoMemoryExtraction(options?.assistantMode)) return 0;
 
-  const config = getModelConfigSafe();
+  const config = getModelRuntimeConfigSafe();
   if (!config) return 0;
 
   const turn = getLatestTurn(sessionId);

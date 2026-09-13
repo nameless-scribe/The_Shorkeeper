@@ -1,10 +1,13 @@
 ---
-id: example
-name: 简洁助手
-description: 演示技能系统 — 启用后回答更简短，并限制可用工具；建议单独启用，勿与其他带白名单技能同时开启
-version: 1.0.0
-trigger: manual
-allowedTools: read_file, list_dir, web_search, recall_memory
+name: example
+description: 仅供开发测试的内部示例，不进入设置页或 Agent 上下文
+metadata:
+  shorekeeper:
+    displayName: 简洁助手
+    version: 1.0.0
+    trigger: manual
+    kind: internal
+    allowedTools: [read_file, list_dir, web_search, recall_memory]
 ---
 
 【技能：简洁助手】

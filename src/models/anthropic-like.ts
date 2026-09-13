@@ -2,6 +2,7 @@ import type { LlmMessage, OpenAIToolCall } from '../agent/types';
 import type { ModelConfig, ModelEvent } from '../shared/types';
 import type { OpenAIToolSchema } from '../tools/types';
 import { recordTokenUsage } from '../db/token-usage';
+import { createModelHttpError, fetchModelResponse } from './http';
 
 type AnthropicContentBlock =
   | { type: 'text'; text: string }
@@ -113,7 +114,7 @@ function toOpenAIToolCalls(acc: ToolUseAccumulator): OpenAIToolCall[] {
         arguments: acc[index].arguments || '{}',
       },
     }))
-    .filter((tc) => tc.id && tc.function.name);
+    .filter((tc) => tc.function.name);
 }
 
 export async function* streamChatAnthropic(
@@ -138,7 +139,7 @@ export async function* streamChatAnthropic(
     body.tools = convertTools(options.tools);
   }
 
-  const response = await fetch(`${config.baseUrl}/messages`, {
+  const response = await fetchModelResponse(`${config.baseUrl}/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -151,8 +152,8 @@ export async function* streamChatAnthropic(
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    yield { type: 'error', message: `API ${response.status}: ${text}` };
+    const error = await createModelHttpError(response);
+    yield { type: 'error', message: error.message };
     return;
   }
 
@@ -300,7 +301,7 @@ export async function completeChatAnthropic(
   };
   if (system) body.system = system;
 
-  const response = await fetch(`${config.baseUrl}/messages`, {
+  const response = await fetchModelResponse(`${config.baseUrl}/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -313,8 +314,7 @@ export async function completeChatAnthropic(
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`API ${response.status}: ${text}`);
+    throw await createModelHttpError(response);
   }
 
   const data = (await response.json()) as {

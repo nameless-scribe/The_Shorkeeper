@@ -49,6 +49,12 @@ export interface CreateScheduledTaskInput {
   enabled?: boolean;
 }
 
+function validateActionType(actionType: string): void {
+  if (actionType !== 'reminder' && actionType !== 'agent_prompt') {
+    throw new Error(`不支持的定时任务动作: ${actionType}`);
+  }
+}
+
 function validateCron(expression: string): string | null {
   const trimmed = expression.trim();
   if (!trimmed) return 'cron 表达式不能为空';
@@ -60,6 +66,7 @@ export function createScheduledTask(input: CreateScheduledTaskInput): ScheduledT
   const scheduleKind = input.scheduleKind ?? 'recurring';
   const cronExpr = input.cron?.trim() ?? '';
   const runAt = input.runAt ?? null;
+  validateActionType(input.actionType);
 
   const scheduleError = validateScheduleInput({ scheduleKind, cron: cronExpr, runAt });
   if (scheduleError) {
@@ -108,6 +115,8 @@ export function updateScheduledTask(
   const scheduleKind = patch.scheduleKind ?? existing.scheduleKind;
   const cronExpr = patch.cron ?? existing.cron;
   const runAt = patch.runAt !== undefined ? patch.runAt : existing.runAt;
+  const actionType = patch.actionType ?? existing.actionType;
+  validateActionType(actionType);
 
   const scheduleError = validateScheduleInput({ scheduleKind, cron: cronExpr, runAt });
   if (scheduleError) {
@@ -123,7 +132,7 @@ export function updateScheduledTask(
     .run(
       patch.name ?? existing.name,
       scheduleKind === 'once' ? '' : cronExpr,
-      patch.actionType ?? existing.actionType,
+      actionType,
       patch.actionPayload ?? existing.actionPayload,
       patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : existing.enabled ? 1 : 0,
       scheduleKind,

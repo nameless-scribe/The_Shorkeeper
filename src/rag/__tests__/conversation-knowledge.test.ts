@@ -23,10 +23,12 @@ vi.mock('../embedding', () => ({
 }));
 
 vi.mock('../../models/config', () => ({
-  getModelConfigSafe: vi.fn(() => ({
+  getModelRuntimeConfigSafe: vi.fn(() => ({
     apiKey: 'test',
     baseUrl: 'http://localhost',
     model: 'test',
+    protocol: 'openai',
+    profileId: 'profile-test',
   })),
 }));
 

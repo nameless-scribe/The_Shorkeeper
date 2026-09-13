@@ -5,7 +5,7 @@ import {
   type SessionSummary,
 } from '../db/repositories/session-summaries';
 import { completeChat } from '../models/complete-chat';
-import { getModelConfigSafe } from '../models/config';
+import { getModelRuntimeConfigSafe } from '../models/config';
 import { getPerformanceSettings } from '../config/performance';
 import {
   DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
@@ -46,7 +46,7 @@ export async function compressSessionIfNeeded(
   const all = listMessages(sessionId).filter(
     (m) => m.role === 'user' || m.role === 'assistant',
   );
-  const config = getModelConfigSafe();
+  const config = getModelRuntimeConfigSafe();
   if (!config) {
     return {
       compressed: false,

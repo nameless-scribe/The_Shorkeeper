@@ -8,10 +8,12 @@ import { getTokenUsageSummary } from '../../db/token-usage';
 
 vi.mock('../config', () => ({
   getModelProtocol: vi.fn(() => 'openai'),
-  loadModelConfig: vi.fn(() => ({
+  loadModelRuntimeConfig: vi.fn(() => ({
     apiKey: 'test-key',
     baseUrl: 'https://api.example.com/v1',
     model: 'test-model',
+    protocol: 'openai',
+    profileId: 'profile-test',
   })),
 }));
 
@@ -73,5 +75,33 @@ describe('completeChat usage recording', () => {
 
     await completeChat([{ role: 'user', content: 'hi' }]);
     expect(getTokenUsageSummary().today).toBe(0);
+  });
+
+  it('honors the protocol captured in an explicit runtime snapshot', async () => {
+    const fetchMock = vi.fn(async (url: string) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        content: [{ type: 'text', text: 'anthropic response' }],
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const text = await completeChat(
+      [{ role: 'user', content: 'hi' }],
+      {
+        apiKey: 'test-key',
+        baseUrl: 'https://anthropic.example.com/v1',
+        model: 'claude-test',
+        protocol: 'anthropic',
+        profileId: 'profile-ant',
+      },
+    );
+
+    expect(text).toBe('anthropic response');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://anthropic.example.com/v1/messages',
+      expect.any(Object),
+    );
   });
 });

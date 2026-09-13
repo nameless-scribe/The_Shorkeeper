@@ -26,6 +26,7 @@ const TOOL_PLUGIN: Record<string, keyof Pick<PluginSettings, 'webSearch' | 'fetc
   web_search: 'webSearch',
   fetch_url: 'fetchUrl',
   read_xlsx: 'docGen',
+  update_xlsx_cells: 'docGen',
   convert_to_markdown: 'docGen',
   gen_markdown: 'docGen',
   gen_docx: 'docGen',
@@ -66,13 +67,16 @@ export function isPluginToolEnabled(toolName: string, settings: PluginSettings):
   if (toolName === 'write_file') {
     return settings.filesystemMode !== 'readonly';
   }
+  if (toolName === 'replace_text') {
+    return settings.filesystemMode !== 'readonly';
+  }
 
   const pluginKey = TOOL_PLUGIN[toolName];
   if (!pluginKey) return true;
 
   if (!settings[pluginKey]) return false;
 
-  if ((toolName.startsWith('gen_') || toolName === 'read_xlsx' || toolName === 'convert_to_markdown') && settings.filesystemMode === 'readonly') {
+  if ((toolName.startsWith('gen_') || toolName === 'read_xlsx' || toolName === 'update_xlsx_cells' || toolName === 'convert_to_markdown') && settings.filesystemMode === 'readonly') {
     return false;
   }
 

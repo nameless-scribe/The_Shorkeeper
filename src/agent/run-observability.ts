@@ -2,6 +2,7 @@ import type { RunTerminalReason } from './run-state';
 import type { RunPhase } from './run-lifecycle';
 import { classifyRunError, type RunErrorCategory } from './run-errors';
 import type { ToolErrorCategory } from '../tools/types';
+import type { SkillRoutingDecision } from '../skills/resolve';
 
 export { classifyRunError, type RunErrorCategory } from './run-errors';
 
@@ -41,6 +42,8 @@ export interface RunTelemetrySnapshot {
   sessionId: string;
   modelId: string;
   activeSkillIds: string[];
+  skillDecisions: SkillRoutingDecision[];
+  skillWarnings: string[];
   phase: RunPhase;
   startedAt: number;
   terminalAt?: number;
@@ -64,6 +67,8 @@ function cloneSnapshot(record: RunTelemetrySnapshot): RunTelemetrySnapshot {
   return {
     ...record,
     activeSkillIds: [...record.activeSkillIds],
+    skillDecisions: record.skillDecisions.map((decision) => ({ ...decision })),
+    skillWarnings: [...record.skillWarnings],
     activities: record.activities.map((activity) => ({ ...activity })),
     ...(record.contextBudget
       ? {
@@ -140,6 +145,8 @@ export class RunTelemetry {
       sessionId: input.sessionId,
       modelId: input.modelId ?? 'unknown',
       activeSkillIds: [...(input.activeSkillIds ?? [])],
+      skillDecisions: [],
+      skillWarnings: [],
       phase: 'created',
       startedAt,
       toolCallCount: 0,
@@ -158,6 +165,12 @@ export class RunTelemetry {
 
   setActiveSkills(skillIds: string[]): void {
     if (!this.ended) this.data.activeSkillIds = [...skillIds];
+  }
+
+  setSkillDiagnostics(decisions: SkillRoutingDecision[], warnings: string[]): void {
+    if (this.ended) return;
+    this.data.skillDecisions = decisions.map((decision) => ({ ...decision }));
+    this.data.skillWarnings = [...warnings];
   }
 
   recordPhase(phase: RunPhase): void {
@@ -277,6 +290,8 @@ export class RunTelemetry {
     return {
       ...this.data,
       activeSkillIds: [...this.data.activeSkillIds],
+      skillDecisions: this.data.skillDecisions.map((decision) => ({ ...decision })),
+      skillWarnings: [...this.data.skillWarnings],
       activities: this.activities.map((activity) => ({ ...activity })),
       ...(this.data.contextBudget
         ? {

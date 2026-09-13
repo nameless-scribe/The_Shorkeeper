@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
-  loopInput: null as null | { messages: Array<{ role: string; content: string }> },
+  loopInput: null as null | {
+    messages: Array<{ role: string; content: string }>;
+    modelRuntime?: { model: string; protocol: string; profileId: string | null };
+  },
   insertMessage: vi.fn(),
   scheduleCompress: vi.fn(),
   scheduleMemory: vi.fn(),
@@ -9,7 +12,11 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('../loop', () => ({
-  runAgentLoop: async function* (input: { runId: string; messages: Array<{ role: string; content: string }> }) {
+  runAgentLoop: async function* (input: {
+    runId: string;
+    messages: Array<{ role: string; content: string }>;
+    modelRuntime?: { model: string; protocol: string; profileId: string | null };
+  }) {
     state.loopInput = input;
     yield { type: 'text_delta', runId: input.runId, delta: '模型回答' };
   },
@@ -29,15 +36,27 @@ vi.mock('../context-builder', () => ({
   })),
 }));
 vi.mock('../../tools/agent-registry', () => ({
-  getAgentRegistry: vi.fn(async () => ({
-    list: () => [],
-    toOpenAITools: () => [],
+  resolveAgentRegistry: vi.fn(async () => ({
+    activeSkills: [],
+    skillWarnings: [],
+    registry: {
+      list: () => [],
+      toOpenAITools: () => [],
+    },
   })),
 }));
-vi.mock('../../skills/state', () => ({ getActiveSkills: vi.fn(() => []) }));
+vi.mock('../../skills/state', () => ({
+  getActiveSkillResolution: vi.fn(() => ({ activeSkills: [], decisions: [] })),
+}));
 vi.mock('../policy-loader', () => ({ buildPermissionPolicy: vi.fn(() => ({})) }));
 vi.mock('../../models/config', () => ({
-  loadModelConfig: vi.fn(() => ({ model: 'test-model' })),
+  loadModelRuntimeConfig: vi.fn(() => ({
+    apiKey: 'test-key',
+    baseUrl: 'https://example.test',
+    model: 'test-model',
+    protocol: 'anthropic',
+    profileId: 'profile-test',
+  })),
 }));
 vi.mock('../../db/repositories/sessions', () => ({
   getSession: vi.fn((id: string) => ({ id, assistantMode: state.assistantMode })),
@@ -108,6 +127,11 @@ describe('orchestrator runtime boundaries', () => {
       { role: 'assistant', content: '此前回答' },
       { role: 'user', content: '本轮语音问题' },
     ]);
+    expect(state.loopInput?.modelRuntime).toMatchObject({
+      model: 'test-model',
+      protocol: 'anthropic',
+      profileId: 'profile-test',
+    });
     expect(state.insertMessage).not.toHaveBeenCalled();
     expect(state.scheduleCompress).not.toHaveBeenCalled();
     expect(state.scheduleMemory).not.toHaveBeenCalled();

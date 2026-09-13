@@ -1,26 +1,27 @@
 ---
-id: progress-tracker
-name: 进度与待办
+name: progress-tracker
 description: 从 Excel 导入用户待办、查询进度、更新状态并可选回写表格
-version: 1.0.0
-trigger: auto
-matchKeywords: 待办, 进度, 导入任务, 任务表, 附件已解析, 今天做什么
-priority: 15
-allowedTools: import_tasks_from_xlsx, list_user_tasks, update_user_task, read_xlsx, gen_xlsx, list_dir, read_file
+metadata:
+  shorekeeper:
+    displayName: 进度与待办
+    version: 1.1.0
+    trigger: auto
+    kind: workflow
+    matchKeywords: [导入待办, 导入任务, 任务表, 待办表, 项目进度, 更新任务状态, 今天做什么]
+    priority: 15
+    allowedTools: [import_tasks_from_xlsx, list_user_tasks, update_user_task, read_xlsx, update_xlsx_cells, list_dir, read_file]
+    requiredTools: [import_tasks_from_xlsx, list_user_tasks, update_user_task]
 ---
 
 【技能：进度与待办】
 
-## 适用场景
-- 用户上传进度/任务 Excel，要「导入待办」「今天做什么」「把 P3 标为进行中」
-- 两天工作计划、模块确认进度跟踪
+只在用户明确讨论待办、任务表或项目进度时使用。普通 Excel 分析不属于本技能，不要因为上传了 `.xlsx` 就导入待办。
 
 ## 推荐流程
-1. 若用户刚上传 `.xlsx` 且消息含 `[工作区附件已解析]`，可直接分析；否则 `read_xlsx`。
-2. **首次同步**：`import_tasks_from_xlsx`（path 用附件消息中的工作区路径）。
-3. **查询**：`list_user_tasks`（可按 status、module 筛选）。
-4. **更新**：`update_user_task`（改 status / notes / due_at）；默认会尝试回写 Excel 状态列。
-5. 需要整体改表结构或批量导出时：`read_xlsx` → 内存处理 → `gen_xlsx`。
+1. 导入前确认文件确实是任务表，并使用 `import_tasks_from_xlsx`。表头必须有明确任务列；未知状态、非法日期或超过安全行数时整批拒绝，不允许部分导入。
+2. 查询使用 `list_user_tasks`，可按状态或模块筛选。
+3. 更新使用 `update_user_task`。来自 Excel 的任务默认同步源文件；回写失败时数据库更新会撤销，应把错误说明给用户。
+4. 同一文件同一行可重复导入更新；如果用户重排或插入了行，先重新确认映射，不要宣称已按稳定任务 ID 合并。
 
 ## 状态映射
 | 用户说法 | status |
@@ -30,5 +31,4 @@ allowedTools: import_tasks_from_xlsx, list_user_tasks, update_user_task, read_xl
 | 已完成 / 做完了 | done |
 | 取消 / 不做了 | cancelled |
 
-## 与多步执行技能配合
-复杂任务（导入 + 分析 + 写报告）时同时启用「多步任务执行」：先用 `update_agent_plan` 列步骤，再按上表调用待办工具。
+状态值只使用 `pending`、`in_progress`、`done`、`cancelled`。日期使用 `YYYY-MM-DD`。不要把未知值猜成待开始。

@@ -18,7 +18,13 @@ vi.mock('../../models/complete-chat', () => ({
   completeChat: vi.fn(async () => state.reply),
 }));
 vi.mock('../../models/config', () => ({
-  getModelConfigSafe: vi.fn(() => ({ apiKey: 'test', baseUrl: 'http://test', model: 'test' })),
+  getModelRuntimeConfigSafe: vi.fn(() => ({
+    apiKey: 'test',
+    baseUrl: 'http://test',
+    model: 'test',
+    protocol: 'openai',
+    profileId: 'profile-test',
+  })),
 }));
 vi.mock('../../config/performance', () => ({
   getPerformanceSettings: vi.fn(() => ({

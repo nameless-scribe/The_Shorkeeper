@@ -2,10 +2,10 @@ import { createRunId, ev } from './events';
 import { runAgentLoop } from './loop';
 import type { AgUiEvent } from './types';
 import { buildSystemPromptParts } from './context-builder';
-import { getAgentRegistry } from '../tools/agent-registry';
-import { getActiveSkills } from '../skills/state';
+import { resolveAgentRegistry } from '../tools/agent-registry';
+import { getActiveSkillResolution } from '../skills/state';
 import { buildPermissionPolicy } from './policy-loader';
-import { loadModelConfig } from '../models/config';
+import { loadModelRuntimeConfig } from '../models/config';
 import { getSession } from '../db/repositories/sessions';
 import { getActiveSession } from '../session/active';
 import {
@@ -102,8 +102,8 @@ export async function* runOrchestrator(
   transition('running');
 
   try {
-    const modelConfig = loadModelConfig();
-    telemetry.setModel(modelConfig.model);
+    const modelRuntime = loadModelRuntimeConfig();
+    telemetry.setModel(modelRuntime.model);
     await awaitPendingSessionWork(session.id, 5000, signal);
     if (signal?.aborted) {
       finishRun('cancelled', 'cancelled', '已取消');
@@ -163,9 +163,12 @@ export async function* runOrchestrator(
     if (!persistMessages) {
       rawHistory.push({ role: 'user', content: userMessage });
     }
-    const activeSkills = getActiveSkills(userMessage);
+    const skillResolution = getActiveSkillResolution(userMessage);
+    const registryResolution = await resolveAgentRegistry(skillResolution.activeSkills);
+    const activeSkills = registryResolution.activeSkills;
     telemetry.setActiveSkills(activeSkills.map((skill) => skill.id));
-    const registry = await getAgentRegistry(activeSkills);
+    telemetry.setSkillDiagnostics(skillResolution.decisions, registryResolution.skillWarnings);
+    const registry = registryResolution.registry;
     const maxInputTokens = performanceSettings.contextMaxInputTokens ??
       DEFAULT_CONTEXT_MAX_INPUT_TOKENS;
     const toolTokens = estimateTokens(JSON.stringify(registry.toOpenAITools()));
@@ -180,6 +183,7 @@ export async function* runOrchestrator(
       assistantMode: session.assistantMode,
       availableTools: registry.list(),
       activeSkills,
+      skillWarnings: registryResolution.skillWarnings,
       signal,
       maxTokens: systemBudget,
     });
@@ -214,6 +218,7 @@ export async function* runOrchestrator(
       runId,
       messages,
       registry,
+      modelRuntime,
       policy,
       signal,
       cacheStablePrefix: systemParts.stable,

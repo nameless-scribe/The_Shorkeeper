@@ -1,13 +1,19 @@
 import type { LlmMessage } from '../agent/types';
-import type { ModelConfig } from '../shared/types';
-import { getModelProtocol, loadModelConfig } from './config';
+import type { ModelConfig, ModelProtocol } from '../shared/types';
+import {
+  getModelProtocol,
+  loadModelRuntimeConfig,
+  type ModelRuntimeConfig,
+} from './config';
 import { completeChatAnthropic } from './anthropic-like';
 import { recordTokenUsage } from '../db/token-usage';
 import { parseCompatibleUsage, type ParsedUsage } from './usage-parse';
+import { createModelHttpError, fetchModelResponse } from './http';
 
 export interface CompleteChatOptions {
   signal?: AbortSignal;
   sessionId?: string;
+  protocol?: ModelProtocol;
 }
 interface OpenAICompletionResponse {
   choices?: Array<{ message?: { content?: string | null } }>;
@@ -32,7 +38,7 @@ async function completeChatOpenAI(
   config: ModelConfig,
   options?: CompleteChatOptions,
 ): Promise<string> {
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+  const response = await fetchModelResponse(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -47,8 +53,7 @@ async function completeChatOpenAI(
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`API ${response.status}: ${text}`);
+    throw await createModelHttpError(response);
   }
 
   const data = (await response.json()) as OpenAICompletionResponse;
@@ -59,12 +64,15 @@ async function completeChatOpenAI(
 
 export async function completeChat(
   messages: LlmMessage[],
-  config?: ModelConfig,
+  config?: ModelConfig | ModelRuntimeConfig,
   options?: CompleteChatOptions,
 ): Promise<string> {
-  const resolved = config ?? loadModelConfig();
+  const runtime = config ?? loadModelRuntimeConfig();
+  const protocol = options?.protocol ??
+    ('protocol' in runtime ? runtime.protocol : getModelProtocol());
+  const resolved: ModelConfig = runtime;
 
-  if (getModelProtocol() === 'anthropic') {
+  if (protocol === 'anthropic') {
     return completeChatAnthropic(messages, resolved, options);
   }
 

@@ -4,6 +4,7 @@ import type { OpenAIToolSchema } from '../tools/types';
 import { shouldIncludeStreamUsage } from './config';
 import { parseCompatibleUsage } from './usage-parse';
 import { encodeMessagesForApi } from './message-encode';
+import { createModelHttpError, fetchModelResponse } from './http';
 
 interface OpenAIStreamChunk {
   choices?: Array<{
@@ -84,10 +85,12 @@ function toOpenAIToolCalls(acc: ToolCallAccumulator): OpenAIToolCall[] {
         arguments: acc[index].arguments,
       },
     }))
-    .filter((tc) => tc.id && tc.function.name)
+    .filter((tc) => tc.function.name)
     .filter((tc) => {
-      if (seenIds.has(tc.id)) return false;
-      seenIds.add(tc.id);
+      if (tc.id) {
+        if (seenIds.has(tc.id)) return false;
+        seenIds.add(tc.id);
+      }
 
       const fallbackKey = `${tc.function.name}\0${tc.function.arguments}`;
       if (seenFallback.has(fallbackKey)) return false;
@@ -149,7 +152,7 @@ export async function* streamChat(
     body.stream_options = { include_usage: true };
   }
 
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+  const response = await fetchModelResponse(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -160,8 +163,8 @@ export async function* streamChat(
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    yield { type: 'error', message: `API ${response.status}: ${text}` };
+    const error = await createModelHttpError(response);
+    yield { type: 'error', message: error.message };
     return;
   }
 

@@ -1,10 +1,12 @@
 import type { ScheduledTaskInfo } from '../shared/types';
 import { getStableSystemPrefix } from '../agent/stable-context';
 import { completeChat } from '../models/complete-chat';
-import { getModelConfigSafe } from '../models/config';
+import { getModelRuntimeConfigSafe } from '../models/config';
 import { formatScheduleLabel } from './format';
+import { awaitWithAbort, createLinkedTimeoutSignal } from '../agent/abort';
 
 const MAX_REMINDER_CHARS = 160;
+export const DEFAULT_REMINDER_MODEL_TIMEOUT_MS = 30_000;
 
 export function getStaticReminderBody(
   payload: Record<string, unknown>,
@@ -56,6 +58,7 @@ function buildReminderPrompt(task: ScheduledTaskInfo, topic: string): string {
 export async function resolveReminderBody(
   task: ScheduledTaskInfo,
   payload: Record<string, unknown>,
+  options?: { timeoutMs?: number },
 ): Promise<string> {
   const fallback = getStaticReminderBody(payload, task.name);
 
@@ -63,18 +66,26 @@ export async function resolveReminderBody(
     return fallback;
   }
 
-  const config = getModelConfigSafe();
+  const config = getModelRuntimeConfigSafe();
   if (!config) {
     return fallback;
   }
 
+  const timeout = createLinkedTimeoutSignal(
+    undefined,
+    options?.timeoutMs ?? DEFAULT_REMINDER_MODEL_TIMEOUT_MS,
+  );
   try {
-    const generated = await completeChat(
-      [
-        { role: 'system', content: `${getStableSystemPrefix()}\n\n${buildReminderPrompt(task, fallback)}` },
-        { role: 'user', content: '请直接输出提醒正文。' },
-      ],
-      config,
+    const generated = await awaitWithAbort(
+      completeChat(
+        [
+          { role: 'system', content: `${getStableSystemPrefix()}\n\n${buildReminderPrompt(task, fallback)}` },
+          { role: 'user', content: '请直接输出提醒正文。' },
+        ],
+        config,
+        { signal: timeout.signal },
+      ),
+      timeout.signal,
     );
 
     const normalized = normalizeReminderBody(generated);
@@ -82,5 +93,7 @@ export async function resolveReminderBody(
   } catch (err) {
     console.warn(`[reminder] AI 文案生成失败，使用静态内容：`, err);
     return fallback;
+  } finally {
+    timeout.dispose();
   }
 }

@@ -178,9 +178,13 @@ export interface SkillInfo {
   version: string;
   systemPromptFragment: string;
   allowedTools?: string[];
+  requiredTools?: string[];
+  conflictsWith?: string[];
   trigger: 'manual' | 'auto';
   matchKeywords?: string[];
   priority: number;
+  kind: 'capability' | 'workflow' | 'internal';
+  validationErrors: string[];
   enabled: boolean;
 }
 

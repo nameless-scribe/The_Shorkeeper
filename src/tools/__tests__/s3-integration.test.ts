@@ -9,8 +9,10 @@ describe('S3 tool integration contract', () => {
     for (const name of [
       'read_file',
       'write_file',
+      'replace_text',
       'read_xlsx',
       'gen_xlsx',
+      'update_xlsx_cells',
       'gen_docx',
       'gen_pdf',
       'convert_to_markdown',

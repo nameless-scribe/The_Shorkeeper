@@ -155,6 +155,11 @@ export function findUserTaskBySource(
   return row ? rowToInfo(row) : null;
 }
 
+/** Keep task-import transaction ownership inside the database domain boundary. */
+export function runUserTaskTransaction<T>(operation: () => T): T {
+  return getDatabase().transaction(operation);
+}
+
 export function formatUserTaskList(tasks: UserTaskInfo[]): string {
   if (!tasks.length) return '当前没有待办任务。';
   return tasks

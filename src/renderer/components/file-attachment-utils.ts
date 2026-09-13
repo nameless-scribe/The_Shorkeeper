@@ -62,9 +62,21 @@ function attachmentFromPath(relativePath: string, size = 0): WorkspaceAttachment
 }
 
 function pathFromArgs(toolName: string, args: Record<string, unknown>): string | null {
-  if (toolName === 'read_file' || toolName === 'read_xlsx' || toolName === 'write_file') {
+  if (
+    toolName === 'read_file' ||
+    toolName === 'read_xlsx' ||
+    toolName === 'write_file' ||
+    toolName === 'replace_text'
+  ) {
     const path = args.path;
     return typeof path === 'string' && path.trim() ? path.trim() : null;
+  }
+
+  if (toolName === 'update_xlsx_cells') {
+    const output = args.output_path;
+    if (typeof output === 'string' && output.trim()) return output.trim();
+    const source = args.source_path;
+    return typeof source === 'string' && source.trim() ? source.trim() : null;
   }
 
   if (toolName === 'convert_to_markdown') {

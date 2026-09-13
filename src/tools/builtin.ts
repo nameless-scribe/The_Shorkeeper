@@ -1,6 +1,7 @@
 import { ToolRegistry } from './registry';
 import { readFileTool } from './file/read-file';
 import { writeFileTool } from './file/write-file';
+import { replaceTextTool } from './file/replace-text';
 import { listDirTool } from './file/list-dir';
 import { webSearchTool } from './web/web-search';
 import { fetchUrlTool } from './web/fetch-url';
@@ -13,6 +14,7 @@ import {
   genPdfTool,
   genXlsxTool,
   readXlsxTool,
+  updateXlsxCellsTool,
 } from './doc/gen-tools';
 import { bookkeepingTool } from './life/bookkeeping';
 import { travelPlanTool } from './life/travel-plan';
@@ -40,12 +42,14 @@ export function createBuiltinRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(readFileTool);
   registry.register(writeFileTool);
+  registry.register(replaceTextTool);
   registry.register(listDirTool);
   registry.register(webSearchTool);
   registry.register(fetchUrlTool);
   registry.register(weatherTool);
   registry.register(translateTool);
   registry.register(readXlsxTool);
+  registry.register(updateXlsxCellsTool);
   registry.register(convertToMarkdownTool);
   registry.register(genMarkdownTool);
   registry.register(genDocxTool);
