@@ -34,7 +34,16 @@ function toMemoryInfo(entry: ReturnType<typeof listManagedMemories>[number]): Me
     content: entry.content,
     importance: entry.importance,
     sourceSessionId: entry.sourceSessionId,
+    memoryType: entry.memoryType,
+    confidence: entry.confidence,
+    sensitivity: entry.sensitivity,
+    modelUsePolicy: entry.modelUsePolicy,
+    status: entry.status,
+    validFrom: entry.validFrom,
+    expiresAt: entry.expiresAt,
+    supersededBy: entry.supersededBy,
     createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
   };
 }
 

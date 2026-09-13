@@ -18,6 +18,11 @@ import { serializeEmbedding } from '../rag/vector';
 import { deserializeEmbedding, topKBySimilarity } from '../rag/vector';
 import { isDuplicateMemory, isSemanticallyDuplicateMemory } from './dedupe';
 import { queueMemoryReembed } from './reembed-queue';
+import type {
+  MemoryModelUsePolicy,
+  MemorySensitivity,
+  PersonalMemoryType,
+} from '../shared/types';
 
 export { getMemoryByKey, listMemories, type MemoryEntry };
 
@@ -85,7 +90,15 @@ export async function upsertMemory(
   content: string,
   importance = 0.5,
   sessionId?: string,
-  options?: { skipEmbedding?: boolean },
+  options?: {
+    skipEmbedding?: boolean;
+    memoryType?: PersonalMemoryType;
+    confidence?: number;
+    sensitivity?: MemorySensitivity;
+    modelUsePolicy?: MemoryModelUsePolicy;
+    validFrom?: number;
+    expiresAt?: number | null;
+  },
 ): Promise<MemoryEntry> {
   const key = memoryKey.trim();
   const trimmed = content.trim();
@@ -117,6 +130,13 @@ export async function upsertMemory(
       importance: clampedImportance,
       sourceSessionId: sessionId,
       createdAt: now,
+      updatedAt: now,
+      memoryType: options?.memoryType,
+      confidence: options?.confidence,
+      sensitivity: options?.sensitivity,
+      modelUsePolicy: options?.modelUsePolicy,
+      validFrom: options?.validFrom,
+      expiresAt: options?.expiresAt,
       embedding: embeddingToWrite,
     });
     if (!updated) {
@@ -136,6 +156,13 @@ export async function upsertMemory(
     importance: clampedImportance,
     sourceSessionId: sessionId,
     createdAt: now,
+    updatedAt: now,
+    memoryType: options?.memoryType,
+    confidence: options?.confidence,
+    sensitivity: options?.sensitivity,
+    modelUsePolicy: options?.modelUsePolicy,
+    validFrom: options?.validFrom,
+    expiresAt: options?.expiresAt,
     embedding: embeddingBlob,
   });
 

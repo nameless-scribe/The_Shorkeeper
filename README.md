@@ -188,6 +188,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | 文档 | 说明 |
 |------|------|
 | [DEVELOPMENT-CONTRACT.md](docs/DEVELOPMENT-CONTRACT.md) | 全仓库开发契约与完成标准 |
+| [P1-PERSONAL-MODEL-PLAN.md](docs/P1-PERSONAL-MODEL-PLAN.md) | P1 可追溯个人模型实施计划与阶段出口 |
 | [使用说明.md](docs/使用说明.md) | 技能、插件、工作区、待办 |
 | [DESIGN.md](docs/DESIGN.md) | 架构设计 |
 | [DATABASE.md](docs/DATABASE.md) | 数据库与 migration |

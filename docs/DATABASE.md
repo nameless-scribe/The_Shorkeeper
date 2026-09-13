@@ -84,6 +84,7 @@ pnpm db:seed
 | `0020_memory_candidates.sql` | 记忆候选队列 |
 | `0021_task_runs.sql` | `task_runs`、`task_run_steps`、`artifacts`、`approvals`（P0 闭环骨架） |
 | `0022_goals_commitments.sql` | `goals`、`commitments`、`briefings`，`user_tasks.goal_id`（P0 每日管家） |
+| `0023_personal_memory_model.sql` | P1 个人事实类型/状态/敏感与时效字段、仅 active key 唯一、候选冲突元数据、`memory_sources` 来源链 |
 
 打包时 migration 以 `extraResources/db-migrations/` 形式随安装包分发；开发态直接读 `src/db/migrations/`。
 
@@ -105,7 +106,7 @@ pnpm db:seed
 | `messages` | 消息（工作记忆） |
 | `app_settings` | KV：人设、主题 preset、外观资源文件名、插件开关、性能项等 |
 | `user_profile` | 用户画像（设置页编辑，注入 prompt） |
-| `long_term_memory` | 长期记忆（`memory_key` 结构化 upsert） |
+| `long_term_memory` | 长期记忆事实；保存类型、独立置信度、敏感/模型使用策略、有效期、状态与替代关系；同一 `memory_key` 仅允许一条 active，历史版本可保留 |
 | `worldbook_entries` | Worldbook 条目 |
 | `token_usage` | 按日 Token 统计（含 `cached_tokens`） |
 | `scheduled_tasks` | 周期 / 一次性定时任务 |
@@ -115,7 +116,8 @@ pnpm db:seed
 | `bookkeeping_entries` | 记账记录 |
 | `session_summaries` | 长会话压缩摘要 |
 | `user_tasks` | 用户待办（Excel 导入或 `create_user_task` 直接创建） |
-| `memory_candidates` | 待确认的记忆候选 |
+| `memory_candidates` | 待确认的记忆候选，含事实类型、敏感/模型使用策略、有效期、冲突对象与建议动作 |
+| `memory_sources` | 长期记忆来源链，可关联 session/message/run/document/chunk/tool/goal/commitment 等稳定引用 |
 | `task_runs` | 每次 Agent run 的持久化记录：来源、阶段、终态、模型、回复消息 id、步骤统计 |
 | `task_run_steps` | run 内每次工具调用：顺序、工具名、风险等级、幂等声明、状态与错误分类 |
 | `artifacts` | 工具产物证据：工作区相对路径、大小、SHA-256，关联 run 与步骤 |
@@ -135,12 +137,13 @@ pnpm db:seed
 ### 查看长期记忆示例
 
 ```sql
-SELECT memory_key, content, importance, created_at
+SELECT memory_key, memory_type, content, importance, confidence,
+       sensitivity, model_use_policy, status, valid_from, expires_at, updated_at
 FROM long_term_memory
-ORDER BY created_at DESC;
+ORDER BY updated_at DESC;
 ```
 
-M3 之后新写入的记忆应带 `memory_key`；历史无 key 行可手动清理。
+`importance` 是检索重要度，`confidence` 是事实可信度，两者不可混用。0023 将既有记忆回填为 `other / active / normal / allow`，置信度使用中性默认值 `0.5`，不会把旧 `importance` 冒充为置信度。Repository 的常规列表、检索与按 key 读取只返回 `active`；历史版本通过专用历史查询读取。
 
 ## 用图形工具打开
 

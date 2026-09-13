@@ -75,7 +75,7 @@ describe('native SQLite migration rehearsal', () => {
     expect(
       migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE status = 'applied'").get()
         ?.count,
-    ).toBe(22);
+    ).toBe(23);
     migrated.close();
   });
 

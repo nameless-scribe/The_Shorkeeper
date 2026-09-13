@@ -25,6 +25,12 @@ export async function confirmMemoryCandidate(id: string): Promise<MemoryCandidat
   if (candidate.status === 'pending') {
     await upsertMemory(candidate.memoryKey, candidate.content, candidate.confidence, candidate.sourceSessionId ?? undefined, {
       skipEmbedding: true,
+      memoryType: candidate.memoryType,
+      confidence: candidate.confidence,
+      sensitivity: candidate.sensitivity,
+      modelUsePolicy: candidate.modelUsePolicy,
+      validFrom: candidate.validFrom ?? undefined,
+      expiresAt: candidate.expiresAt,
     });
     const confirmed = setMemoryCandidateStatus(id, 'confirmed');
     if (!confirmed) throw new Error('记忆候选在确认后消失');

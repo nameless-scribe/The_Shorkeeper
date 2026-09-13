@@ -53,6 +53,15 @@ describe('memory candidate repository', () => {
       confidence: 0.91,
       reason: '用户明确表达',
       sourceSessionId: null,
+      sourceMessageId: 'message-1',
+      sourceRunId: 'run-1',
+      memoryType: 'relationship',
+      sensitivity: 'private',
+      modelUsePolicy: 'allow',
+      validFrom: 100,
+      expiresAt: 200,
+      conflictsWithMemoryId: 'memory-1',
+      proposedAction: 'replace',
     }, db)!;
 
     expect(listMemoryCandidates('pending', 10, db)).toEqual([
@@ -61,6 +70,15 @@ describe('memory candidate repository', () => {
         category: 'relationship',
         confidence: 0.91,
         sourceSessionId: null,
+        sourceMessageId: 'message-1',
+        sourceRunId: 'run-1',
+        memoryType: 'relationship',
+        sensitivity: 'private',
+        modelUsePolicy: 'allow',
+        validFrom: 100,
+        expiresAt: 200,
+        conflictsWithMemoryId: 'memory-1',
+        proposedAction: 'replace',
       }),
     ]);
     expect(setMemoryCandidateStatus(candidate.id, 'confirmed', db)?.status).toBe('confirmed');

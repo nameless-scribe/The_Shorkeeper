@@ -309,6 +309,35 @@ export type MemoryCandidateCategory =
 export type MemoryCandidateDecision = 'silent' | 'confirm' | 'deny';
 export type MemoryCandidateStatus = 'pending' | 'confirmed' | 'rejected';
 
+export type PersonalMemoryType =
+  | 'identity'
+  | 'preference'
+  | 'relationship'
+  | 'event'
+  | 'goal'
+  | 'habit'
+  | 'procedure'
+  | 'other';
+
+export type PersonalMemoryStatus =
+  | 'active'
+  | 'disputed'
+  | 'superseded'
+  | 'expired'
+  | 'rejected';
+
+export type MemorySensitivity = 'normal' | 'private' | 'sensitive';
+export type MemoryModelUsePolicy = 'allow' | 'deny';
+export type MemoryProposedAction = 'create' | 'replace' | 'merge' | 'ignore';
+export type MemorySourceType =
+  | 'conversation'
+  | 'user_edit'
+  | 'document'
+  | 'tool'
+  | 'goal'
+  | 'commitment'
+  | 'legacy';
+
 export type AssistantActionPolicy = 'silent' | 'notify' | 'confirm' | 'deny';
 
 export interface MemoryCandidateInfo {
@@ -319,6 +348,15 @@ export interface MemoryCandidateInfo {
   confidence: number;
   reason: string;
   sourceSessionId: string | null;
+  sourceMessageId: string | null;
+  sourceRunId: string | null;
+  memoryType: PersonalMemoryType;
+  sensitivity: MemorySensitivity;
+  modelUsePolicy: MemoryModelUsePolicy;
+  validFrom: number | null;
+  expiresAt: number | null;
+  conflictsWithMemoryId: string | null;
+  proposedAction: MemoryProposedAction;
   status: MemoryCandidateStatus;
   createdAt: number;
   updatedAt: number;
@@ -330,7 +368,16 @@ export interface MemoryInfo {
   content: string;
   importance: number;
   sourceSessionId: string | null;
+  memoryType: PersonalMemoryType;
+  confidence: number;
+  sensitivity: MemorySensitivity;
+  modelUsePolicy: MemoryModelUsePolicy;
+  status: PersonalMemoryStatus;
+  validFrom: number;
+  expiresAt: number | null;
+  supersededBy: string | null;
   createdAt: number;
+  updatedAt: number;
 }
 
 export interface SessionListOptions {

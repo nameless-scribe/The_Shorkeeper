@@ -12,6 +12,31 @@ export interface LongTermMemoryRow {
   content: string;
   importance: number;
   source_session_id: string | null;
+  memory_type: string;
+  confidence: number;
+  sensitivity: string;
+  model_use_policy: string;
+  status: string;
+  valid_from: number;
+  expires_at: number | null;
+  superseded_by: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MemorySourceRow {
+  id: string;
+  memory_id: string;
+  source_type: string;
+  source_session_id: string | null;
+  source_message_id: string | null;
+  source_run_id: string | null;
+  source_document_id: string | null;
+  source_chunk_id: string | null;
+  source_tool_name: string | null;
+  source_entity_id: string | null;
+  source_ref: string | null;
+  summary: string | null;
   created_at: number;
 }
 
