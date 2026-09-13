@@ -19,7 +19,7 @@ import { formatToolGuideForPrompt, getStableSystemPrefix } from './stable-contex
 import type { ToolDefinition } from '../tools/types';
 import { normalizeAssistantMode } from '../assistant/mode';
 import { getAssistantModePrompt } from '../assistant/mode-prompt';
-import type { AssistantMode } from '../shared/types';
+import type { AssistantMode, TaskRunKind } from '../shared/types';
 import {
   applyContextSectionBudget,
   DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
@@ -27,6 +27,7 @@ import {
   type ContextBudgetReport,
   type ContextSection,
 } from './context-budget';
+import { peekInterruptedRunNotice } from './run-recovery';
 
 export interface ContextBuildInput {
   userMessage: string;
@@ -37,6 +38,8 @@ export interface ContextBuildInput {
   assistantMode?: AssistantMode;
   signal?: AbortSignal;
   maxTokens?: number;
+  /** 运行来源；中断说明只在用户主动的聊天轮次注入，不打进定时/语音 run */
+  runKind?: TaskRunKind;
 }
 
 /**
@@ -55,6 +58,8 @@ export interface SystemPromptParts {
   dynamic: string | null;
   combined: string;
   budget: ContextBudgetReport;
+  /** 本轮注入了哪次中断 run 的说明；调用方在成功收口后确认 */
+  interruptedRunId?: string;
 }
 
 export async function buildSystemPromptParts(
@@ -135,6 +140,18 @@ export async function buildSystemPromptParts(
     });
   }
 
+  const interrupted = (input.runKind ?? 'chat') === 'chat'
+    ? peekInterruptedRunNotice(input.sessionId)
+    : null;
+  if (interrupted) {
+    sections.push({
+      id: 'interrupted_run',
+      text: interrupted.notice,
+      priority: 88,
+      group: 'dynamic',
+    });
+  }
+
   const memories = settings.memorySemanticInContext
     ? await searchMemoriesWithEmbedding(retrievalQuery, 5, input.signal)
     : searchMemories(retrievalQuery, 5);
@@ -208,6 +225,14 @@ export async function buildSystemPromptParts(
     .map((section) => section.text);
   const dynamic = dynamicSections.length ? dynamicSections.join('\n\n') : null;
   const combined = dynamic ? `${stable}\n\n${dynamic}` : stable;
+  const interruptedInjected = interrupted &&
+    budgeted.report.includedSectionIds.includes('interrupted_run');
 
-  return { stable, dynamic, combined, budget: budgeted.report };
+  return {
+    stable,
+    dynamic,
+    combined,
+    budget: budgeted.report,
+    ...(interruptedInjected ? { interruptedRunId: interrupted.runId } : {}),
+  };
 }

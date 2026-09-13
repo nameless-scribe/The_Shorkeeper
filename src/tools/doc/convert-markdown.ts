@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
+import { WORKSPACE_WRITE_CONTRACT } from '../contract';
 import { withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
 import { loadMammoth, loadWordExtractor } from './doc-loaders';
@@ -166,6 +167,7 @@ export const convertToMarkdownTool: ToolDefinition = {
     '将工作区内的 Word（.doc/.docx）或文本类文件（txt/md/csv/html 等）转换为 Markdown 并保存',
   category: 'doc',
   requiresPermission: ['filesystem:read', 'filesystem:write'],
+  sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

@@ -10,7 +10,14 @@ describe('product skill contracts', () => {
     const tools = new Set(createBuiltinRegistry().list().map((tool) => tool.name));
     const productSkills = discoverSkills().filter((skill) => skill.kind !== 'internal');
 
-    expect(productSkills).toHaveLength(5);
+    expect(productSkills.map((skill) => skill.id).sort()).toEqual([
+      'daily-steward',
+      'doc-to-markdown',
+      'excel',
+      'progress-tracker',
+      'task-execution',
+      'workspace-doc-edit',
+    ]);
     for (const skill of productSkills) {
       expect(skill.validationErrors, skill.id).toEqual([]);
       for (const tool of skill.requiredTools ?? []) {

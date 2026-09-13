@@ -257,6 +257,7 @@ interface AgentRunRequest {
 - 下一条消息前通过 `session-background` 等待同会话后台任务（记忆提取、摘要压缩）完成，避免竞态
 - 用户消息可触发 **定时提醒意图**（`scheduler/reminder-intent`）或 **对话归档知识库**（`rag/conversation-knowledge`），在 Agent loop 之前短路处理
 - 调度器按任务 ID 防重入；超过 Node 单次计时上限的远期任务分段等待；一次性 Agent 任务遇到会话忙碌时 60 秒后重试；AI 提醒文案失败或超时会回退静态正文
+- 每次 run 通过 `run-record` 写入 `task_runs` / `task_run_steps` / `artifacts`（来源 `chat` / `scheduled` / `voice`）；应用启动由 `run-recovery` 把上次遗留的非终态 run 收口为 `interrupted`，并在下一轮同会话对话中注入一次性的中断说明，让助理先说明再决定是否继续
 
 ### 5.3 工具系统 (Tool Registry)
 
@@ -269,15 +270,33 @@ interface ToolDefinition {
   parameters: JSONSchema;
   category: 'file' | 'web' | 'doc' | 'memory' | 'life' | 'mcp' | 'skill';
   requiresPermission: PermissionFlag[];
+  sideEffects?: ToolSideEffectContract;   // 内置工具必须显式声明；MCP 工具按权限推导保守值
   execute(args: unknown, ctx: ToolContext): Promise<ToolResult>;
+}
+
+interface ToolSideEffectContract {
+  risk: 'read' | 'low' | 'medium' | 'high'; // high 无论策略如何都必须用户确认
+  idempotent: boolean;                       // false 时同一 run 内相同参数的重复调用会被合并
+  supportsPreview: boolean;                  // 是否支持 ctx.preview 干跑（当前均为 false）
+  reversible: 'none' | 'manual' | 'automatic';
+  evidence: 'none' | 'output' | 'artifact';  // artifact 表示成功必须附带可读回校验的文件
 }
 
 interface ToolContext {
   sessionId: string;
   workspaceRoot: string;  // 沙箱根目录
   signal: AbortSignal;
+  runId?: string;
+  preview?: boolean;
 }
 ```
+
+**副作用契约的运行时约束**（`src/tools/contract.ts`、`src/tools/evidence.ts`、`src/agent/loop.ts`）：
+
+- `risk: 'high'` 的工具即使权限策略允许也会进入确认；每次确认都写入 `approvals` 表，含风险等级和结论来源。
+- 非幂等的副作用工具在同一 run 内以完全相同参数再次调用时，不会重复执行，而是复用首次结果并在输出前标注“重复调用已合并”。
+- `evidence: 'artifact'` 的工具成功后会由主循环读回校验产物（存在、大小、SHA-256）；校验失败时结果降级为失败，避免“声称完成”。
+- 预设契约：`READ_ONLY_CONTRACT`、`WORKSPACE_WRITE_CONTRACT`、`LOCAL_APPEND_CONTRACT`、`LOCAL_UPSERT_CONTRACT`；`tool-contract.test.ts` 强制所有内置工具显式声明并与权限标志一致。
 
 **内置工具（当前）**：
 
@@ -289,7 +308,9 @@ interface ToolContext {
 | 记忆 / 知识 | `recall_memory`, `save_memory`, `search_worldbook`, `search_knowledge` |
 | 生活 | `bookkeeping`, `travel_plan` |
 | 日程 | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task` |
-| 计划 / 待办 | `update_agent_plan`, `import_tasks_from_xlsx`, `list_user_tasks`, `update_user_task` |
+| 计划 / 待办 | `update_agent_plan`, `import_tasks_from_xlsx`, `create_user_task`, `list_user_tasks`, `update_user_task` |
+| 目标 / 承诺 | `manage_goals`（create/list/update/close）, `manage_commitments`（record/confirm/list/update/complete/cancel）；创建提醒自动记录助理承诺，待办状态变化自动同步承诺 |
+| 每日管家 | `build_daily_brief`, `build_evening_review`（每天各一次，`force` 重做）；由设置页创建的两条系统 `agent_prompt` 任务触发，安静时段推迟，成功后弹标题提醒；流程约束见 `skills/daily-steward/SKILL.md` |
 
 **文档库加载**（CJS 包在 ESM 动态 `import()` 下的互操作）：`src/tools/doc/` 提供统一加载器，避免 `is not a constructor` 类错误。
 

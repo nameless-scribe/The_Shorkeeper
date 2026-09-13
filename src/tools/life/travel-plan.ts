@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
+import { WORKSPACE_WRITE_CONTRACT } from '../contract';
 import { withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
 
@@ -56,6 +57,7 @@ export const travelPlanTool: ToolDefinition = {
   description: '生成结构化旅行规划 Markdown 并保存到工作区',
   category: 'life',
   requiresPermission: ['filesystem:write'],
+  sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

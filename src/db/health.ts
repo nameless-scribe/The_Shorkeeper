@@ -24,6 +24,13 @@ const DEFAULT_REQUIRED_TABLES = [
   'bookkeeping_entries',
   'session_summaries',
   'user_tasks',
+  'task_runs',
+  'task_run_steps',
+  'artifacts',
+  'approvals',
+  'goals',
+  'commitments',
+  'briefings',
 ] as const;
 
 const FTS_EXPECTATIONS: Record<string, { table: string; tokenizer?: string }> = {

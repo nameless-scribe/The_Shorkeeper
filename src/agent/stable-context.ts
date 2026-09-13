@@ -30,8 +30,13 @@ const TOOL_SUMMARY: Record<string, string> = {
   delete_scheduled_task: '删除定时任务',
   update_agent_plan: '更新执行计划',
   import_tasks_from_xlsx: '从 Excel 导入待办',
+  create_user_task: '直接创建一条待办',
   list_user_tasks: '列出用户待办',
   update_user_task: '更新用户待办',
+  manage_goals: '管理中长期目标（create/list/update/close）',
+  manage_commitments: '记录、确认、完成用户承诺（自动关联待办）',
+  build_daily_brief: '聚合早间简报数据（每天一次）',
+  build_evening_review: '聚合晚间复盘数据并标记错过的承诺（每天一次）',
 };
 
 const SCHEDULE_TOOL_HINT =

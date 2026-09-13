@@ -5,6 +5,7 @@ import {
   type BookkeepingEntryType,
 } from '../../db/repositories/bookkeeping';
 import type { ToolDefinition } from '../types';
+import { LOCAL_APPEND_CONTRACT } from '../contract';
 
 function formatSummary(rows: BookkeepingEntry[]): string {
   let income = 0;
@@ -21,6 +22,12 @@ export const bookkeepingTool: ToolDefinition = {
   description: '个人记账：添加收支记录、列出最近记录、汇总统计',
   category: 'life',
   requiresPermission: [],
+  // add 会追加记录；list/summary 只读，按参数覆盖为只读契约，避免被当成重复副作用合并。
+  sideEffects: LOCAL_APPEND_CONTRACT,
+  describeCall(args) {
+    const action = args && typeof args === 'object' ? (args as { action?: unknown }).action : undefined;
+    return action === 'add' ? {} : { risk: 'read', idempotent: true, reversible: 'none' };
+  },
   parameters: {
     type: 'object',
     properties: {

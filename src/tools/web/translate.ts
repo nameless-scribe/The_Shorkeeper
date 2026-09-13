@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../types';
+import { READ_ONLY_CONTRACT } from '../contract';
 
 interface MyMemoryResponse {
   responseData?: { translatedText?: string };
@@ -11,6 +12,7 @@ export const translateTool: ToolDefinition = {
   description: '将文本翻译为目标语言（支持常见语言对，如 en↔zh）',
   category: 'web',
   requiresPermission: ['network'],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

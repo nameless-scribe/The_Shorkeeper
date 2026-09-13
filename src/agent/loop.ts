@@ -14,8 +14,15 @@ import {
 } from '../models/config';
 import { streamChat } from '../models/stream-chat';
 import type { ToolRegistry } from '../tools/registry';
-import type { ToolContext, ToolResult } from '../tools/types';
+import type {
+  ToolContext,
+  ToolDefinition,
+  ToolResult,
+  ToolSideEffectContract,
+} from '../tools/types';
 import { createToolError, normalizeToolResult } from '../tools/result';
+import { resolveCallContract, shouldSuppressDuplicateCall } from '../tools/contract';
+import { enforceToolEvidence } from '../tools/evidence';
 import { awaitWithAbort, createLinkedTimeoutSignal } from './abort';
 import { estimateTokens, truncateToTokenBudget } from './context-budget';
 
@@ -24,6 +31,8 @@ export const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 120_000;
 export const DEFAULT_TOOL_RESULT_CONTEXT_BUDGET_TOKENS = 8_000;
 export const DEFAULT_MAX_TOOL_CALLS_PER_ROUND = 20;
 const OMITTED_TOOL_RESULT = '[较早工具结果已省略]';
+const DUPLICATE_SIDE_EFFECT_NOTE =
+  '[重复调用已合并] 本轮此前已用完全相同的参数成功执行过该工具，为避免重复副作用未再次执行；以下为首次执行的结果。';
 
 export interface AgentLoopOptions {
   sessionId: string;
@@ -128,13 +137,27 @@ function parseToolArgs(raw: string): { args: unknown; error?: string } {
   }
 }
 
-async function executeToolCall(
+interface AuthorizedToolCall {
+  tool: ToolDefinition;
+  args: unknown;
+  contract: ToolSideEffectContract;
+}
+
+function isToolResult(value: AuthorizedToolCall | ToolResult): value is ToolResult {
+  return 'success' in value;
+}
+
+/**
+ * 解析参数并完成权限判定/用户确认。这一步只受 run 取消信号约束，
+ * 不计入工具执行超时：用户确认窗口允许 5 分钟，不能被 120 秒工具超时中断。
+ */
+async function authorizeToolCall(
   toolCall: OpenAIToolCall,
   ctx: ToolContext,
   registry: ToolRegistry,
   policy: PermissionPolicy,
   hooks?: Pick<AgentLoopOptions, 'onPermissionStart' | 'onPermissionEnd'>,
-): Promise<ToolResult> {
+): Promise<AuthorizedToolCall | ToolResult> {
   const tool = registry.get(toolCall.function.name);
   if (!tool) {
     return createToolError(`未知工具: ${toolCall.function.name}`, 'internal_error');
@@ -146,6 +169,7 @@ async function executeToolCall(
   }
 
   const args = parsed.args;
+  const contract = resolveCallContract(tool, args);
   const decision = checkPermission(tool, policy, args);
 
   if (decision === 'deny') {
@@ -159,7 +183,11 @@ async function executeToolCall(
     const activityId = hooks?.onPermissionStart?.(tool.name);
     let approved: boolean;
     try {
-      approved = await confirmPermission(tool.name, args, ctx.signal);
+      approved = await confirmPermission(tool.name, args, ctx.signal, {
+        runId: ctx.runId,
+        sessionId: ctx.sessionId,
+        risk: contract.risk,
+      });
     } catch (error) {
       if (activityId) {
         hooks?.onPermissionEnd?.(
@@ -185,7 +213,24 @@ async function executeToolCall(
     }
   }
 
-  return normalizeToolResult(await tool.execute(args, ctx));
+  return { tool, args, contract };
+}
+
+async function executeAuthorizedTool(
+  call: AuthorizedToolCall,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const result = normalizeToolResult(await call.tool.execute(call.args, ctx));
+  // 闭环第 5 步"验证"：声明产生文件产物的工具必须能读回产物，否则不算完成。
+  return enforceToolEvidence(result, call.contract, ctx.workspaceRoot);
+}
+
+function markDuplicateSideEffect(prior: ToolResult): ToolResult {
+  return {
+    ...prior,
+    output: prior.output ? `${DUPLICATE_SIDE_EFFECT_NOTE}\n${prior.output}` : DUPLICATE_SIDE_EFFECT_NOTE,
+    metadata: { ...prior.metadata, duplicateSuppressed: true },
+  };
 }
 
 export async function* runAgentLoop(
@@ -211,6 +256,8 @@ export async function* runAgentLoop(
   let messages = [...options.messages];
   let rounds = 0;
   const completedToolCalls = new Map<string, CompletedToolCall>();
+  /** 非幂等副作用工具在本轮 run 内已成功执行过的调用签名 → 首次结果 */
+  const completedSideEffects = new Map<string, ToolResult>();
 
   try {
   while (rounds < maxRounds) {
@@ -340,6 +387,11 @@ export async function* runAgentLoop(
 
       let result: ToolResult;
       const completed = completedToolCalls.get(callId);
+      const registeredTool = registry.get(toolName);
+      const suppressDuplicates = registeredTool && !parsedArgs.error
+        ? shouldSuppressDuplicateCall(resolveCallContract(registeredTool, parsedArgs.args))
+        : false;
+      const priorSideEffect = suppressDuplicates ? completedSideEffects.get(signature) : undefined;
       if (completed?.signature === signature) {
         result = {
           ...completed.result,
@@ -355,44 +407,63 @@ export async function* runAgentLoop(
         );
       } else if (parsedArgs.error) {
         result = createToolError(parsedArgs.error, 'invalid_arguments');
+      } else if (priorSideEffect) {
+        result = markDuplicateSideEffect(priorSideEffect);
       } else {
-        const toolTimeout = createLinkedTimeoutSignal(signal, toolTimeoutMs);
+        let authorized: AuthorizedToolCall | ToolResult;
         try {
-          result = await awaitWithAbort(
-            executeToolCall(
-              { ...toolCall, id: callId },
-              { ...toolCtx, signal: toolTimeout.signal },
-              registry,
-              policy,
-              {
-                onPermissionStart: options.onPermissionStart,
-                onPermissionEnd: options.onPermissionEnd,
-              },
-            ),
-            toolTimeout.signal,
+          authorized = await authorizeToolCall(
+            { ...toolCall, id: callId },
+            toolCtx,
+            registry,
+            policy,
+            {
+              onPermissionStart: options.onPermissionStart,
+              onPermissionEnd: options.onPermissionEnd,
+            },
           );
         } catch (error) {
-          result = createToolError(
-            toolTimeout.didTimeout()
-              ? '工具执行超时'
-              : signal?.aborted
-                ? '已取消'
-                : error instanceof Error
-                  ? error.message
-                  : String(error),
-            toolTimeout.didTimeout()
-              ? 'timeout'
-              : signal?.aborted
-                ? 'cancelled'
-                : undefined,
+          authorized = createToolError(
+            signal?.aborted ? '已取消' : error instanceof Error ? error.message : String(error),
+            signal?.aborted ? 'cancelled' : undefined,
           );
-        } finally {
-          toolTimeout.dispose();
+        }
+
+        if (isToolResult(authorized)) {
+          result = authorized;
+        } else {
+          const toolTimeout = createLinkedTimeoutSignal(signal, toolTimeoutMs);
+          try {
+            result = await awaitWithAbort(
+              executeAuthorizedTool(authorized, { ...toolCtx, signal: toolTimeout.signal }),
+              toolTimeout.signal,
+            );
+          } catch (error) {
+            result = createToolError(
+              toolTimeout.didTimeout()
+                ? '工具执行超时'
+                : signal?.aborted
+                  ? '已取消'
+                  : error instanceof Error
+                    ? error.message
+                    : String(error),
+              toolTimeout.didTimeout()
+                ? 'timeout'
+                : signal?.aborted
+                  ? 'cancelled'
+                  : undefined,
+            );
+          } finally {
+            toolTimeout.dispose();
+          }
         }
       }
 
       if (!completed) {
         completedToolCalls.set(callId, { signature, result });
+        if (suppressDuplicates && result.success && !priorSideEffect) {
+          completedSideEffects.set(signature, result);
+        }
       }
 
       yield ev.toolCallEnd(runId, callId, result);

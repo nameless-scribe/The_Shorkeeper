@@ -5,22 +5,57 @@ import {
 } from '../tools/schedule/schedule-tools';
 import { listScheduledTasks } from '../db/scheduled-tasks';
 import { normalizeToolResult } from '../tools/result';
+import type { ToolContext, ToolDefinition, ToolResult } from '../tools/types';
 import type { ScheduleReminderIntent } from './reminder-intent';
 import {
   defaultPermissionPolicy,
   resolveToolPermission,
 } from '../agent/permissions';
 
+export interface ReminderIntentContext {
+  runId?: string;
+  sessionId?: string;
+  /** 快捷路径绕过 Agent 主循环，由调用方据此把工具执行写入运行记录。 */
+  onToolStart?: (toolName: string, tool: ToolDefinition) => void;
+  onToolResult?: (toolName: string, result: ToolResult) => void;
+}
+
+async function runQuickPathTool(
+  tool: ToolDefinition,
+  args: unknown,
+  signal: AbortSignal | undefined,
+  context: ReminderIntentContext | undefined,
+): Promise<ToolResult> {
+  const toolCtx: ToolContext = {
+    sessionId: context?.sessionId ?? '',
+    workspaceRoot: '',
+    signal: signal ?? new AbortController().signal,
+    runId: context?.runId,
+  };
+  context?.onToolStart?.(tool.name, tool);
+  let result: ToolResult;
+  try {
+    result = normalizeToolResult(await tool.execute(args, toolCtx));
+  } catch (error) {
+    result = normalizeToolResult({
+      success: false,
+      output: '',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  context?.onToolResult?.(tool.name, result);
+  return result;
+}
+
 export async function executeScheduleReminderIntent(
   intent: Exclude<ScheduleReminderIntent, { triggered: false }>,
   signal?: AbortSignal,
+  context?: ReminderIntentContext,
 ): Promise<string> {
+  const permissionContext = { runId: context?.runId, sessionId: context?.sessionId };
+
   if (intent.action === 'list') {
-    const result = normalizeToolResult(await listScheduledTasksTool.execute({}, {
-      sessionId: '',
-      workspaceRoot: '',
-      signal: signal ?? new AbortController().signal,
-    }));
+    const result = await runQuickPathTool(listScheduledTasksTool, {}, signal, context);
     return result.success ? result.output : `查询失败：${result.error ?? '未知错误'}`;
   }
 
@@ -42,13 +77,11 @@ export async function executeScheduleReminderIntent(
       defaultPermissionPolicy(),
       args,
       signal,
+      permissionContext,
     );
     if (permission === 'deny') return '已取消删除定时任务。';
 
-    const result = normalizeToolResult(await deleteScheduledTaskTool.execute(
-      args,
-      { sessionId: '', workspaceRoot: '', signal: signal ?? new AbortController().signal },
-    ));
+    const result = await runQuickPathTool(deleteScheduledTaskTool, args, signal, context);
     return result.success ? result.output : `删除失败：${result.error ?? '未知错误'}`;
   }
 
@@ -82,14 +115,11 @@ export async function executeScheduleReminderIntent(
     defaultPermissionPolicy(),
     payload,
     signal,
+    permissionContext,
   );
   if (permission === 'deny') return '已取消创建定时提醒。';
 
-  const result = normalizeToolResult(await createScheduledTaskTool.execute(payload, {
-    sessionId: '',
-    workspaceRoot: '',
-    signal: signal ?? new AbortController().signal,
-  }));
+  const result = await runQuickPathTool(createScheduledTaskTool, payload, signal, context);
 
   if (!result.success) {
     return `创建定时提醒失败：${result.error ?? '未知错误'}`;

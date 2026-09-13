@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import type { ToolDefinition } from '../types';
+import { READ_ONLY_CONTRACT } from '../contract';
 import { buildPathNotFoundHint, enrichFsError, isEnoent } from './workspace-hints';
 import { resolveWorkspacePath } from './workspace-path';
 
@@ -8,6 +9,7 @@ export const listDirTool: ToolDefinition = {
   description: '列出工作区内指定目录的文件和子目录',
   category: 'file',
   requiresPermission: ['filesystem:read'],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

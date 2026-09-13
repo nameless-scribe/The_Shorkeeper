@@ -28,12 +28,40 @@ function toJsonSchema(input: unknown): JSONSchema {
   return { type: 'object', properties: {} };
 }
 
+interface McpToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+}
+
+/**
+ * 按 MCP 规范的 annotations 推导契约。未声明时视为中风险、不可撤销，但**不**启用重复调用合并：
+ * 无法确认幂等性的工具若被误合并，读操作会返回过期结果，比重复执行更危险。
+ */
+export function contractFromMcpAnnotations(
+  annotations: McpToolAnnotations | undefined,
+): ToolDefinition['sideEffects'] {
+  if (annotations?.readOnlyHint === true) {
+    return { risk: 'read', idempotent: true, supportsPreview: false, reversible: 'none', evidence: 'output' };
+  }
+  return {
+    risk: 'medium',
+    idempotent: annotations?.idempotentHint !== false,
+    supportsPreview: false,
+    reversible: 'none',
+    evidence: 'output',
+  };
+}
+
 function mcpToolToDefinition(
   server: McpServerInfo,
-  tool: { name: string; description?: string; inputSchema?: unknown },
+  tool: { name: string; description?: string; inputSchema?: unknown; annotations?: unknown },
   client: Client,
 ): ToolDefinition {
   const registeredName = mcpToolName(server.id, tool.name);
+  const annotations = tool.annotations && typeof tool.annotations === 'object'
+    ? (tool.annotations as McpToolAnnotations)
+    : undefined;
 
   return {
     name: registeredName,
@@ -41,6 +69,7 @@ function mcpToolToDefinition(
     parameters: toJsonSchema(tool.inputSchema),
     category: 'mcp',
     requiresPermission: ['mcp'],
+    sideEffects: contractFromMcpAnnotations(annotations),
     execute: async (args: unknown, ctx: ToolContext): Promise<ToolResult> => {
       if (ctx.signal.aborted) {
         return { success: false, output: '', error: '已取消' };

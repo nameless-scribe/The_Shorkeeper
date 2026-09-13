@@ -19,6 +19,14 @@ import {
   listRunDiagnostics,
 } from '../../src/agent/run-observability';
 import {
+  getTaskRun,
+  listApprovals,
+  listRunArtifacts,
+  listTaskRunSteps,
+  listTaskRuns,
+} from '../../src/db/repositories/task-runs';
+import type { TaskRunDetail, TaskRunInfo } from '../../src/shared/types';
+import {
   broadcastAgentEvent,
   onRunError,
   onRunFinished,
@@ -127,6 +135,34 @@ export function registerAgentIpc() {
       return listRunDiagnostics(limit);
     },
   );
+
+  // 持久化的运行记录：与内存诊断不同，应用重启后仍可解释每次 run 的状态和产物。
+  ipcMain.handle(
+    'agent:runHistory',
+    (_event, query?: { sessionId?: unknown; limit?: unknown }): TaskRunInfo[] => {
+      if (query === undefined) return listTaskRuns();
+      const input = requireRecord(query, '运行记录参数');
+      const sessionId = input.sessionId === undefined
+        ? undefined
+        : requireString(input.sessionId, 'sessionId', { maxLength: 200 }).trim();
+      const limit = input.limit === undefined
+        ? undefined
+        : Math.floor(requireFiniteNumber(input.limit, 'limit', { min: 1, max: 500 }));
+      return listTaskRuns({ sessionId, limit });
+    },
+  );
+
+  ipcMain.handle('agent:runDetail', (_event, rawRunId: unknown): TaskRunDetail | null => {
+    const runId = requireString(rawRunId, 'runId', { maxLength: 200 }).trim();
+    const run = getTaskRun(runId);
+    if (!run) return null;
+    return {
+      run,
+      steps: listTaskRunSteps(runId),
+      artifacts: listRunArtifacts(runId),
+      approvals: listApprovals({ runId }),
+    };
+  });
 }
 
 export { isSessionRunActive } from '../../src/agent/session-run-lock';

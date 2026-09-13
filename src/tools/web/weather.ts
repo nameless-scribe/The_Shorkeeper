@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../types';
+import { READ_ONLY_CONTRACT } from '../contract';
 import { normalizeCityForWeather } from './city-normalize';
 
 interface GeocodePlace {
@@ -67,6 +68,7 @@ export const weatherTool: ToolDefinition = {
   description: '查询指定城市的当前天气与未来 3 日预报（请传入城市名，如「大连市」「上海」）',
   category: 'web',
   requiresPermission: ['network'],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

@@ -8,6 +8,11 @@ import { notifyTasksChanged } from '../../scheduler/task-events';
 import { formatScheduleLabel, parseRunAtIso } from '../../scheduler/format';
 import type { ScheduleKind } from '../../shared/types';
 import type { ToolDefinition } from '../types';
+import { READ_ONLY_CONTRACT } from '../contract';
+import {
+  cancelCommitmentForScheduledTask,
+  createCommitment,
+} from '../../db/repositories/commitments';
 
 function validateCron(expression: string): string | null {
   const trimmed = expression.trim();
@@ -34,6 +39,13 @@ export const createScheduledTaskTool: ToolDefinition = {
     '创建定时提醒。区分两种：recurring=每天/周期性重复；once=指定时间只提醒一次。action 固定为 reminder 系统通知。',
   category: 'life',
   requiresPermission: ['automation'],
+  sideEffects: {
+    risk: 'medium',
+    idempotent: false,
+    supportsPreview: false,
+    reversible: 'manual',
+    evidence: 'output',
+  },
   parameters: {
     type: 'object',
     properties: {
@@ -60,7 +72,7 @@ export const createScheduledTaskTool: ToolDefinition = {
     },
     required: ['name', 'schedule_kind', 'message'],
   },
-  async execute(args) {
+  async execute(args, ctx) {
     const raw = args as Record<string, unknown>;
     const name = typeof raw.name === 'string' ? raw.name : undefined;
     const message = typeof raw.message === 'string' ? raw.message : undefined;
@@ -155,11 +167,26 @@ export const createScheduledTaskTool: ToolDefinition = {
         enabled: true,
       });
 
+      // 助理答应了"到点提醒你"，这本身是一条承诺；一次性提醒到期弹窗后自动完成。
+      try {
+        createCommitment({
+          title: `提醒：${task.name}`,
+          owner: 'assistant',
+          dueAt: task.runAt,
+          scheduledTaskId: task.id,
+          sourceSessionId: ctx?.sessionId || null,
+          sourceRunId: ctx?.runId ?? null,
+        });
+      } catch (error) {
+        console.warn('[schedule] 助理承诺记录失败:', error instanceof Error ? error.message : error);
+      }
+
       notifyTasksChanged();
 
       return {
         success: true,
         output: `已创建${scheduleKind === 'once' ? '一次性' : '周期性'}任务「${task.name}」（id: ${task.id}），${formatScheduleLabel(task)}。可在日程面板查看。`,
+        metadata: { taskId: task.id },
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -173,6 +200,7 @@ export const listScheduledTasksTool: ToolDefinition = {
   description: '列出所有定时任务，用于确认已有任务或获取 id 以便删除',
   category: 'life',
   requiresPermission: [],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {},
@@ -187,6 +215,13 @@ export const deleteScheduledTaskTool: ToolDefinition = {
   description: '按 id 删除定时任务。删除前可先 list_scheduled_tasks 获取 id。',
   category: 'life',
   requiresPermission: ['automation'],
+  sideEffects: {
+    risk: 'medium',
+    idempotent: true,
+    supportsPreview: false,
+    reversible: 'none',
+    evidence: 'output',
+  },
   parameters: {
     type: 'object',
     properties: {
@@ -207,6 +242,11 @@ export const deleteScheduledTaskTool: ToolDefinition = {
     }
 
     deleteScheduledTask(id.trim());
+    try {
+      cancelCommitmentForScheduledTask(id.trim());
+    } catch (error) {
+      console.warn('[schedule] 取消助理承诺失败:', error instanceof Error ? error.message : error);
+    }
     notifyTasksChanged();
 
     return { success: true, output: `已删除定时任务「${target.name}」。` };

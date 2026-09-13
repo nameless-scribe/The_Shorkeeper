@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../types';
+import { READ_ONLY_CONTRACT } from '../contract';
 import { listIndexedDocuments } from '../../rag/documents';
 import {
   formatDocumentCatalogForPrompt,
@@ -12,6 +13,7 @@ export const searchKnowledgeTool: ToolDefinition = {
     '检索用户在设置中导入的知识库文档（RAG）。无 query 时列出已导入文档；有 query 时按语义搜索相关片段。讨论业务需求、功能清单、OA 等内容时应优先调用。',
   category: 'memory',
   requiresPermission: [],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

@@ -8,6 +8,7 @@ import {
 import type { UserTaskInfo } from '../../src/shared/types';
 import { setUserTaskChangeHandler } from '../../src/tasks/user-task-events';
 import { syncUserTaskStatusToXlsx } from '../../src/tasks/xlsx-task-sync';
+import { syncCommitmentWithTaskStatus } from '../../src/db/repositories/commitments';
 import { safeSendToWebContents } from '../windows/web-contents';
 import { requireEnum, requireRecord, requireString } from '../../src/shared/ipc-validation';
 
@@ -62,6 +63,13 @@ export function registerUserTasksIpc(): void {
       };
       const taskId = requireString(id, '用户任务 ID', { maxLength: 200 });
       const task = updateUserTask(taskId, normalized);
+      if (task && normalized.status) {
+        try {
+          syncCommitmentWithTaskStatus(task.id, normalized.status, null);
+        } catch (error) {
+          console.error('[userTasks] 承诺同步失败:', error);
+        }
+      }
       if (task && normalized.status && task.sourceFile) {
         void syncUserTaskStatusToXlsx(taskId).catch((error) => {
           console.error('[userTasks] 回写 XLSX 失败:', error);

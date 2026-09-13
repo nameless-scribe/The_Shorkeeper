@@ -9,9 +9,11 @@ import {
   type UserTaskStatus,
 } from '../../db/user-tasks';
 import { notifyUserTasksChanged } from '../../tasks/user-task-events';
+import { syncCommitmentWithTaskStatus } from '../../db/repositories/commitments';
 import { parseXlsxFile } from '../doc/parse-xlsx';
 import { syncUserTaskStatusToXlsx } from '../../tasks/xlsx-task-sync';
 import type { ToolDefinition } from '../types';
+import { LOCAL_APPEND_CONTRACT, LOCAL_UPSERT_CONTRACT, READ_ONLY_CONTRACT } from '../contract';
 
 const STATUS_ALIASES: Record<string, UserTaskStatus> = {
   pending: 'pending',
@@ -72,6 +74,7 @@ export const importTasksFromXlsxTool: ToolDefinition = {
     '从工作区 Excel (.xlsx) 导入或合并用户待办。自动识别表头中的模块/任务/状态列；同文件同行号已存在则更新。',
   category: 'life',
   requiresPermission: ['filesystem:read'],
+  sideEffects: LOCAL_UPSERT_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -195,11 +198,85 @@ export const importTasksFromXlsxTool: ToolDefinition = {
   },
 };
 
+const USER_TASK_STATUSES: readonly UserTaskStatus[] = ['pending', 'in_progress', 'done', 'cancelled'];
+const MAX_TASK_TITLE_CHARS = 500;
+const MAX_TASK_NOTES_CHARS = 10_000;
+
+export const createUserTaskTool: ToolDefinition = {
+  name: 'create_user_task',
+  description:
+    '直接创建一条用户待办（不需要 Excel）。用户说"帮我记一下要做…""加个待办…"时使用；可附截止日期、模块和备注。',
+  category: 'life',
+  requiresPermission: [],
+  sideEffects: LOCAL_APPEND_CONTRACT,
+  parameters: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: '待办标题，简短明确' },
+      due_at: { type: 'string', description: '截止日期 YYYY-MM-DD（可选）' },
+      module: { type: 'string', description: '所属模块/项目（可选）' },
+      notes: { type: 'string', description: '备注（可选）' },
+      status: {
+        type: 'string',
+        enum: ['pending', 'in_progress'],
+        description: '初始状态，默认 pending',
+      },
+    },
+    required: ['title'],
+  },
+  async execute(args) {
+    const raw = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
+    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+    if (!title) {
+      return { success: false, output: '', error: '缺少 title 参数' };
+    }
+    if (title.length > MAX_TASK_TITLE_CHARS) {
+      return { success: false, output: '', error: `title 超过 ${MAX_TASK_TITLE_CHARS} 字上限` };
+    }
+
+    const status = raw.status === undefined ? 'pending' : raw.status;
+    if (status !== 'pending' && status !== 'in_progress') {
+      return { success: false, output: '', error: `新建待办的状态只能是 pending 或 in_progress` };
+    }
+
+    let dueAt: string | null = null;
+    if (raw.due_at !== undefined && raw.due_at !== null && raw.due_at !== '') {
+      if (typeof raw.due_at !== 'string') {
+        return { success: false, output: '', error: 'due_at 须为 YYYY-MM-DD' };
+      }
+      const normalized = normalizeImportedDueAt(raw.due_at);
+      if (normalized === undefined) {
+        return { success: false, output: '', error: 'due_at 须为 YYYY-MM-DD' };
+      }
+      dueAt = normalized;
+    }
+
+    const moduleName = typeof raw.module === 'string' && raw.module.trim() ? raw.module.trim().slice(0, 200) : null;
+    const notes = typeof raw.notes === 'string' && raw.notes.trim()
+      ? raw.notes.trim().slice(0, MAX_TASK_NOTES_CHARS)
+      : null;
+
+    try {
+      const task = createUserTask({ title, status, dueAt, module: moduleName, notes });
+      notifyUserTasksChanged();
+      return {
+        success: true,
+        output: `已创建待办。\n${formatUserTaskList([task])}`,
+        metadata: { taskId: task.id },
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, output: '', error: message };
+    }
+  },
+};
+
 export const listUserTasksTool: ToolDefinition = {
   name: 'list_user_tasks',
   description: '列出用户待办任务，可按状态或模块筛选',
   category: 'life',
   requiresPermission: [],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -223,6 +300,7 @@ export const updateUserTaskTool: ToolDefinition = {
   description: '更新用户待办的状态、备注或截止日期；若任务来自 Excel 且表含状态列，会尝试回写源文件',
   category: 'life',
   requiresPermission: ['filesystem:write'],
+  sideEffects: LOCAL_UPSERT_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -254,7 +332,7 @@ export const updateUserTaskTool: ToolDefinition = {
     }
 
     const requestedStatus = typeof raw.status === 'string' ? raw.status : undefined;
-    if (requestedStatus && !['pending', 'in_progress', 'done', 'cancelled'].includes(requestedStatus)) {
+    if (requestedStatus && !USER_TASK_STATUSES.includes(requestedStatus as UserTaskStatus)) {
       return { success: false, output: '', error: `无效状态: ${requestedStatus}` };
     }
     const requestedDueAt = typeof raw.due_at === 'string'
@@ -300,10 +378,24 @@ export const updateUserTaskTool: ToolDefinition = {
       }
     }
 
+    let commitmentNote = '';
+    if (requestedStatus) {
+      try {
+        const commitment = syncCommitmentWithTaskStatus(
+          updated.id,
+          requestedStatus as UserTaskStatus,
+          ctx.runId ?? null,
+        );
+        if (commitment) commitmentNote = `\n关联承诺已同步为 ${commitment.status}。`;
+      } catch (error) {
+        console.warn('[user-task] 承诺同步失败:', error instanceof Error ? error.message : error);
+      }
+    }
+
     notifyUserTasksChanged();
     return {
       success: true,
-      output: `已更新任务。\n${formatUserTaskList([updated])}${syncNote}`,
+      output: `已更新任务。\n${formatUserTaskList([updated])}${syncNote}${commitmentNote}`,
     };
   },
 };

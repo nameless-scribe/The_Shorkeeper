@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import type { ToolDefinition } from '../types';
+import { READ_ONLY_CONTRACT } from '../contract';
 import { buildFileArtifact, withFileArtifact } from './artifact';
 import { buildPathNotFoundHint, enrichFsError, isEnoent } from './workspace-hints';
 import { resolveWorkspacePath } from './workspace-path';
@@ -10,6 +11,7 @@ export const readFileTool: ToolDefinition = {
   description: '读取工作区内的文本文件内容',
   category: 'file',
   requiresPermission: ['filesystem:read'],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

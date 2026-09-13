@@ -32,6 +32,10 @@ import { parseScheduleReminderIntent } from '../scheduler/reminder-intent';
 import { executeScheduleReminderIntent } from '../scheduler/reminder-handler';
 import { createRunLifecycle } from './run-lifecycle';
 import { createRunTelemetry } from './run-observability';
+import { createRunRecorder } from './run-record';
+import { acknowledgeInterruptedRuns } from './run-recovery';
+import { resolveToolContract } from '../tools/contract';
+import type { TaskRunKind } from '../shared/types';
 import {
   DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
   estimateTokens,
@@ -46,11 +50,19 @@ async function* streamText(runId: string, text: string): AsyncGenerator<AgUiEven
   }
 }
 
+export interface RunOrchestratorOptions {
+  persistMessages?: boolean;
+  /** 运行来源：普通聊天、定时任务或语音通话；写入 task_runs.kind */
+  kind?: TaskRunKind;
+  /** 触发来源引用（如定时任务 id） */
+  triggerRef?: string | null;
+}
+
 export async function* runOrchestrator(
   userMessage: string,
   sessionId?: string,
   signal?: AbortSignal,
-  options?: { persistMessages?: boolean },
+  options?: RunOrchestratorOptions,
 ): AsyncGenerator<AgUiEvent> {
   const persistMessages = options?.persistMessages !== false;
   const runId = createRunId();
@@ -62,12 +74,20 @@ export async function* runOrchestrator(
     runId,
     sessionId: session?.id ?? sessionId ?? 'unknown',
   });
+  const recorder = createRunRecorder({
+    runId,
+    sessionId: session?.id ?? sessionId ?? 'unknown',
+    kind: options?.kind ?? 'chat',
+    triggerRef: options?.triggerRef ?? null,
+  });
+  let assistantMessageId: string | null = null;
   const transition = (
     phase: Parameters<typeof lifecycle.transition>[0],
     reason?: Parameters<typeof lifecycle.transition>[1],
   ) => {
     const snapshot = lifecycle.transition(phase, reason);
     telemetry.recordPhase(snapshot.phase);
+    recorder.phase(snapshot.phase);
     return snapshot;
   };
   const finishRun = (
@@ -77,11 +97,13 @@ export async function* runOrchestrator(
   ) => {
     if (!lifecycle.isTerminal()) transition(phase, reason);
     telemetry.finish(phase, reason, errorMessage);
+    recorder.finish(phase, reason ?? phase, errorMessage, assistantMessageId);
   };
   const persistMessage = (role: 'user' | 'assistant', content: string): void => {
     const activityId = telemetry.recordPersistenceStart(`${role}_message`);
     try {
-      insertMessage(session?.id ?? sessionId ?? 'unknown', role, content);
+      const message = insertMessage(session?.id ?? sessionId ?? 'unknown', role, content);
+      if (role === 'assistant') assistantMessageId = message?.id ?? null;
       telemetry.recordPersistenceEnd(activityId, 'succeeded');
     } catch (error) {
       telemetry.recordPersistenceEnd(
@@ -100,11 +122,13 @@ export async function* runOrchestrator(
   }
 
   yield ev.runStarted(runId, session.id);
+  recorder.start();
   transition('running');
 
   try {
     const modelRuntime = loadModelRuntimeConfig();
     telemetry.setModel(modelRuntime.model);
+    recorder.setModel(modelRuntime.model);
     await awaitPendingSessionWork(session.id, 5000, signal);
     if (signal?.aborted) {
       finishRun('cancelled', 'cancelled', '已取消');
@@ -140,7 +164,23 @@ export async function* runOrchestrator(
 
     const scheduleIntent = parseScheduleReminderIntent(userMessage);
     if (scheduleIntent.triggered) {
-      const reply = await executeScheduleReminderIntent(scheduleIntent, signal);
+      let quickStep = 0;
+      let quickCallId = '';
+      const reply = await executeScheduleReminderIntent(scheduleIntent, signal, {
+        runId,
+        sessionId: session.id,
+        onToolStart: (toolName, tool) => {
+          quickCallId = `quick-${++quickStep}`;
+          transition('waiting_tool');
+          telemetry.recordToolStart(quickCallId, toolName);
+          recorder.stepStart(quickCallId, toolName, resolveToolContract(tool));
+        },
+        onToolResult: (toolName, result) => {
+          telemetry.recordToolEnd(quickCallId, result.success, result.error, result.errorCategory);
+          recorder.stepEnd(quickCallId, toolName, result);
+          transition('running');
+        },
+      });
       if (signal?.aborted) {
         finishRun('cancelled', 'cancelled', '已取消');
         yield ev.runError(runId, '已取消', session.id);
@@ -187,6 +227,7 @@ export async function* runOrchestrator(
       skillWarnings: registryResolution.skillWarnings,
       signal,
       maxTokens: systemBudget,
+      runKind: options?.kind ?? 'chat',
     });
     const historyBudget = Math.max(1, textBudget - systemParts.budget.estimatedTokens);
     const budgetedHistory = trimMessagesToTokenBudget(rawHistory, historyBudget);
@@ -213,6 +254,7 @@ export async function* runOrchestrator(
     const policy = buildPermissionPolicy();
 
     let assistantText = '';
+    const toolNamesByCallId = new Map<string, string>();
 
     for await (const event of runAgentLoop({
       sessionId: session.id,
@@ -227,9 +269,14 @@ export async function* runOrchestrator(
       onModelRoundStart: (round) => telemetry.recordModelRoundStart(round),
       onModelRoundEnd: (round, status, errorMessage) =>
         telemetry.recordModelRoundEnd(round, status, errorMessage),
-      onPermissionStart: (toolName) => telemetry.recordPermissionStart(toolName),
-      onPermissionEnd: (activityId, status, errorMessage) =>
-        telemetry.recordPermissionEnd(activityId, status, errorMessage),
+      onPermissionStart: (toolName) => {
+        recorder.waitingApproval();
+        return telemetry.recordPermissionStart(toolName);
+      },
+      onPermissionEnd: (activityId, status, errorMessage) => {
+        recorder.phase('waiting_tool');
+        telemetry.recordPermissionEnd(activityId, status, errorMessage);
+      },
     })) {
       if (event.type === 'text_delta') {
         assistantText += event.delta;
@@ -247,6 +294,8 @@ export async function* runOrchestrator(
 
       if (event.type === 'tool_call_start') {
         telemetry.recordToolStart(event.callId, event.name);
+        const tool = registry.get(event.name);
+        recorder.stepStart(event.callId, event.name, tool ? resolveToolContract(tool) : undefined);
       } else if (event.type === 'tool_call_end') {
         telemetry.recordToolEnd(
           event.callId,
@@ -254,15 +303,24 @@ export async function* runOrchestrator(
           event.result.error,
           event.result.errorCategory,
         );
+        recorder.stepEnd(event.callId, toolNamesByCallId.get(event.callId) ?? 'unknown', event.result);
       } else if (event.type === 'usage') {
         telemetry.recordUsage(event.promptTokens, event.completionTokens, event.cachedTokens);
-        recordTokenUsage({
-          sessionId: session.id,
-          model: modelRuntime.model,
-          promptTokens: event.promptTokens,
-          completionTokens: event.completionTokens,
-          cachedTokens: event.cachedTokens,
-        });
+        try {
+          recordTokenUsage({
+            sessionId: session.id,
+            model: modelRuntime.model,
+            promptTokens: event.promptTokens,
+            completionTokens: event.completionTokens,
+            cachedTokens: event.cachedTokens,
+          });
+        } catch (error) {
+          // 用量统计失败不应把一次成功的对话标成错误。
+          console.warn('[agent] token 用量写入失败:', error instanceof Error ? error.message : error);
+        }
+      }
+      if (event.type === 'tool_call_start') {
+        toolNamesByCallId.set(event.callId, event.name);
       }
 
       yield event;
@@ -298,6 +356,10 @@ export async function* runOrchestrator(
     }
 
     finishRun('finished', 'finished');
+    if (systemParts.interruptedRunId) {
+      // 中断说明已经随本轮成功回复送达用户，之后不再注入（连同更早的中断记录）。
+      acknowledgeInterruptedRuns(session.id);
+    }
     yield ev.runFinished(runId);
 
     if (persistMessages) {

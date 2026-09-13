@@ -77,6 +77,13 @@ pnpm db:seed
 | `0013_rag_summary.sql` | 文档摘要与目录字段 |
 | `0014_rag_fts_trigram.sql` | 使用 trigram tokenizer 重建 RAG FTS 索引 |
 | `0015_rag_doc_embedding.sql` | 文档级 embedding |
+| `0016_rag_lifecycle.sql` | 文档生命周期状态 |
+| `0017_rag_document_versions.sql` | 文档身份与版本链 |
+| `0018_rag_index_config.sql` | 分块配置记录 |
+| `0019_session_assistant_mode.sql` | 会话工作模式 |
+| `0020_memory_candidates.sql` | 记忆候选队列 |
+| `0021_task_runs.sql` | `task_runs`、`task_run_steps`、`artifacts`、`approvals`（P0 闭环骨架） |
+| `0022_goals_commitments.sql` | `goals`、`commitments`、`briefings`，`user_tasks.goal_id`（P0 每日管家） |
 
 打包时 migration 以 `extraResources/db-migrations/` 形式随安装包分发；开发态直接读 `src/db/migrations/`。
 
@@ -107,6 +114,23 @@ pnpm db:seed
 | `mcp_servers` | MCP 服务配置 |
 | `bookkeeping_entries` | 记账记录 |
 | `session_summaries` | 长会话压缩摘要 |
+| `user_tasks` | 用户待办（Excel 导入或 `create_user_task` 直接创建） |
+| `memory_candidates` | 待确认的记忆候选 |
+| `task_runs` | 每次 Agent run 的持久化记录：来源、阶段、终态、模型、回复消息 id、步骤统计 |
+| `task_run_steps` | run 内每次工具调用：顺序、工具名、风险等级、幂等声明、状态与错误分类 |
+| `artifacts` | 工具产物证据：工作区相对路径、大小、SHA-256，关联 run 与步骤 |
+| `approvals` | 权限确认记录：工具、参数摘要、风险等级、结论与决定方式（用户/超时/中止/窗口关闭/启动收口） |
+| `goals` | 中长期目标：状态 `active / paused / done / dropped`、优先级、目标日期；待办和承诺通过 `goal_id` 分组 |
+| `commitments` | 承诺：`owner = user` 必挂一条待办（`task_id`），`owner = assistant` 指向提醒（`scheduled_task_id`）；状态 `proposed / open / done / missed / cancelled`，完成时记录 `evidence_run_id` |
+| `briefings` | 每日简报记录，`(brief_date, kind)` 唯一，保证早/晚简报每天只生成一次 |
+
+### 运行记录的生命周期
+
+- `task_runs.phase` 取值：`created`、`running`、`waiting_tool`、`waiting_approval`、`finalizing`、`finished`、`cancelled`、`error`、`interrupted`。
+- 终态只能由 run 自身收口一次；之后的迟到事件不会改写终态。
+- 应用启动时 `reconcileInterruptedRuns()` 把所有非终态 run 标为 `interrupted`（`terminal_reason = process_exit`），运行中的步骤标为 `interrupted`，pending 审批标为 `interrupted / startup`。
+- 下一次同会话对话会注入“上次运行中断”说明；只有那一轮成功产生回复后才写入 `acknowledged_at`，之后不再注入。若那一轮本身失败，说明会保留到再下一轮。
+- 记录写入失败不会影响 run 本身：记录器在首次失败后停止本次 run 的持久化并打印告警。
 
 ### 查看长期记忆示例
 

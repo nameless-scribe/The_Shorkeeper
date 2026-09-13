@@ -9,7 +9,8 @@ const REQUIRED_TABLES = [
   'sessions', 'messages', 'app_settings', 'user_profile', 'long_term_memory',
   'worldbook_entries', 'token_usage', 'scheduled_tasks', 'documents',
   'document_chunks', 'mcp_servers', 'bookkeeping_entries', 'session_summaries',
-  'user_tasks',
+  'user_tasks', 'task_runs', 'task_run_steps', 'artifacts', 'approvals',
+  'goals', 'commitments', 'briefings',
 ];
 
 const FTS_EXPECTATIONS: Record<string, { table: string; tokenizer?: string }> = {

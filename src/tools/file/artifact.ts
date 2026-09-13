@@ -9,6 +9,7 @@ import { isImportantWorkspacePath, workspaceBackupPath } from '../../workspace/r
 export async function buildFileArtifact(
   workspaceRoot: string,
   relativePath: string,
+  options?: { sha256?: string },
 ): Promise<WorkspaceAttachment> {
   const absolute = resolveWorkspacePath(workspaceRoot, relativePath);
   const stat = await fs.stat(absolute);
@@ -16,6 +17,7 @@ export async function buildFileArtifact(
     relativePath: relativePath.replace(/\\/g, '/'),
     originalName: path.basename(relativePath),
     size: stat.size,
+    sha256: options?.sha256 ?? (await fileDigest(absolute)),
   };
 }
 
@@ -93,12 +95,13 @@ export async function writeWorkspaceFileAtomically(
 
     await fs.rename(temporaryPath, absolute);
     committed = true;
-    const artifact = await buildFileArtifact(workspaceRoot, relativePath);
+    const readBackDigest = await fileDigest(absolute);
+    const artifact = await buildFileArtifact(workspaceRoot, relativePath, { sha256: readBackDigest });
 
     if (artifact.size !== temporaryStat.size) {
       throw new Error('生成文件校验失败：文件大小发生变化');
     }
-    if (await fileDigest(absolute) !== temporaryDigest) {
+    if (readBackDigest !== temporaryDigest) {
       throw new Error('生成文件校验失败：写入后读回内容不一致');
     }
     if (backupCreated) await fs.rm(backupPath, { force: true });

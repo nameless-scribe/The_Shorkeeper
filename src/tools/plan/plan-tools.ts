@@ -1,5 +1,6 @@
 import { setRunPlan, type AgentPlanItem, type AgentPlanItemStatus } from '../../agent/plan-state';
 import type { ToolDefinition } from '../types';
+import { LOCAL_UPSERT_CONTRACT } from '../contract';
 
 const VALID_STATUSES = new Set<AgentPlanItemStatus>([
   'pending',
@@ -40,6 +41,7 @@ export const updateAgentPlanTool: ToolDefinition = {
     '更新当前任务的执行计划（覆盖式）。复杂多步任务（读文件、分析、写回）应先列出步骤，每完成一步后更新状态。',
   category: 'skill',
   requiresPermission: [],
+  sideEffects: LOCAL_UPSERT_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

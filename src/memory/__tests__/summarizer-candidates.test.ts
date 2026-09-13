@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   createMemoryCandidate: vi.fn(() => undefined),
   hasRejectedMemoryFact: vi.fn(() => false),
   markExtractedUpToMessageId: vi.fn(),
+  proposeCommitments: vi.fn((..._args: unknown[]) => ({ proposed: 0, skippedLowConfidence: 0, skippedDuplicate: 0 })),
 }));
 
 vi.mock('../../db/repositories/messages', () => ({
@@ -50,6 +51,10 @@ vi.mock('../../db/repositories/memory-candidates', () => ({
   createMemoryCandidate: state.createMemoryCandidate,
   hasRejectedMemoryFact: state.hasRejectedMemoryFact,
 }));
+vi.mock('../commitment-extraction', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../commitment-extraction')>();
+  return { ...actual, proposeCommitmentsFromDrafts: (...args: unknown[]) => state.proposeCommitments(...args) };
+});
 
 import { completeChat } from '../../models/complete-chat';
 import { extractMemoriesFromSession, shouldAutoExtractMemories } from '../summarizer';
@@ -96,6 +101,33 @@ describe('summarizer candidate boundary', () => {
       category: 'relationship',
       sourceSessionId: 'session-1',
     }));
+  });
+
+  it('routes commitment items to the proposal queue and keeps them out of memory facts', async () => {
+    state.proposeCommitments.mockClear();
+    state.reply = JSON.stringify([
+      { key: 'user.preference.drink', content: '用户喜欢拿铁', confidence: 0.95, reason: '明确' },
+      { type: 'commitment', title: '周五前把报告发给老板', due: '2026-09-18', promised_to: '老板', confidence: 0.9, reason: '明确' },
+    ]);
+
+    await expect(extractMemoriesFromSession('session-1')).resolves.toBe(1);
+    expect(state.upsertMemory).toHaveBeenCalledOnce();
+    expect(state.createMemoryCandidate).not.toHaveBeenCalled();
+    expect(state.proposeCommitments).toHaveBeenCalledOnce();
+    expect(state.proposeCommitments.mock.calls[0][0]).toEqual([
+      { title: '周五前把报告发给老板', due: '2026-09-18', promisedTo: '老板', confidence: 0.9, reason: '明确' },
+    ]);
+    expect(state.proposeCommitments.mock.calls[0][1]).toEqual({ sessionId: 'session-1' });
+  });
+
+  it('keeps memory extraction working when the commitment queue fails', async () => {
+    state.proposeCommitments.mockImplementationOnce(() => {
+      throw new Error('commitments table locked');
+    });
+    state.reply = JSON.stringify([
+      { key: 'user.preference.drink', content: '用户喜欢拿铁', confidence: 0.95, reason: '明确' },
+    ]);
+    await expect(extractMemoriesFromSession('session-1')).resolves.toBe(1);
   });
 
   it('keeps legacy output conservative by creating a candidate', async () => {

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import type { ToolDefinition } from '../types';
+import { WORKSPACE_WRITE_CONTRACT } from '../contract';
 import { withFileArtifact, writeWorkspaceFileAtomically } from './artifact';
 
 export const writeFileTool: ToolDefinition = {
@@ -7,6 +8,7 @@ export const writeFileTool: ToolDefinition = {
   description: '在工作区内创建或覆盖写入文本文件',
   category: 'file',
   requiresPermission: ['filesystem:write'],
+  sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

@@ -31,10 +31,14 @@ import {
 } from './schedule/schedule-tools';
 import { updateAgentPlanTool } from './plan/plan-tools';
 import {
+  createUserTaskTool,
   importTasksFromXlsxTool,
   listUserTasksTool,
   updateUserTaskTool,
 } from './tasks/user-task-tools';
+import { manageGoalsTool } from './tasks/goal-tools';
+import { manageCommitmentsTool } from './tasks/commitment-tools';
+import { buildDailyBriefTool, buildEveningReviewTool } from './tasks/steward-tools';
 
 let defaultRegistry: ToolRegistry | null = null;
 
@@ -66,8 +70,13 @@ export function createBuiltinRegistry(): ToolRegistry {
   registry.register(deleteScheduledTaskTool);
   registry.register(updateAgentPlanTool);
   registry.register(importTasksFromXlsxTool);
+  registry.register(createUserTaskTool);
   registry.register(listUserTasksTool);
   registry.register(updateUserTaskTool);
+  registry.register(manageGoalsTool);
+  registry.register(manageCommitmentsTool);
+  registry.register(buildDailyBriefTool);
+  registry.register(buildEveningReviewTool);
   return registry;
 }
 

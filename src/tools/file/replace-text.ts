@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition } from '../types';
+import { WORKSPACE_WRITE_CONTRACT } from '../contract';
 import { withFileArtifact, writeWorkspaceFileAtomically } from './artifact';
 import { resolveWorkspacePath } from './workspace-path';
 
@@ -21,6 +22,7 @@ export const replaceTextTool: ToolDefinition = {
   description: '在工作区文本文件中精确替换已知片段；匹配数量不符时拒绝写入',
   category: 'file',
   requiresPermission: ['filesystem:read', 'filesystem:write'],
+  sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

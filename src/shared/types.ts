@@ -29,6 +29,107 @@ export interface WorkspaceAttachment {
   relativePath: string;
   originalName: string;
   size: number;
+  /** 工具产物的完成证据：写入后读回计算的内容摘要 */
+  sha256?: string;
+}
+
+export type TaskRunKind = 'chat' | 'scheduled' | 'voice';
+
+export type TaskRunPhase =
+  | 'created'
+  | 'running'
+  | 'waiting_tool'
+  | 'waiting_approval'
+  | 'finalizing'
+  | 'finished'
+  | 'cancelled'
+  | 'error'
+  | 'interrupted';
+
+export interface TaskRunInfo {
+  id: string;
+  sessionId: string;
+  kind: TaskRunKind;
+  triggerRef: string | null;
+  phase: TaskRunPhase;
+  terminalReason: string | null;
+  errorSummary: string | null;
+  modelId: string | null;
+  assistantMessageId: string | null;
+  stepCount: number;
+  failedStepCount: number;
+  startedAt: number;
+  updatedAt: number;
+  terminalAt: number | null;
+  acknowledgedAt: number | null;
+}
+
+/** skipped：本轮内重复调用被合并，未实际执行。 */
+export type TaskRunStepStatus =
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'skipped'
+  | 'interrupted';
+
+export interface TaskRunStepInfo {
+  id: string;
+  runId: string;
+  callId: string;
+  seq: number;
+  toolName: string;
+  status: TaskRunStepStatus;
+  errorCategory: string | null;
+  errorSummary: string | null;
+  riskLevel: string | null;
+  idempotent: boolean;
+  startedAt: number;
+  endedAt: number | null;
+}
+
+export interface ArtifactInfo {
+  id: string;
+  runId: string;
+  stepId: string | null;
+  sessionId: string;
+  toolName: string;
+  relativePath: string;
+  originalName: string;
+  size: number;
+  sha256: string | null;
+  createdAt: number;
+}
+
+export type ApprovalStatus =
+  | 'pending'
+  | 'approved'
+  | 'denied'
+  | 'expired'
+  | 'cancelled'
+  | 'interrupted';
+
+/** error：确认流程本身出错（窗口不可用、IPC 失败），用户并未做出选择。 */
+export type ApprovalDecider = 'user' | 'timeout' | 'abort' | 'window_closed' | 'startup' | 'error';
+
+export interface ApprovalInfo {
+  id: string;
+  runId: string | null;
+  sessionId: string | null;
+  toolName: string;
+  argsSummary: string;
+  riskLevel: string;
+  status: ApprovalStatus;
+  decidedBy: ApprovalDecider | null;
+  requestedAt: number;
+  decidedAt: number | null;
+}
+
+export interface TaskRunDetail {
+  run: TaskRunInfo;
+  steps: TaskRunStepInfo[];
+  artifacts: ArtifactInfo[];
+  approvals: ApprovalInfo[];
 }
 
 export interface AgentSendPayload {
@@ -345,6 +446,75 @@ export interface UserTaskInfo {
   module: string | null;
   dueAt: string | null;
   notes: string | null;
+  goalId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type GoalStatus = 'active' | 'paused' | 'done' | 'dropped';
+
+export interface GoalInfo {
+  id: string;
+  title: string;
+  description: string | null;
+  status: GoalStatus;
+  priority: number;
+  targetDate: string | null;
+  createdAt: number;
+  updatedAt: number;
+  closedAt: number | null;
+}
+
+export interface GoalProgress {
+  totalTasks: number;
+  doneTasks: number;
+  openCommitments: number;
+}
+
+export type CommitmentOwner = 'user' | 'assistant';
+
+/** proposed：从对话中识别、尚未由用户确认；open：生效；missed：到期未完成，由晚间复盘标记。 */
+export type CommitmentStatus = 'proposed' | 'open' | 'done' | 'missed' | 'cancelled';
+
+export interface CommitmentInfo {
+  id: string;
+  goalId: string | null;
+  title: string;
+  owner: CommitmentOwner;
+  status: CommitmentStatus;
+  dueAt: number | null;
+  promisedTo: string | null;
+  sourceSessionId: string | null;
+  sourceRunId: string | null;
+  taskId: string | null;
+  scheduledTaskId: string | null;
+  evidenceRunId: string | null;
+  evidenceArtifactId: string | null;
+  lastFollowedUpAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  closedAt: number | null;
+}
+
+export interface DailyStewardSettingsInfo {
+  enabled: boolean;
+  /** HH:MM 本地时间 */
+  morningTime: string;
+  eveningTime: string;
+  /** 简报生成后是否弹一条标题提醒 */
+  popup: boolean;
+}
+
+export type BriefingKind = 'morning' | 'evening';
+export type BriefingStatus = 'generated' | 'delivered' | 'failed';
+
+export interface BriefingInfo {
+  id: string;
+  briefDate: string;
+  kind: BriefingKind;
+  runId: string | null;
+  status: BriefingStatus;
+  summary: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -412,6 +582,8 @@ export interface PermissionRequestPayload {
   requestId: string;
   toolName: string;
   args: unknown;
+  /** 工具声明的风险等级，供确认界面展示 */
+  risk?: 'read' | 'low' | 'medium' | 'high';
 }
 
 export interface PersonaSettingsInfo {

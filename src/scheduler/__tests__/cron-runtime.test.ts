@@ -35,6 +35,9 @@ vi.mock('../../db/scheduled-tasks', () => ({
   markTaskRun: vi.fn(),
 }));
 vi.mock('../task-events', () => ({ notifyTasksChanged: vi.fn() }));
+vi.mock('../../db/repositories/commitments', () => ({
+  completeCommitmentForScheduledTask: vi.fn(),
+}));
 vi.mock('../reminder-message', () => ({
   resolveReminderBody: state.resolveReminderBody,
 }));
@@ -129,6 +132,66 @@ describe('scheduled Agent runs', () => {
     expect(state.onRunError).toHaveBeenCalledOnce();
     expect(state.onRunFinished).not.toHaveBeenCalled();
     expect(isSessionRunActive('scheduled-session')).toBe(false);
+  });
+
+  it('pops a title-only notice after a system prompt finishes, but not after it fails', async () => {
+    state.runOrchestrator.mockReturnValue(events([
+      { type: 'run_started', runId: 'brief-run', sessionId: 'scheduled-session' },
+      { type: 'run_finished', runId: 'brief-run' },
+    ]));
+    await executeAgentPrompt(task, { prompt: '简报', popup_title: '早间简报已准备好' });
+    expect(state.showReminderPopup).toHaveBeenCalledWith('早间简报已准备好', expect.stringContaining('聊天窗口'));
+
+    state.showReminderPopup.mockClear();
+    state.runOrchestrator.mockReturnValue(events([
+      { type: 'run_started', runId: 'brief-error', sessionId: 'scheduled-session' },
+      { type: 'run_error', runId: 'brief-error', message: '模型超时' },
+    ]));
+    await executeAgentPrompt(task, { prompt: '简报', popup_title: '早间简报已准备好' });
+    expect(state.showReminderPopup).not.toHaveBeenCalled();
+
+    state.settings.proactivityEnabled = false;
+    state.runOrchestrator.mockReturnValue(events([
+      { type: 'run_started', runId: 'brief-quiet', sessionId: 'scheduled-session' },
+      { type: 'run_finished', runId: 'brief-quiet' },
+    ]));
+    await executeAgentPrompt(task, { prompt: '简报', popup_title: '早间简报已准备好' });
+    expect(state.showReminderPopup).not.toHaveBeenCalled();
+    state.settings.proactivityEnabled = true;
+  });
+
+  it('defers a quiet-hours-aware system prompt instead of running it', async () => {
+    vi.useFakeTimers();
+    try {
+      const now = new Date();
+      const pad = (value: number) => String(value).padStart(2, '0');
+      const start = `${pad((now.getHours() + 23) % 24)}:00`;
+      const end = `${pad((now.getHours() + 2) % 24)}:00`;
+      state.settings.quietHoursStart = start;
+      state.settings.quietHoursEnd = end;
+
+      await runScheduledTask({
+        ...task,
+        id: 'steward-morning',
+        actionPayload: JSON.stringify({ prompt: '简报', respect_quiet_hours: true }),
+      });
+      expect(state.runOrchestrator).not.toHaveBeenCalled();
+      expect(markTaskRun).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+      // Ordinary agent prompts ignore quiet hours.
+      state.runOrchestrator.mockReturnValue(events([
+        { type: 'run_started', runId: 'plain', sessionId: 'scheduled-session' },
+        { type: 'run_finished', runId: 'plain' },
+      ]));
+      await runScheduledTask({ ...task, id: 'plain-prompt' });
+      expect(state.runOrchestrator).toHaveBeenCalledOnce();
+    } finally {
+      stopScheduler();
+      vi.useRealTimers();
+      state.settings.quietHoursStart = '';
+      state.settings.quietHoursEnd = '';
+    }
   });
 });
 

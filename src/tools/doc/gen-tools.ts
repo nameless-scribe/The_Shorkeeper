@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition } from '../types';
+import { READ_ONLY_CONTRACT, WORKSPACE_WRITE_CONTRACT } from '../contract';
 import { buildFileArtifact, withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
 import { parseXlsxFile } from './parse-xlsx';
@@ -25,6 +26,7 @@ export const genMarkdownTool: ToolDefinition = {
   description: '在工作区生成 Markdown 文件',
   category: 'doc',
   requiresPermission: ['filesystem:write'],
+  sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -49,6 +51,7 @@ export const genDocxTool: ToolDefinition = {
   description: '在工作区生成 Word (.docx) 文档',
   category: 'doc',
   requiresPermission: ['filesystem:write'],
+  sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -102,6 +105,7 @@ export const readXlsxTool: ToolDefinition = {
   description: '读取工作区内的 Excel (.xlsx) 表格，返回 JSON（表头 + 数据行）',
   category: 'doc',
   requiresPermission: ['filesystem:read'],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -179,6 +183,7 @@ export const updateXlsxCellsTool: ToolDefinition = {
   description: '原位修改现有 Excel 工作簿中的指定单元格，并保留其他工作表、公式与格式',
   category: 'doc',
   requiresPermission: ['filesystem:read', 'filesystem:write'],
+  sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -291,6 +296,7 @@ export const genXlsxTool: ToolDefinition = {
   description: '在工作区生成 Excel (.xlsx) 表格',
   category: 'doc',
   requiresPermission: ['filesystem:write'],
+  sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -339,6 +345,7 @@ export const genPdfTool: ToolDefinition = {
   description: '在工作区生成简单 PDF 文档（纯文本）',
   category: 'doc',
   requiresPermission: ['filesystem:write'],
+  sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

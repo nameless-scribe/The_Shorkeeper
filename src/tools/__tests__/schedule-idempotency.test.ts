@@ -16,6 +16,11 @@ vi.mock('../../scheduler/task-events', () => ({
   notifyTasksChanged: notifyMock,
 }));
 
+vi.mock('../../db/repositories/commitments', () => ({
+  createCommitment: vi.fn(),
+  cancelCommitmentForScheduledTask: vi.fn(),
+}));
+
 import { createScheduledTaskTool } from '../schedule/schedule-tools';
 
 describe('create_scheduled_task idempotency', () => {

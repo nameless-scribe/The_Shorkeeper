@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../types';
+import { LOCAL_UPSERT_CONTRACT, READ_ONLY_CONTRACT } from '../contract';
 import { searchMemories, searchMemoriesWithEmbedding, saveMemory, upsertMemory, formatMemoriesForPrompt } from '../../memory/long-term';
 import { searchWorldbook, formatWorldbookForPrompt } from '../../memory/worldbook';
 
@@ -7,6 +8,7 @@ export const recallMemoryTool: ToolDefinition = {
   description: '按关键词检索长期记忆，用于回忆用户偏好、习惯或过往重要事实',
   category: 'memory',
   requiresPermission: [],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -42,6 +44,7 @@ export const searchWorldbookTool: ToolDefinition = {
   description: '搜索世界观 / 角色背景设定（Worldbook）条目',
   category: 'memory',
   requiresPermission: [],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
@@ -77,6 +80,7 @@ export const saveMemoryTool: ToolDefinition = {
   description: '将值得长期记住的用户相关事实写入记忆库',
   category: 'memory',
   requiresPermission: [],
+  sideEffects: LOCAL_UPSERT_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

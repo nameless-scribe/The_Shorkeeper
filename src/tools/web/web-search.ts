@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../types';
+import { READ_ONLY_CONTRACT } from '../contract';
 import { formatWebSearchOutput } from './search-providers/bocha';
 import { resolveWebSearchProvider, webSearchNotConfiguredMessage } from './search-providers';
 
@@ -8,6 +9,7 @@ export const webSearchTool: ToolDefinition = {
     '在网络上搜索实时信息（新闻、热搜、百科等），返回标题、链接与摘要。查询天气请优先使用 get_weather。',
   category: 'web',
   requiresPermission: ['network'],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

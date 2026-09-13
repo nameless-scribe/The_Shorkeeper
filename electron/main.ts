@@ -21,6 +21,8 @@ import { registerPresenceIpc } from './ipc/presence';
 import { registerWindowIpc } from './ipc/window';
 import { registerTasksIpc } from './ipc/tasks';
 import { registerUserTasksIpc } from './ipc/user-tasks';
+import { registerStewardIpc } from './ipc/steward';
+import { applyDailyStewardSchedule } from '../src/config/daily-steward';
 import { initDatabase, closeDatabaseAsync } from '../src/db';
 import { setDatabaseReady } from '../src/db/state';
 import { restoreActiveSession } from '../src/session/active';
@@ -52,6 +54,7 @@ import { initAutoUpdater, shutdownAutoUpdaterRuntime } from './update/auto-updat
 import { configureAppIdentity } from './app-icon';
 import { showSplashWindow, closeSplashWindow } from './windows/splash';
 import { setPermissionConfirmer } from '../src/agent/permissions';
+import { reconcileInterruptedRuns } from '../src/agent/run-recovery';
 import { shutdownPendingSessionWork } from '../src/agent/session-background';
 import {
   abortAllSessionRuns,
@@ -165,6 +168,8 @@ app.whenReady().then(async () => {
     restoreActiveSession();
     databaseOk = true;
     setDatabaseReady(true);
+    // 进程刚启动，此时不存在活动 run：上次遗留的非终态记录一律收口为 interrupted。
+    reconcileInterruptedRuns();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('数据库初始化失败:', err);
@@ -197,6 +202,7 @@ app.whenReady().then(async () => {
     registerStatsIpc();
     registerTasksIpc();
     registerUserTasksIpc();
+    registerStewardIpc();
     await registerWorkspaceIpc();
     registerDockIpc();
     await registerDocumentsIpc();
@@ -220,6 +226,12 @@ app.whenReady().then(async () => {
       broadcastTasksUpdated();
     });
 
+    // 设置里开启了每日管家但任务缺失（如旧版本升级）时补齐；正常情况下无变化。
+    try {
+      applyDailyStewardSchedule();
+    } catch (err) {
+      console.error('[steward] 每日管家任务同步失败:', err);
+    }
     startScheduler();
     removePowerLifecycle = bindPowerLifecycle(powerMonitor, {
       suspend: () => stopScheduler(),

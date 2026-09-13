@@ -24,6 +24,7 @@ import {
   recordProactivityDecision,
 } from '../../src/assistant/proactivity';
 import { getPerformanceSettings } from '../../src/config/performance';
+import { completeCommitmentForScheduledTask } from '../../src/db/repositories/commitments';
 
 export interface ReminderExecutionResult {
   delivered: boolean;
@@ -85,6 +86,14 @@ export async function executeReminder(
     const body = await resolveReminderBody(task, payload);
     await showReminderPopup(task.name, body);
     lastReminderNotificationAt.set(task.id, now);
+    if (task.scheduleKind === 'once') {
+      // 一次性提醒弹出即兑现了"到点提醒你"的承诺；周期提醒持续有效，不关闭。
+      try {
+        completeCommitmentForScheduledTask(task.id);
+      } catch (error) {
+        console.warn('[scheduler] 助理承诺完成标记失败:', error instanceof Error ? error.message : error);
+      }
+    }
     return {
       delivered: true,
       deferred: false,
@@ -103,6 +112,29 @@ export async function executeReminder(
     reason: decision.reason,
     fireAt,
   };
+}
+
+/** 系统任务（如每日管家）声明 respect_quiet_hours 时，安静时段内推迟到时段结束再跑。 */
+function agentPromptDeferral(payload: Record<string, unknown>): number | null {
+  if (payload.respect_quiet_hours !== true) return null;
+  const settings = getPerformanceSettings();
+  const now = Date.now();
+  if (!isWithinQuietHours(new Date(now), settings.quietHoursStart, settings.quietHoursEnd)) return null;
+  return getQuietHoursEndAt(new Date(now), settings.quietHoursStart, settings.quietHoursEnd) ?? now + 60_000;
+}
+
+async function notifyAgentPromptDone(
+  task: ScheduledTaskInfo,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  if (typeof payload.popup_title !== 'string' || !payload.popup_title.trim()) return;
+  if (!getPerformanceSettings().proactivityEnabled) return;
+  try {
+    // 只是完成提示，不参与提醒去重窗口：每天一次的简报不会与同 id 的提醒互相抑制。
+    await showReminderPopup(payload.popup_title.trim(), '已生成，请打开聊天窗口查看。');
+  } catch (error) {
+    console.warn(`[scheduler] 任务「${task.name}」完成提示弹窗失败:`, error);
+  }
 }
 
 export async function executeAgentPrompt(
@@ -127,7 +159,10 @@ export async function executeAgentPrompt(
 
   let terminalError = false;
   try {
-    for await (const event of runOrchestrator(prompt, session.id, controller.signal)) {
+    for await (const event of runOrchestrator(prompt, session.id, controller.signal, {
+      kind: 'scheduled',
+      triggerRef: task.id,
+    })) {
       if (event.type === 'run_started') {
         setSessionRunId(session.id, event.runId);
       }
@@ -140,6 +175,7 @@ export async function executeAgentPrompt(
       onRunError();
     } else {
       onRunFinished();
+      await notifyAgentPromptDone(task, payload);
     }
     return { skipped: false };
   } catch (err) {
@@ -167,6 +203,12 @@ export async function runScheduledTask(task: ScheduledTaskInfo): Promise<void> {
         return;
       }
     } else if (task.actionType === 'agent_prompt') {
+      const deferUntil = agentPromptDeferral(payload);
+      if (deferUntil != null) {
+        console.info(`[scheduler] 「${task.name}」处于安静时段，推迟到 ${new Date(deferUntil).toLocaleTimeString()}`);
+        scheduleDeferredReminder(task, deferUntil);
+        return;
+      }
       const result = await executeAgentPrompt(task, payload);
       skipped = result.skipped;
     } else {

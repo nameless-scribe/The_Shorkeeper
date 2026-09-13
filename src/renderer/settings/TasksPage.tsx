@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ScheduleKind, ScheduledTaskInfo } from '@/shared/types';
+import type { DailyStewardSettingsInfo, ScheduleKind, ScheduledTaskInfo } from '@/shared/types';
 import { formatScheduleLabel } from '@/scheduler/format';
 import { SettingsSegmented } from './components/SettingsSegmented';
 import {
@@ -32,6 +32,92 @@ const EMPTY_FORM = {
   actionType: 'reminder' as 'reminder' | 'agent_prompt',
   message: '',
 };
+
+function DailyStewardPanel() {
+  const [settings, setSettings] = useState<DailyStewardSettingsInfo | null>(null);
+  const [draft, setDraft] = useState<DailyStewardSettingsInfo | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.shorekeeper.steward
+      .get()
+      .then((value) => {
+        setSettings(value);
+        setDraft(value);
+      })
+      .catch(console.error);
+  }, []);
+
+  if (!draft) return null;
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await window.shorekeeper.steward.set(draft);
+      setSettings(saved);
+      setDraft(saved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsPanel
+      title="每日管家"
+      subtitle={settings?.enabled ? `早 ${settings.morningTime} · 晚 ${settings.eveningTime}` : '未开启'}
+      icon="🌅"
+    >
+      <SettingsField
+        label="状态"
+        hint="开启后会创建两条系统任务：早间简报聚合待办、提醒、承诺与目标；晚间复盘逐项确认未完成事项。安静时段内会推迟。"
+      >
+        <SettingsSegmented
+          value={draft.enabled ? 'on' : 'off'}
+          options={[
+            { value: 'on', label: '开启' },
+            { value: 'off', label: '关闭' },
+          ]}
+          onChange={(value) => setDraft((d) => (d ? { ...d, enabled: value === 'on' } : d))}
+        />
+      </SettingsField>
+      <SettingsField label="早间简报时间">
+        <input
+          type="time"
+          value={draft.morningTime}
+          onChange={(e) => setDraft((d) => (d ? { ...d, morningTime: e.target.value } : d))}
+          className={SETTINGS_INPUT_CLASS}
+        />
+      </SettingsField>
+      <SettingsField label="晚间复盘时间">
+        <input
+          type="time"
+          value={draft.eveningTime}
+          onChange={(e) => setDraft((d) => (d ? { ...d, eveningTime: e.target.value } : d))}
+          className={SETTINGS_INPUT_CLASS}
+        />
+      </SettingsField>
+      <SettingsField label="生成后弹出提醒" hint="只弹标题，正文在聊天窗口中查看">
+        <SettingsSegmented
+          value={draft.popup ? 'on' : 'off'}
+          options={[
+            { value: 'on', label: '弹出' },
+            { value: 'off', label: '不弹' },
+          ]}
+          onChange={(value) => setDraft((d) => (d ? { ...d, popup: value === 'on' } : d))}
+        />
+      </SettingsField>
+      {error ? <p className="text-xs text-red-400">{error}</p> : null}
+      <SettingsPrimaryButton className="w-full" disabled={saving || !dirty} onClick={() => void save()}>
+        {saving ? '保存中…' : '保存每日管家设置'}
+      </SettingsPrimaryButton>
+    </SettingsPanel>
+  );
+}
 
 export function TasksPage() {
   const [tasks, setTasks] = useState<ScheduledTaskInfo[]>([]);
@@ -93,6 +179,8 @@ export function TasksPage() {
       <SettingsIntro>
         创建定时提醒或静默 Agent 任务。Agent 也可通过对话调用 create_scheduled_task 工具创建。
       </SettingsIntro>
+
+      <DailyStewardPanel />
 
       <SettingsPanel title="新建任务" icon="⏰">
         <SettingsField label="任务名称">

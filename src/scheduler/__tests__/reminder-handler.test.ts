@@ -81,4 +81,54 @@ describe('schedule reminder permission boundary', () => {
     expect(resolvePermissionMock).toHaveBeenCalledOnce();
     expect(deleteExecuteMock).not.toHaveBeenCalled();
   });
+
+  it('reports run context to the permission layer and the tool execution to the recorder hooks', async () => {
+    const started: string[] = [];
+    const finished: Array<[string, boolean]> = [];
+
+    const reply = await executeScheduleReminderIntent(
+      {
+        triggered: true,
+        action: 'create',
+        scheduleKind: 'recurring',
+        cron: '30 9 * * *',
+        name: '晨间提醒',
+        message: '开始工作',
+      },
+      undefined,
+      {
+        runId: 'run-q',
+        sessionId: 'session-q',
+        onToolStart: (toolName) => started.push(toolName),
+        onToolResult: (toolName, result) => finished.push([toolName, result.success]),
+      },
+    );
+
+    expect(reply).toContain('已创建提醒');
+    expect(resolvePermissionMock.mock.calls[0][4]).toEqual({ runId: 'run-q', sessionId: 'session-q' });
+    expect(createExecuteMock.mock.calls[0][1]).toMatchObject({ sessionId: 'session-q', runId: 'run-q' });
+    expect(started).toEqual(['create_scheduled_task']);
+    expect(finished).toEqual([['create_scheduled_task', true]]);
+  });
+
+  it('turns a throwing quick-path tool into a failed result instead of an exception', async () => {
+    createExecuteMock.mockRejectedValue(new Error('数据库关闭'));
+    const finished: Array<[string, boolean]> = [];
+
+    const reply = await executeScheduleReminderIntent(
+      {
+        triggered: true,
+        action: 'create',
+        scheduleKind: 'recurring',
+        cron: '30 9 * * *',
+        name: '晨间提醒',
+        message: '开始工作',
+      },
+      undefined,
+      { onToolResult: (toolName, result) => finished.push([toolName, result.success]) },
+    );
+
+    expect(reply).toContain('创建定时提醒失败：数据库关闭');
+    expect(finished).toEqual([['create_scheduled_task', false]]);
+  });
 });

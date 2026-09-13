@@ -71,6 +71,9 @@ import type {
   VoiceSttCallStreamFinishResult,
   VoiceSttCallStreamAbortPayload,
   UpdateInfo,
+  TaskRunDetail,
+  TaskRunInfo,
+  DailyStewardSettingsInfo,
 } from '../src/shared/types';
 import type { RunTelemetrySnapshot } from '../src/agent/run-observability';
 
@@ -82,6 +85,11 @@ const shorekeeperApi = {
       query?: { runId?: string; limit?: number },
     ): Promise<RunTelemetrySnapshot[] | RunTelemetrySnapshot | null> =>
       ipcRenderer.invoke('agent:diagnostics', query),
+    runHistory: (
+      query?: { sessionId?: string; limit?: number },
+    ): Promise<TaskRunInfo[]> => ipcRenderer.invoke('agent:runHistory', query),
+    runDetail: (runId: string): Promise<TaskRunDetail | null> =>
+      ipcRenderer.invoke('agent:runDetail', runId),
     onEvent: (callback: (event: unknown) => void) => {
       const listener = (_: Electron.IpcRendererEvent, data: unknown) => callback(data);
       ipcRenderer.on('agent:event', listener);
@@ -254,6 +262,11 @@ const shorekeeperApi = {
         ipcRenderer.removeListener('tasks:updated', listener);
       };
     },
+  },
+  steward: {
+    get: (): Promise<DailyStewardSettingsInfo> => ipcRenderer.invoke('steward:get'),
+    set: (patch: Partial<DailyStewardSettingsInfo>): Promise<DailyStewardSettingsInfo> =>
+      ipcRenderer.invoke('steward:set', patch),
   },
   userTasks: {
     list: (filters?: {

@@ -25,6 +25,7 @@ import {
   evaluateMemoryCandidate,
   type MemoryCandidateDraft,
 } from './candidate-policy';
+import { parseCommitmentDrafts, proposeCommitmentsFromDrafts } from './commitment-extraction';
 
 export interface ExtractMemoriesOptions {
   assistantMode?: AssistantMode;
@@ -54,35 +55,41 @@ ${existingMemories}
    - user.relationship.* — 与助手的关系、情感
    - user.habit.* — 习惯
    - user.other.* — 其他（尽量用具体子 key，如 user.other.weekend_activity）
+7. 另外识别用户在本轮明确答应别人或自己要做的事（如"我周五前把报告发给老板""明天给妈妈打电话"），
+   以 {"type":"commitment","title":"…","due":"YYYY-MM-DD 或 ISO 时间，不确定则省略","promised_to":"对象，可省略","confidence":0.9,"reason":"…"} 输出。
+   只记用户自己的承诺，不记助手答应的事；假设、犹豫或已完成的事不算承诺。
 
 【输出格式】
 仅输出 JSON 数组，例如：
-[{"key":"user.nickname","content":"用户名叫汐","confidence":0.95,"reason":"用户明确自我介绍"}]`;
+[{"key":"user.nickname","content":"用户名叫汐","confidence":0.95,"reason":"用户明确自我介绍"},
+ {"type":"commitment","title":"周五前把报告发给老板","due":"2026-09-18","promised_to":"老板","confidence":0.9,"reason":"用户明确说要在周五前发"}]`;
 }
 
-function parseStructuredFacts(raw: string): StructuredMemoryFact[] {
+function parseStructuredArray(raw: string): unknown[] {
   const trimmed = raw.trim();
   const jsonMatch = trimmed.match(/\[[\s\S]*\]/);
   if (!jsonMatch) return [];
-
   try {
     const parsed = JSON.parse(jsonMatch[0]) as unknown;
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter((item): item is { key?: string; content?: string; confidence?: unknown; reason?: unknown } => {
-        return typeof item === 'object' && item !== null;
-      })
-      .map((item) => ({
-        key: String(item.key ?? '').trim(),
-        content: String(item.content ?? '').trim(),
-        confidence: clampMemoryConfidence(item.confidence),
-        reason: typeof item.reason === 'string' ? item.reason.trim().slice(0, 240) : '',
-      }))
-      .filter((item) => item.key && item.content);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
+}
+
+function parseStructuredFacts(items: unknown[]): StructuredMemoryFact[] {
+  return items
+    .filter((item): item is { key?: string; content?: string; confidence?: unknown; reason?: unknown; type?: unknown } => {
+      return typeof item === 'object' && item !== null;
+    })
+    .filter((item) => item.type !== 'commitment')
+    .map((item) => ({
+      key: String(item.key ?? '').trim(),
+      content: String(item.content ?? '').trim(),
+      confidence: clampMemoryConfidence(item.confidence),
+      reason: typeof item.reason === 'string' ? item.reason.trim().slice(0, 240) : '',
+    }))
+    .filter((item) => item.key && item.content);
 }
 
 function formatTurnDialogue(
@@ -163,7 +170,14 @@ export async function extractMemoriesFromSession(
     { sessionId, signal },
   );
 
-  const facts = parseStructuredFacts(reply);
+  const items = parseStructuredArray(reply);
+  const facts = parseStructuredFacts(items);
+  try {
+    // 承诺候选只进 proposed 队列，由简报或下一轮对话确认；失败不影响记忆提取。
+    proposeCommitmentsFromDrafts(parseCommitmentDrafts(items), { sessionId });
+  } catch (error) {
+    console.warn('[memory] 承诺候选写入失败:', error instanceof Error ? error.message : error);
+  }
   if (!facts.length) {
     markExtractedUpToMessageId(sessionId, latestUserMessage.id);
     return 0;

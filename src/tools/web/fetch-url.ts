@@ -3,6 +3,7 @@ import http, { type IncomingMessage } from 'node:http';
 import https from 'node:https';
 import { BlockList, isIP, type LookupFunction } from 'node:net';
 import type { ToolDefinition } from '../types';
+import { READ_ONLY_CONTRACT } from '../contract';
 
 const MAX_BYTES = 64_000;
 const MAX_REDIRECTS = 5;
@@ -193,6 +194,7 @@ export const fetchUrlTool: ToolDefinition = {
   description: '抓取指定 URL 的网页文本内容（自动去除 HTML 标签）',
   category: 'web',
   requiresPermission: ['network'],
+  sideEffects: READ_ONLY_CONTRACT,
   parameters: {
     type: 'object',
     properties: {

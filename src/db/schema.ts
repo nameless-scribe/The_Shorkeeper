@@ -121,8 +121,111 @@ export interface UserTaskRow {
   module: string | null;
   due_at: string | null;
   notes: string | null;
+  goal_id?: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface GoalRow {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: number;
+  target_date: string | null;
+  created_at: number;
+  updated_at: number;
+  closed_at: number | null;
+}
+
+export interface CommitmentRow {
+  id: string;
+  goal_id: string | null;
+  title: string;
+  owner: string;
+  status: string;
+  due_at: number | null;
+  promised_to: string | null;
+  source_session_id: string | null;
+  source_run_id: string | null;
+  task_id: string | null;
+  scheduled_task_id: string | null;
+  evidence_run_id: string | null;
+  evidence_artifact_id: string | null;
+  last_followed_up_at: number | null;
+  created_at: number;
+  updated_at: number;
+  closed_at: number | null;
+}
+
+export interface BriefingRow {
+  id: string;
+  brief_date: string;
+  kind: string;
+  run_id: string | null;
+  status: string;
+  summary: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface TaskRunRow {
+  id: string;
+  session_id: string;
+  kind: string;
+  trigger_ref: string | null;
+  phase: string;
+  terminal_reason: string | null;
+  error_summary: string | null;
+  model_id: string | null;
+  assistant_message_id: string | null;
+  step_count: number;
+  failed_step_count: number;
+  started_at: number;
+  updated_at: number;
+  terminal_at: number | null;
+  acknowledged_at: number | null;
+}
+
+export interface TaskRunStepRow {
+  id: string;
+  run_id: string;
+  call_id: string;
+  seq: number;
+  tool_name: string;
+  status: string;
+  error_category: string | null;
+  error_summary: string | null;
+  risk_level: string | null;
+  idempotent: number;
+  started_at: number;
+  ended_at: number | null;
+}
+
+export interface ArtifactRow {
+  id: string;
+  run_id: string;
+  step_id: string | null;
+  session_id: string;
+  tool_name: string;
+  relative_path: string;
+  original_name: string;
+  size: number;
+  sha256: string | null;
+  created_at: number;
+}
+
+export interface ApprovalRow {
+  id: string;
+  run_id: string | null;
+  session_id: string | null;
+  tool_name: string;
+  args_summary: string;
+  risk_level: string;
+  status: string;
+  decided_by: string | null;
+  requested_at: number;
+  decided_at: number | null;
 }
 
 export const INIT_SQL = `

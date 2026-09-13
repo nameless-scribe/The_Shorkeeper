@@ -324,6 +324,8 @@ class CallSessionManager {
     try {
       for await (const agEvent of runOrchestrator(trimmed, record.sessionId, controller.signal, {
         persistMessages: persistTranscript,
+        kind: 'voice',
+        triggerRef: callId,
       })) {
         if (controller.signal.aborted) break;
 

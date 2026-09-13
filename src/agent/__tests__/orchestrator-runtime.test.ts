@@ -9,7 +9,34 @@ const state = vi.hoisted(() => ({
   scheduleCompress: vi.fn(),
   scheduleMemory: vi.fn(),
   recordTokenUsage: vi.fn(),
+  createTaskRun: vi.fn(),
+  finishTaskRun: vi.fn(),
+  updateTaskRunPhase: vi.fn(),
+  setTaskRunModel: vi.fn(),
+  acknowledgeTaskRun: vi.fn(),
+  databaseReady: true,
   assistantMode: 'focus' as 'focus' | 'organize' | 'review' | 'companion',
+}));
+
+vi.mock('../../db/state', () => ({
+  isDatabaseReady: () => state.databaseReady,
+}));
+vi.mock('../../db/repositories/task-runs', () => ({
+  createTaskRun: (...args: unknown[]) => state.createTaskRun(...args),
+  finishTaskRun: (...args: unknown[]) => state.finishTaskRun(...args),
+  updateTaskRunPhase: (...args: unknown[]) => state.updateTaskRunPhase(...args),
+  setTaskRunModel: (...args: unknown[]) => state.setTaskRunModel(...args),
+  startTaskRunStep: vi.fn(),
+  endTaskRunStep: vi.fn(),
+  recordRunArtifacts: vi.fn(),
+  findUnacknowledgedInterruptedRun: vi.fn(() => null),
+  listTaskRunSteps: vi.fn(() => []),
+  listRunArtifacts: vi.fn(() => []),
+  acknowledgeTaskRun: vi.fn(),
+  acknowledgeInterruptedRunsForSession: (...args: unknown[]) => state.acknowledgeTaskRun(...args),
+  markInterruptedRuns: vi.fn(),
+  createApproval: vi.fn(),
+  decideApproval: vi.fn(),
 }));
 
 vi.mock('../loop', () => ({
@@ -112,15 +139,132 @@ vi.mock('../../scheduler/reminder-handler', () => ({
 }));
 
 import { runOrchestrator } from '../orchestrator';
+import { buildSystemPromptParts } from '../context-builder';
 
 describe('orchestrator runtime boundaries', () => {
   beforeEach(() => {
     state.loopInput = null;
     state.assistantMode = 'focus';
     state.insertMessage.mockReset();
+    state.insertMessage.mockImplementation((_sessionId: string, role: string) => ({ id: `${role}-message-id` }));
     state.scheduleCompress.mockReset();
     state.scheduleMemory.mockReset();
     state.recordTokenUsage.mockReset();
+    state.createTaskRun.mockReset();
+    state.finishTaskRun.mockReset();
+    state.updateTaskRunPhase.mockReset();
+    state.setTaskRunModel.mockReset();
+    state.acknowledgeTaskRun.mockReset();
+    state.databaseReady = true;
+  });
+
+  it('acknowledges the interrupted-run notice only after this run finishes successfully', async () => {
+    vi.mocked(buildSystemPromptParts).mockResolvedValueOnce({
+      stable: '稳定人设',
+      dynamic: '【上次运行中断】…',
+      combined: '稳定人设\n\n【上次运行中断】…',
+      budget: {
+        maxTokens: 1000,
+        estimatedTokens: 20,
+        includedSectionIds: ['stable_prefix', 'interrupted_run'],
+        droppedSectionIds: [],
+        truncatedSectionIds: [],
+      },
+      interruptedRunId: 'left-over-run',
+    });
+
+    const emitted = [];
+    for await (const event of runOrchestrator('继续吧', 'focus-session')) {
+      emitted.push(event);
+    }
+
+    expect(emitted.at(-1)).toMatchObject({ type: 'run_finished' });
+    expect(state.acknowledgeTaskRun).toHaveBeenCalledWith('focus-session');
+    expect(vi.mocked(buildSystemPromptParts).mock.calls.at(-1)?.[0]).toMatchObject({ runKind: 'chat' });
+  });
+
+  it('tells the context builder when a run is scheduled or voice so the notice stays for the user', async () => {
+    for await (const _event of runOrchestrator('定时任务', 'focus-session', undefined, { kind: 'scheduled' })) {
+      // drain
+    }
+    expect(vi.mocked(buildSystemPromptParts).mock.calls.at(-1)?.[0]).toMatchObject({ runKind: 'scheduled' });
+    expect(state.acknowledgeTaskRun).not.toHaveBeenCalled();
+  });
+
+  it('does not acknowledge the interrupted-run notice when the run fails', async () => {
+    vi.mocked(buildSystemPromptParts).mockResolvedValueOnce({
+      stable: '稳定人设',
+      dynamic: null,
+      combined: '稳定人设',
+      budget: {
+        maxTokens: 1000,
+        estimatedTokens: 10,
+        includedSectionIds: ['stable_prefix', 'interrupted_run'],
+        droppedSectionIds: [],
+        truncatedSectionIds: [],
+      },
+      interruptedRunId: 'left-over-run',
+    });
+    state.insertMessage.mockImplementation((_sessionId: string, role: string) => {
+      if (role === 'assistant') throw new Error('写入失败');
+      return { id: 'user-message-id' };
+    });
+
+    const emitted = [];
+    for await (const event of runOrchestrator('继续吧', 'focus-session')) {
+      emitted.push(event);
+    }
+
+    expect(emitted.at(-1)).toMatchObject({ type: 'run_error' });
+    expect(state.acknowledgeTaskRun).not.toHaveBeenCalled();
+  });
+
+  it('persists the run record from start to terminal state with the assistant message id', async () => {
+    const emitted = [];
+    for await (const event of runOrchestrator('推进这个任务', 'focus-session', undefined, {
+      kind: 'scheduled',
+      triggerRef: 'task-1',
+    })) {
+      emitted.push(event);
+    }
+
+    expect(state.createTaskRun).toHaveBeenCalledOnce();
+    expect(state.createTaskRun.mock.calls[0][0]).toMatchObject({
+      sessionId: 'focus-session',
+      kind: 'scheduled',
+      triggerRef: 'task-1',
+    });
+    expect(state.setTaskRunModel).toHaveBeenCalledWith(expect.any(String), 'test-model');
+    expect(state.finishTaskRun).toHaveBeenCalledOnce();
+    expect(state.finishTaskRun.mock.calls[0][1]).toMatchObject({
+      phase: 'finished',
+      terminalReason: 'finished',
+      assistantMessageId: 'assistant-message-id',
+    });
+    expect(emitted.at(-1)).toMatchObject({ type: 'run_finished' });
+  });
+
+  it('keeps the run working when run persistence is unavailable', async () => {
+    state.createTaskRun.mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    const emitted = [];
+    for await (const event of runOrchestrator('推进这个任务', 'focus-session')) {
+      emitted.push(event);
+    }
+    expect(emitted.at(-1)).toMatchObject({ type: 'run_finished' });
+    expect(state.finishTaskRun).not.toHaveBeenCalled();
+  });
+
+  it('records the token usage failure without failing the run', async () => {
+    state.recordTokenUsage.mockImplementation(() => {
+      throw new Error('database closed');
+    });
+    const emitted = [];
+    for await (const event of runOrchestrator('推进这个任务', 'focus-session')) {
+      emitted.push(event);
+    }
+    expect(emitted.at(-1)).toMatchObject({ type: 'run_finished' });
   });
 
   it('includes the current user turn without persisting voice transcripts', async () => {
