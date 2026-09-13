@@ -93,6 +93,7 @@ function registerMocks() {
     acknowledgedAt: null,
   };
   const detail = {
+  contextSources: [],
     run,
     steps: [
       {
@@ -146,6 +147,8 @@ function registerMocks() {
     'agent:runDetail': (_event, requestedRunId) => requestedRunId === runId ? detail : null,
     'permission:respond': () => ({ ok: true }),
     'update:getVersion': () => '1.3.0',
+    'proactivity:unreadCount': () => 0,
+    'proactivity:inbox': () => ({ attention: [], later: [], handled: [], unreadCount: 0, generatedAt: Date.now() }),
   };
   for (const [channel, handler] of Object.entries(handlers)) ipcMain.handle(channel, handler);
 }

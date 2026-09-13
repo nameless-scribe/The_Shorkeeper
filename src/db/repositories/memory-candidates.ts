@@ -17,6 +17,7 @@ import {
   clampMemoryConfidence,
   memoryTypeFromCandidateCategory,
 } from '../../memory/personal-model';
+import { notifyLocalStateChanged } from '../../proactivity/signals';
 
 export interface CreateMemoryCandidateInput {
   memoryKey: string;
@@ -34,6 +35,8 @@ export interface CreateMemoryCandidateInput {
   expiresAt?: number | null;
   conflictsWithMemoryId?: string | null;
   proposedAction?: MemoryProposedAction;
+  /** 用户明确要求记住时允许重新提出曾被拒绝的事实；自动提取不得设置 */
+  allowRejected?: boolean;
 }
 
 interface MemoryCandidateRow {
@@ -170,8 +173,11 @@ export function createMemoryCandidate(
 ): MemoryCandidateInfo | null {
   const sameFact = selectCandidateRow(
     db,
-    `SELECT ${CANDIDATE_SELECT} FROM memory_candidates
-     WHERE memory_key = ? AND content = ? ORDER BY created_at DESC LIMIT 1`,
+    input.allowRejected
+      ? `SELECT ${CANDIDATE_SELECT} FROM memory_candidates
+         WHERE memory_key = ? AND content = ? AND status IN ('pending', 'confirmed') ORDER BY created_at DESC LIMIT 1`
+      : `SELECT ${CANDIDATE_SELECT} FROM memory_candidates
+         WHERE memory_key = ? AND content = ? ORDER BY created_at DESC LIMIT 1`,
     input.memoryKey,
     input.content,
   );
@@ -200,10 +206,12 @@ export function createMemoryCandidate(
       draft.modelUsePolicy, draft.validFrom, draft.expiresAt, draft.conflictsWithMemoryId,
       draft.proposedAction, now, pendingSameKey.id,
     );
+    notifyLocalStateChanged('memory');
     return getMemoryCandidate(pendingSameKey.id, db);
   }
 
   insertCandidate(draft, db);
+  notifyLocalStateChanged('memory');
   return draft;
 }
 
@@ -236,6 +244,7 @@ export function setMemoryCandidateStatus(
 ): MemoryCandidateInfo | null {
   db.prepare('UPDATE memory_candidates SET status = ?, updated_at = ? WHERE id = ?')
     .run(status, Date.now(), id);
+  notifyLocalStateChanged('memory');
   return getMemoryCandidate(id, db);
 }
 

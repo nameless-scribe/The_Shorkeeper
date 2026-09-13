@@ -626,7 +626,7 @@ The Shorekeeper 桌面端
 
 框架稳定化（S0-S5）、H0-H4 工程、P0 任务闭环和 P1 可追溯个人模型均已完成。重复的 H 系列推进稿和一次性结果报告已清理；当前可信状态以本文、`DESIGN.md`、各专项验收集及可重复运行的脚本为准。
 
-1. P2 外部连接器已取消；下一阶段进入 P3 本地主动服务，新功能继续遵守 `DEVELOPMENT-CONTRACT.md`，不得降低既有数据库、IPC、权限和 UI 契约。
+1. P2 外部连接器已取消；P3 本地主动服务工程已完成（见 `P3-LOCAL-PROACTIVITY-PLAN.md`），验收入口 `pnpm test:p3` / `pnpm test:p3:ui`。后续新功能继续遵守 `DEVELOPMENT-CONTRACT.md`，不得降低既有数据库、IPC、权限和 UI 契约。
 2. 真实休眠/断网、语音硬件、百炼账号、干净机升级与代码签名仍属于外部环境验收，不冒充为自动化已完成。
 3. P0/P1 的一周真实使用观察可与 P3 并行；发现错误引用、冲突漏报、旧事实误用或调度异常时回补对应专项测试。
 4. 日常使用中按 `SKILL-ACCEPTANCE.md` 记录新的真实失败样例；新 Skill 仍必须通过 `pnpm test:skills` 的准入门槛。

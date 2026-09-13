@@ -176,10 +176,12 @@ export const saveMemoryTool: ToolDefinition = {
           memoryType: evaluation.memoryType,
           sensitivity: evaluation.sensitivity,
           modelUsePolicy: evaluation.modelUsePolicy,
+          // 工具路径来自用户明确要求：允许重新提出曾被拒绝的事实，由用户再次裁决。
+          allowRejected: true,
         });
         return candidate
           ? { success: true, output: '该事实需要用户确认，已提交到“待确认记忆”。' }
-          : { success: true, output: '该事实候选已处理或被拒绝，未重复提交。' };
+          : { success: true, output: '该事实候选已在待确认列表或已确认，未重复提交。' };
       }
 
       const entry = await upsertMemory(

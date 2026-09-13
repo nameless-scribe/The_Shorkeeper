@@ -34,7 +34,7 @@ import { createRunLifecycle } from './run-lifecycle';
 import { createRunTelemetry } from './run-observability';
 import { createRunRecorder } from './run-record';
 import { acknowledgeInterruptedRuns } from './run-recovery';
-import { resolveToolContract } from '../tools/contract';
+import { resolveCallContract, resolveToolContract } from '../tools/contract';
 import type { TaskRunKind } from '../shared/types';
 import {
   DEFAULT_CONTEXT_MAX_INPUT_TOKENS,
@@ -296,7 +296,7 @@ export async function* runOrchestrator(
       if (event.type === 'tool_call_start') {
         telemetry.recordToolStart(event.callId, event.name);
         const tool = registry.get(event.name);
-        recorder.stepStart(event.callId, event.name, tool ? resolveToolContract(tool) : undefined);
+        recorder.stepStart(event.callId, event.name, tool ? resolveCallContract(tool, event.args) : undefined);
       } else if (event.type === 'tool_call_end') {
         telemetry.recordToolEnd(
           event.callId,

@@ -8,6 +8,7 @@ import type {
 } from '../../shared/types';
 import type { CommitmentRow } from '../schema';
 import { createUserTask, getUserTask, updateUserTask } from '../user-tasks';
+import { notifyLocalStateChanged } from '../../proactivity/signals';
 
 const STATUSES: ReadonlySet<string> = new Set<CommitmentStatus>([
   'proposed',
@@ -94,6 +95,8 @@ export function createCommitment(
     now,
     now,
   );
+  notifyLocalStateChanged('commitment');
+  if (input.goalId) notifyLocalStateChanged('goal');
   return getCommitment(id, db)!;
 }
 
@@ -211,6 +214,7 @@ export function updateCommitment(
     Date.now(),
     id,
   );
+  notifyLocalStateChanged('commitment');
   return getCommitment(id, db);
 }
 
@@ -244,6 +248,8 @@ export function setCommitmentStatus(
     now,
     id,
   );
+  notifyLocalStateChanged('commitment');
+  if (existing.goalId) notifyLocalStateChanged('goal');
   return getCommitment(id, db);
 }
 
@@ -258,6 +264,11 @@ export function confirmProposedCommitment(
     if (!existing) return null;
     if (existing.status !== 'proposed') return existing;
     let taskId = existing.taskId;
+    if (taskId && options.dueDate !== undefined && options.dueDate !== null) {
+      // 已有待办时同步截止日期，避免承诺与待办漂移。
+      const task = getUserTask(taskId, db);
+      if (task && task.dueAt !== options.dueDate) updateUserTask(taskId, { dueAt: options.dueDate }, db);
+    }
     if (!taskId && existing.owner === 'user') {
       taskId = createUserTask(
         {
@@ -272,6 +283,7 @@ export function confirmProposedCommitment(
     db.prepare(
       `UPDATE commitments SET status = 'open', task_id = ?, goal_id = ?, updated_at = ? WHERE id = ?`,
     ).run(taskId, options.goalId ?? existing.goalId, Date.now(), id);
+    notifyLocalStateChanged('commitment');
     return getCommitment(id, db);
   });
 }

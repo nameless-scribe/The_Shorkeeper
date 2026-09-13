@@ -69,6 +69,9 @@ export interface ScheduledTaskRow {
   last_run_at: number | null;
   schedule_kind: string;
   run_at: number | null;
+  last_error?: string | null;
+  last_error_at?: number | null;
+  failure_count?: number | null;
 }
 
 export interface WindowBounds {
@@ -271,6 +274,66 @@ export interface ApprovalRow {
   decided_by: string | null;
   requested_at: number;
   decided_at: number | null;
+}
+
+export interface ProactiveEventRow {
+  id: string;
+  domain: string;
+  kind: string;
+  source_type: string;
+  source_id: string;
+  source_ref: string | null;
+  dedupe_key: string;
+  source_version: number;
+  title: string;
+  summary: string | null;
+  urgency: string;
+  status: string;
+  due_at: number | null;
+  occurred_at: number;
+  expires_at: number | null;
+  snoozed_until: number | null;
+  resolved_at: number | null;
+  resolved_reason: string | null;
+  read_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ProactivityDecisionRow {
+  id: string;
+  event_id: string | null;
+  decision_key: string;
+  subject_kind: string;
+  subject_id: string;
+  policy: string;
+  route: string;
+  reason: string;
+  rule_version: string;
+  evaluated_at: number;
+}
+
+export interface ProactivityDeliveryRow {
+  id: string;
+  event_id: string | null;
+  delivery_key: string;
+  subject_kind: string;
+  subject_id: string;
+  channel: string;
+  status: string;
+  scheduled_at: number | null;
+  sent_at: number | null;
+  error_category: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ProactivityFeedbackRow {
+  id: string;
+  event_id: string;
+  action: string;
+  reason_code: string | null;
+  created_at: number;
 }
 
 export const INIT_SQL = `

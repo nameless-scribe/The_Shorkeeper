@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { PerformanceSettingsInfo } from '@/shared/types';
+import type { PerformanceSettingsInfo, ProactiveEventDomain } from '@/shared/types';
+import { EVENT_DOMAIN_LABELS, PROACTIVE_EVENT_DOMAINS } from '@/proactivity/contract';
 import { SettingsToggle } from './components/SettingsToggle';
 import { SettingsSegmented } from './components/SettingsSegmented';
 import { MemoryCandidatesPanel } from './MemoryCandidatesPanel';
@@ -11,8 +12,15 @@ import {
   SettingsPageShell,
   SettingsPanel,
   SettingsRow,
+  SettingsErrorBanner,
   SETTINGS_INPUT_CLASS,
 } from './components/settings-ui';
+
+function clampInt(raw: string, min: number, max: number, fallback: number): number {
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
 
 const MEMORY_MODE_OPTIONS: {
   value: PerformanceSettingsInfo['memoryExtractMode'];
@@ -36,6 +44,7 @@ const RAG_INJECT_OPTIONS: {
 export function PerformancePage() {
   const [settings, setSettings] = useState<PerformanceSettingsInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const value = await window.shorekeeper.performance.get();
@@ -48,14 +57,20 @@ export function PerformancePage() {
   }, [load]);
 
   const update = async (patch: Partial<PerformanceSettingsInfo>) => {
-    const value = await window.shorekeeper.performance.set(patch);
-    setSettings(value);
+    try {
+      const value = await window.shorekeeper.performance.set(patch);
+      setSettings(value);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '设置保存失败，请重试');
+    }
   };
 
   if (loading || !settings) return <SettingsLoading />;
 
   return (
     <SettingsPageShell>
+      {error && <SettingsErrorBanner message={error} />}
       <SettingsIntro>
         控制 RAG 注入、已保存长期记忆、自动提取与送入模型的历史消息上限。也可在{' '}
         <code className="rounded bg-keeper-navyDeep/60 px-1 py-0.5 text-keeper-cyan/90">.env</code>{' '}
@@ -175,13 +190,86 @@ export function PerformancePage() {
               value={settings.notificationDedupMinutes}
               disabled={!settings.proactivityEnabled}
               onChange={(e) =>
-                void update({ notificationDedupMinutes: Number(e.target.value) || 0 })
+                void update({ notificationDedupMinutes: clampInt(e.target.value, 0, 1440, 0) })
               }
               className={`${SETTINGS_INPUT_CLASS} max-w-[140px] disabled:opacity-40`}
             />
             <span className="text-xs text-keeper-ice/45">分钟</span>
           </div>
         </SettingsField>
+      </SettingsPanel>
+
+      <SettingsPanel
+        title="主动收件箱"
+        subtitle="本地事件默认进入聊天窗的收件箱；只有临近截止的承诺和定时任务故障才会弹窗"
+        icon="◎"
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SettingsField label="每小时即时弹窗上限" hint="达到上限后事件只进收件箱，不会丢失；0 表示不限制">
+            <input
+              type="number"
+              min={0}
+              max={60}
+              value={settings.notifyHourlyLimit}
+              disabled={!settings.proactivityEnabled}
+              onChange={(e) => void update({ notifyHourlyLimit: clampInt(e.target.value, 0, 60, 0) })}
+              className={`${SETTINGS_INPUT_CLASS} max-w-[140px] disabled:opacity-40`}
+            />
+          </SettingsField>
+          <SettingsField label="每日即时弹窗上限" hint="显式创建的到点提醒不受此限制">
+            <input
+              type="number"
+              min={0}
+              max={500}
+              value={settings.notifyDailyLimit}
+              disabled={!settings.proactivityEnabled}
+              onChange={(e) => void update({ notifyDailyLimit: clampInt(e.target.value, 0, 500, 0) })}
+              className={`${SETTINGS_INPUT_CLASS} max-w-[140px] disabled:opacity-40`}
+            />
+          </SettingsField>
+        </div>
+
+        <SettingsField label="静音的事件域" hint="静音后该类事件仍会进入收件箱，但不再弹窗">
+          <div className="flex flex-wrap gap-1.5">
+            {PROACTIVE_EVENT_DOMAINS.map((domain) => {
+              const mutedDomains = settings.mutedEventDomains ?? [];
+              const muted = mutedDomains.includes(domain);
+              return (
+                <button
+                  key={domain}
+                  type="button"
+                  aria-pressed={muted}
+                  disabled={!settings.proactivityEnabled}
+                  onClick={() => {
+                    const next: ProactiveEventDomain[] = muted
+                      ? mutedDomains.filter((item) => item !== domain)
+                      : [...mutedDomains, domain];
+                    void update({ mutedEventDomains: next });
+                  }}
+                  className={`rounded-lg border px-2 py-1 text-xs transition disabled:opacity-40 ${
+                    muted
+                      ? 'border-keeper-cyan/40 bg-keeper-cyan/15 text-keeper-cyan'
+                      : 'border-keeper-silver/15 text-keeper-ice/65 hover:border-keeper-cyan/30 hover:text-keeper-cyan'
+                  }`}
+                >
+                  {muted ? '🔇 ' : ''}{EVENT_DOMAIN_LABELS[domain]}
+                </button>
+              );
+            })}
+          </div>
+        </SettingsField>
+
+        <SettingsRow label="关闭主动提醒后保留收件箱历史">
+          <SettingsToggle
+            checked={settings.keepInboxHistoryWhenDisabled}
+            onChange={(keepInboxHistoryWhenDisabled) => void update({ keepInboxHistoryWhenDisabled })}
+          />
+        </SettingsRow>
+        {!settings.proactivityEnabled && (
+          <p className="text-xs text-keeper-ice/55">
+            主动提醒已关闭：不再生成新提示、不弹窗、后台不会主动发起 Agent 运行。你自己创建的定时提醒与每日管家任务仍按设置执行，可在“定时任务”页单独停用。
+          </p>
+        )}
       </SettingsPanel>
 
       <SettingsPanel title="上下文窗口" icon="📊">

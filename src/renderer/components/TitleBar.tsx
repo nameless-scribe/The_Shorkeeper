@@ -12,6 +12,9 @@ interface TitleBarProps {
   onToggleHistory?: () => void;
   onOpenCall?: () => void;
   historyOpen?: boolean;
+  onToggleInbox?: () => void;
+  inboxOpen?: boolean;
+  inboxUnread?: number;
 }
 
 function formatConnectionLabel(status: AppStatus): string {
@@ -32,6 +35,9 @@ export function TitleBar({
   onToggleHistory,
   onOpenCall,
   historyOpen,
+  onToggleInbox,
+  inboxOpen,
+  inboxUnread = 0,
 }: TitleBarProps) {
   const drag = useWindowDrag();
 
@@ -74,6 +80,27 @@ export function TitleBar({
             title="历史会话"
           >
             ☰
+          </button>
+          <button
+            type="button"
+            onClick={onToggleInbox}
+            className={`relative flex h-7 w-7 items-center justify-center rounded-lg ${
+              inboxOpen
+                ? 'bg-keeper-cyan/20 text-keeper-cyan'
+                : 'text-keeper-ice/50 hover:bg-keeper-cyan/10 hover:text-keeper-cyan'
+            }`}
+            title="主动收件箱"
+            aria-label={inboxUnread > 0 ? `主动收件箱，${inboxUnread} 条未读` : '主动收件箱'}
+          >
+            ◎
+            {inboxUnread > 0 && (
+              <span
+                className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-keeper-cyan px-1 text-[9px] font-semibold leading-none text-keeper-navyDeep"
+                data-testid="inbox-unread-badge"
+              >
+                {inboxUnread > 99 ? '99+' : inboxUnread}
+              </span>
+            )}
           </button>
           <button
             type="button"

@@ -1,5 +1,7 @@
 import { getSetting, setSetting } from '../db/app-settings';
 import { DEFAULT_CONTEXT_MAX_INPUT_TOKENS } from '../agent/context-budget';
+import type { ProactiveEventDomain } from '../shared/types';
+import { PROACTIVE_EVENT_DOMAINS } from '../proactivity/contract';
 
 export type MemoryExtractMode = 'always' | 'manual' | 'every_n';
 
@@ -29,6 +31,10 @@ export interface PerformanceSettings {
   quietHoursStart: string;
   quietHoursEnd: string;
   notificationDedupMinutes: number;
+  notifyHourlyLimit: number;
+  notifyDailyLimit: number;
+  mutedEventDomains: ProactiveEventDomain[];
+  keepInboxHistoryWhenDisabled: boolean;
 }
 
 export { DEFAULT_CONTEXT_MAX_INPUT_TOKENS } from '../agent/context-budget';
@@ -56,7 +62,30 @@ const DEFAULTS: PerformanceSettings = {
   quietHoursStart: '',
   quietHoursEnd: '',
   notificationDedupMinutes: 5,
+  notifyHourlyLimit: 3,
+  notifyDailyLimit: 12,
+  mutedEventDomains: [],
+  keepInboxHistoryWhenDisabled: true,
 };
+
+const EVENT_DOMAINS: ReadonlySet<string> = new Set(PROACTIVE_EVENT_DOMAINS);
+
+export function parseMutedEventDomains(raw: string | null | undefined): ProactiveEventDomain[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const result: ProactiveEventDomain[] = [];
+    for (const item of parsed) {
+      if (typeof item === 'string' && EVENT_DOMAINS.has(item) && !result.includes(item as ProactiveEventDomain)) {
+        result.push(item as ProactiveEventDomain);
+      }
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
 
 function envBool(key: string, fallback: boolean): boolean {
   const raw = process.env[key];
@@ -224,6 +253,28 @@ export function getPerformanceSettings(): PerformanceSettings {
       1440,
       DEFAULTS.notificationDedupMinutes,
     ),
+    notifyHourlyLimit: normalizeInteger(
+      getSetting('PROACTIVITY_NOTIFY_HOURLY_LIMIT') != null
+        ? Number.parseInt(getSetting('PROACTIVITY_NOTIFY_HOURLY_LIMIT')!, 10)
+        : envIntNonNegative('PROACTIVITY_NOTIFY_HOURLY_LIMIT', DEFAULTS.notifyHourlyLimit),
+      0,
+      60,
+      DEFAULTS.notifyHourlyLimit,
+    ),
+    notifyDailyLimit: normalizeInteger(
+      getSetting('PROACTIVITY_NOTIFY_DAILY_LIMIT') != null
+        ? Number.parseInt(getSetting('PROACTIVITY_NOTIFY_DAILY_LIMIT')!, 10)
+        : envIntNonNegative('PROACTIVITY_NOTIFY_DAILY_LIMIT', DEFAULTS.notifyDailyLimit),
+      0,
+      500,
+      DEFAULTS.notifyDailyLimit,
+    ),
+    mutedEventDomains: parseMutedEventDomains(
+      getSetting('PROACTIVITY_MUTED_DOMAINS') ?? process.env.PROACTIVITY_MUTED_DOMAINS,
+    ),
+    keepInboxHistoryWhenDisabled: getSetting('PROACTIVITY_KEEP_INBOX_HISTORY') != null
+      ? getSetting('PROACTIVITY_KEEP_INBOX_HISTORY') === 'true'
+      : envBool('PROACTIVITY_KEEP_INBOX_HISTORY', DEFAULTS.keepInboxHistoryWhenDisabled),
   };
 }
 
@@ -279,6 +330,18 @@ export function savePerformanceSettings(patch: Partial<PerformanceSettings>): Pe
   }
   if (patch.notificationDedupMinutes != null) {
     setSetting('PROACTIVITY_DEDUP_MINUTES', String(patch.notificationDedupMinutes));
+  }
+  if (patch.notifyHourlyLimit != null) {
+    setSetting('PROACTIVITY_NOTIFY_HOURLY_LIMIT', String(patch.notifyHourlyLimit));
+  }
+  if (patch.notifyDailyLimit != null) {
+    setSetting('PROACTIVITY_NOTIFY_DAILY_LIMIT', String(patch.notifyDailyLimit));
+  }
+  if (patch.mutedEventDomains != null) {
+    setSetting('PROACTIVITY_MUTED_DOMAINS', JSON.stringify(parseMutedEventDomains(JSON.stringify(patch.mutedEventDomains))));
+  }
+  if (patch.keepInboxHistoryWhenDisabled != null) {
+    setSetting('PROACTIVITY_KEEP_INBOX_HISTORY', String(patch.keepInboxHistoryWhenDisabled));
   }
 
   return getPerformanceSettings();

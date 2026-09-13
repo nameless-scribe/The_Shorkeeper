@@ -3,6 +3,7 @@ import type { AssistantActionPolicy, ScheduledTaskInfo } from '../../src/shared/
 import {
   disableScheduledTask,
   listEnabledScheduledTasks,
+  markTaskFailure,
   markTaskRun,
 } from '../../src/db/scheduled-tasks';
 import { notifyTasksChanged } from '../../src/scheduler/task-events';
@@ -25,6 +26,8 @@ import {
 } from '../../src/assistant/proactivity';
 import { getPerformanceSettings } from '../../src/config/performance';
 import { completeCommitmentForScheduledTask } from '../../src/db/repositories/commitments';
+import { claimPopup, lastPopupSentAt, persistReminderDecision } from '../../src/proactivity/ledger';
+import { idempotencyKeys, localDateKey, reminderOccurrenceKey } from '../../src/proactivity/contract';
 
 export interface ReminderExecutionResult {
   delivered: boolean;
@@ -36,7 +39,8 @@ export interface ReminderExecutionResult {
 
 const cronJobs = new Map<string, ReturnType<typeof cron.schedule>>();
 const onceTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const lastReminderNotificationAt = new Map<string, number>();
+/** 安静时段推迟的执行：reloadScheduler 不清除，只在退出时清除。 */
+const deferredTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const runningTaskIds = new Set<string>();
 
 /** Node timers cannot safely represent delays larger than a signed 32-bit integer. */
@@ -67,8 +71,9 @@ export async function executeReminder(
     explicit: true,
     enabled: settings.proactivityEnabled,
     quietHours,
+    // 最近通知时间来自持久投递账本：应用重启不会让同一提醒再次弹出。
     repeated: isRepeatedNotification(
-      lastReminderNotificationAt.get(task.id),
+      lastPopupSentAt('scheduled_reminder', task.id),
       now,
       settings.notificationDedupMinutes,
     ),
@@ -81,11 +86,43 @@ export async function executeReminder(
     reason: decision.reason,
     at: now,
   });
+  persistReminderDecision({
+    decisionKey: idempotencyKeys.reminderDecision(task.id, now),
+    subjectKind: 'scheduled_reminder',
+    subjectId: task.id,
+    policy: decision.policy,
+    route: decision.action === 'notify' ? 'notify' : decision.action === 'defer' ? 'defer' : 'suppress',
+    reason: decision.reason,
+    at: now,
+  });
 
   if (decision.action === 'notify') {
+    // 同一提醒同一分钟只投递一次；一次性提醒用 run_at 作为发生键，跨重启也不重复。
+    const occurrence = task.scheduleKind === 'once' && task.runAt != null
+      ? `once:${task.runAt}`
+      : reminderOccurrenceKey(now);
+    // 先生成正文（可能调用模型、耗时较长），再认领投递：认领与弹窗之间不留可被崩溃打断的窗口。
     const body = await resolveReminderBody(task, payload);
-    await showReminderPopup(task.name, body);
-    lastReminderNotificationAt.set(task.id, now);
+    const claim = claimPopup({
+      deliveryKey: idempotencyKeys.reminderDelivery(task.id, occurrence),
+      subjectKind: 'scheduled_reminder',
+      subjectId: task.id,
+    });
+    if (!claim.claimed) {
+      return {
+        delivered: false,
+        deferred: false,
+        policy: decision.policy,
+        reason: 'repeated',
+      };
+    }
+    try {
+      await showReminderPopup(task.name, body);
+    } catch (error) {
+      claim.fail(error instanceof Error ? error.name || 'popup_error' : 'popup_error');
+      throw error;
+    }
+    claim.commit(now);
     if (task.scheduleKind === 'once') {
       // 一次性提醒弹出即兑现了"到点提醒你"的承诺；周期提醒持续有效，不关闭。
       try {
@@ -129,10 +166,28 @@ async function notifyAgentPromptDone(
 ): Promise<void> {
   if (typeof payload.popup_title !== 'string' || !payload.popup_title.trim()) return;
   if (!getPerformanceSettings().proactivityEnabled) return;
+  // 完成提示按"任务 + 日期"记入投递账本：不参与提醒去重窗口，但同一天不会重复弹。
+  const now = Date.now();
+  const claim = claimPopup({
+    deliveryKey: idempotencyKeys.stewardNotice(task.id, localDateKey(now)),
+    subjectKind: 'steward_notice',
+    subjectId: task.id,
+  });
+  if (!claim.claimed) return;
+  persistReminderDecision({
+    decisionKey: `decision:steward:${task.id}:${localDateKey(now)}`,
+    subjectKind: 'steward_notice',
+    subjectId: task.id,
+    policy: 'notify',
+    route: 'notify',
+    reason: 'notified',
+    at: now,
+  });
   try {
-    // 只是完成提示，不参与提醒去重窗口：每天一次的简报不会与同 id 的提醒互相抑制。
     await showReminderPopup(payload.popup_title.trim(), '已生成，请打开聊天窗口查看。');
+    claim.commit(now);
   } catch (error) {
+    claim.fail(error instanceof Error ? error.name || 'popup_error' : 'popup_error');
     console.warn(`[scheduler] 任务「${task.name}」完成提示弹窗失败:`, error);
   }
 }
@@ -140,7 +195,7 @@ async function notifyAgentPromptDone(
 export async function executeAgentPrompt(
   task: ScheduledTaskInfo,
   payload: Record<string, unknown>,
-): Promise<{ skipped: boolean }> {
+): Promise<{ skipped: boolean; failed?: boolean }> {
   const prompt =
     typeof payload.prompt === 'string'
       ? payload.prompt
@@ -177,7 +232,7 @@ export async function executeAgentPrompt(
       onRunFinished();
       await notifyAgentPromptDone(task, payload);
     }
-    return { skipped: false };
+    return { skipped: false, failed: terminalError };
   } catch (err) {
     onRunError();
     throw err;
@@ -196,6 +251,7 @@ export async function runScheduledTask(task: ScheduledTaskInfo): Promise<void> {
   const payload = parsePayload(task.actionPayload);
   try {
     let skipped = false;
+    let failed = false;
     if (task.actionType === 'reminder') {
       const result = await executeReminder(task, payload);
       if (result.deferred) {
@@ -211,6 +267,7 @@ export async function runScheduledTask(task: ScheduledTaskInfo): Promise<void> {
       }
       const result = await executeAgentPrompt(task, payload);
       skipped = result.skipped;
+      failed = result.failed === true;
     } else {
       throw new Error(`未知 action_type: ${task.actionType}`);
     }
@@ -222,7 +279,12 @@ export async function runScheduledTask(task: ScheduledTaskInfo): Promise<void> {
       return;
     }
 
-    markTaskRun(task.id);
+    if (failed) {
+      // 以 run_error 结束的定时 Agent 任务是失败：不清零失败计数，让主动服务能看到它。
+      markTaskFailure(task.id, new Error('定时任务的 Agent 运行以错误结束'));
+    } else {
+      markTaskRun(task.id);
+    }
 
     if (task.scheduleKind === 'once') {
       disableScheduledTask(task.id);
@@ -230,6 +292,12 @@ export async function runScheduledTask(task: ScheduledTaskInfo): Promise<void> {
     }
   } catch (err) {
     console.error(`[scheduler] 任务失败 ${task.name}:`, err);
+    try {
+      // 失败写入真源，P3 采集器据此投影"定时任务失败"事件。
+      markTaskFailure(task.id, err);
+    } catch (recordError) {
+      console.warn('[scheduler] 记录任务失败状态失败:', recordError instanceof Error ? recordError.message : recordError);
+    }
   } finally {
     runningTaskIds.delete(task.id);
   }
@@ -247,14 +315,26 @@ function scheduleRecurringTask(task: ScheduledTaskInfo): void {
   cronJobs.set(task.id, job);
 }
 
-function scheduleOnceAt(task: ScheduledTaskInfo, fireAt: number): void {
-  const existing = onceTimers.get(task.id);
+function scheduleOnceAt(
+  task: ScheduledTaskInfo,
+  fireAt: number,
+  options: { deferred?: boolean } = {},
+): void {
+  const timers = options.deferred ? deferredTimers : onceTimers;
+  const existing = timers.get(task.id);
   if (existing) clearTimeout(existing);
 
   const trigger = () => {
-    onceTimers.delete(task.id);
+    timers.delete(task.id);
     if (fireAt > Date.now()) {
-      scheduleOnceAt(task, fireAt);
+      scheduleOnceAt(task, fireAt, options);
+      return;
+    }
+    if (options.deferred) {
+      // 推迟期间任务可能被修改或删除：以数据库当前状态为准。
+      const live = listEnabledScheduledTasks().find((item) => item.id === task.id);
+      if (!live) return;
+      void runScheduledTask(live);
       return;
     }
     void runScheduledTask(task);
@@ -266,12 +346,12 @@ function scheduleOnceAt(task: ScheduledTaskInfo, fireAt: number): void {
     return;
   }
 
-  onceTimers.set(task.id, setTimeout(trigger, Math.min(delay, MAX_TIMER_DELAY_MS)));
+  timers.set(task.id, setTimeout(trigger, Math.min(delay, MAX_TIMER_DELAY_MS)));
 }
 
 function scheduleDeferredReminder(task: ScheduledTaskInfo, fireAt?: number): void {
   if (fireAt == null) return;
-  scheduleOnceAt(task, fireAt);
+  scheduleOnceAt(task, fireAt, { deferred: true });
 }
 
 function scheduleOnceTask(task: ScheduledTaskInfo): void {
@@ -284,7 +364,7 @@ function scheduleOnceTask(task: ScheduledTaskInfo): void {
 }
 
 export function startScheduler(): void {
-  stopScheduler();
+  stopScheduler({ keepDeferred: true });
 
   let recurringCount = 0;
   let onceCount = 0;
@@ -304,7 +384,7 @@ export function startScheduler(): void {
   );
 }
 
-export function stopScheduler(): void {
+export function stopScheduler(options: { keepDeferred?: boolean } = {}): void {
   for (const job of cronJobs.values()) {
     job.stop();
   }
@@ -314,6 +394,13 @@ export function stopScheduler(): void {
     clearTimeout(timer);
   }
   onceTimers.clear();
+
+  if (!options.keepDeferred) {
+    for (const timer of deferredTimers.values()) {
+      clearTimeout(timer);
+    }
+    deferredTimers.clear();
+  }
 }
 
 export function reloadScheduler(): void {

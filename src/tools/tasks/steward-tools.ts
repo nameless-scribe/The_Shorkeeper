@@ -40,7 +40,9 @@ interface StewardRunInput {
 function runSteward(input: StewardRunInput): ToolResult {
   const briefDate = formatLocalDate();
   const claim = claimBriefing({ briefDate, kind: input.kind, runId: input.runId ?? null });
-  if (!claim.created && !input.force) {
+  // 上次生成失败的记录不算"已生成"：允许直接重试，不要求 force。
+  const previousFailed = !claim.created && claim.briefing.status === 'failed';
+  if (!claim.created && !input.force && !previousFailed) {
     return {
       success: true,
       output:
@@ -50,7 +52,13 @@ function runSteward(input: StewardRunInput): ToolResult {
     };
   }
 
-  const built = input.build();
+  let built: { text: string; summary: string };
+  try {
+    built = input.build();
+  } catch (error) {
+    updateBriefing(claim.briefing.id, { status: 'failed', ...(input.runId ? { runId: input.runId } : {}) });
+    throw error;
+  }
   updateBriefing(claim.briefing.id, {
     status: 'generated',
     summary: built.summary,

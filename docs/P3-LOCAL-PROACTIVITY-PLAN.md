@@ -1,6 +1,6 @@
 # P3 落地计划：本地主动服务
 
-> 版本：0.1.0（方案已定稿，工程尚未开始）
+> 版本：1.0.0（P3.0–P3.5 工程已完成；两周真实使用观察未开始）
 > 日期：2026-09-13
 > 对应蓝图：`docs/personal-assistant-growth-blueprint.html` 的 P3「克制的主动性」
 > 产品决策：P2 外部连接器已取消；P3 不读取邮箱、外部日历、联系人或云盘
@@ -8,7 +8,7 @@
 > 预计周期：单人顺序推进约 3–5 周，之后进行连续两周真实使用观察
 > 计划验收入口：逐阶段补齐 `pnpm test:p3` / `pnpm test:p3:ui`
 
-当前进度（2026-09-13）：已完成项目扫描、P2 取消后的范围调整、事件来源、数据模型、阶段拆分和影响分析；尚未新增 migration、事件账本、主动收件箱或产品 UI。本文件是实施契约，不代表 P3 已经可用。
+当前进度（2026-09-13）：P3.0–P3.5 的工程与自动化验收均已完成：`0026_proactive_events.sql`、四个 Repository、`src/proactivity/*`（契约、采集器、策略、协调器、服务、收件箱）、`electron/proactivity/runtime.ts`、`electron/ipc/proactivity.ts`、聊天标题栏收件箱入口与 `ProactiveInboxPanel`、设置页预算 / 静音项、每日管家聚合，以及 `pnpm test:p3` / `pnpm test:p3:ui`。尚未完成的只有 P3.5 的连续两周真实使用观察；自动化通过不等同于真实体验证据。实施细节与验收记录见文末第 9 节。
 
 ## 1. P2 取消后，P3 改成什么
 
@@ -124,7 +124,7 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 
 ### P3.0 — 事件契约与固定样本（2–3 天）
 
-**状态：方案已完成，代码未开始。**
+**状态：已完成。** `src/proactivity/contract.ts` 固定了事件类型、紧急度、状态机、去重键、幂等键、路由矩阵与解除条件；`contract.test.ts` / `collector.test.ts` / `policy.test.ts` 覆盖跨重启、改期、承诺完成、连续失败、文档恢复、记忆裁决、安静时段与预算耗尽样本。
 
 - 固定事件类型、urgency、状态机、dedupe key、解除条件和路由矩阵。
 - 建立样本：同一提醒跨重启、任务改期、承诺完成、run 连续失败、文档恢复、记忆冲突解决、安静时段、通知预算耗尽。
@@ -133,6 +133,8 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 阶段出口：每种事件何时创建、更新、解决、通知和抑制均有确定答案；不改变生产行为。
 
 ### P3.1 — 持久事件账本与本地采集器（4–6 天）
+
+**状态：已完成。** migration `0026`、`proactive-events` / `proactivity-decisions` / `proactivity-deliveries` / `proactivity-feedback` 四个 Repository、`sources.ts` 有界快照、`collector.ts` 纯投影、`coordinator.ts` 合并信号 / 启动延迟 / 唤醒 / 兜底扫描 / 关闭取消、`signals.ts` 轻量状态变化信号（各领域 Repository 发出）。目标停滞已一并接入。
 
 - 新增 `0026`、四个 Repository、共享类型和纯规则 collector。
 - 先接待办、承诺、TaskRun、定时任务、文档新鲜度和记忆候选六类来源；目标停滞作为本阶段末的可选低优先级来源。
@@ -143,6 +145,8 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 
 ### P3.2 — 主动收件箱与来源回链（4–6 天）
 
+**状态：已完成。** 标题栏 `◎` 入口带未读角标，`ProactiveInboxPanel` 与 `SessionHistoryPanel` 同形态；"需要处理 / 稍后 / 已处理"三段、处理 / 稍后（固定档位）/ 已完成 / 忽略 / 清除已处理；`proactivity:*` IPC 经 `trustedIpcMain` 与 unknown 校验，推送前经销毁安全发送。回链打开待办、定时任务、运行记录、泰提斯终端或记忆页签；`electron-p3-ui-smoke.cjs` 验证加载、空、错误、重复操作、最小窗口与替代主题。
+
 - 在聊天标题栏增加带未读数的克制入口，打开与 `SessionHistoryPanel` 视觉一致的 `ProactiveInboxPanel`，不新建平行设置中心。
 - 分为“需要处理 / 稍后 / 已处理”，支持打开来源、标记已读、忽略、稍后和批量处理已解决事件。
 - 每条卡片明确显示“为什么出现、来源、发生时间、紧急度、是否被延后”，不显示内部规则或敏感正文。
@@ -151,6 +155,8 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 阶段出口：加载、空、错误、重复操作、最小窗口和主题状态通过实际 Electron 检查；点击来源能回到待办、承诺、运行、文档或记忆详情。
 
 ### P3.3 — 统一路由、跨重启去重与频率预算（4–6 天）
+
+**状态：已完成。** `policy.ts` 处理 inbox / notify / defer / suppress 并记录规则版本与原因；显式定时提醒与每日管家完成提示改用持久投递账本（`ledger.ts`）做跨重启去重；新增每小时 / 每日弹窗预算、事件域静音、snooze 与关闭后是否保留历史的设置；全局关闭时不投影、不弹窗，UI 文案说明显式定时任务仍按设置执行。
 
 - 扩展 `ProactivityPolicy` 处理 inbox / notify / defer / suppress，并记录规则版本和原因。
 - 将现有提醒弹窗、每日管家完成提示和新增本地事件统一接入 delivery ledger。
@@ -161,6 +167,8 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 
 ### P3.4 — 本地纵向场景（4–6 天）
 
+**状态：已完成。** 承诺守望（临期入箱、2 小时内高优先级弹窗、"处理"久未跟进事件只更新 `last_followed_up_at`）、失败恢复（error / interrupted 汇总，不自动重放）、知识守望（changed / missing / 检查或索引失败）、记忆守望（冲突、敏感、临期）均经统一路由并可由来源自动收口；早间简报聚合待处理主动提示，晚间复盘记录处理 / 忽略 / 延后计数。
+
 - 承诺守望：临期进入收件箱，高优先级且即将到期才通知；处理后更新 `last_followed_up_at`，不自动顺延或完成。
 - 失败恢复：run error / interrupted 汇总为一条可恢复事件，打开后展示真实成功步骤、失败步骤和产物，不自动重放副作用。
 - 知识守望：changed / missing / sync failed 进入收件箱，打开现有泰提斯终端处理。
@@ -170,6 +178,8 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 阶段出口：四个场景均能从本地状态产生事件、经过统一路由、回到真实来源并在来源解决后自动收口。
 
 ### P3.5 — 全局回归与两周真实使用（3–5 天 + 观察）
+
+**状态：自动化部分已完成；两周真实使用观察未开始。** `pnpm test:p3` 23 个文件 119 用例、`pnpm test` 全量、`pnpm typecheck`、`pnpm build`、`pnpm test:p3:ui` 与 Electron 生命周期 smoke 均通过；`proactivity:metrics` IPC 已提供两周指标（事件数、弹窗 / 入箱 / 延后 / 抑制、打开 / 采纳 / 忽略 / 延后、来源自动解决数）供观察期记录。
 
 - `pnpm test:p3` 覆盖 migration、collector、投影幂等、路由、预算、snooze、反馈、生命周期和来源解决。
 - `pnpm test:p3:ui` 在 Electron renderer 使用固定模拟数据验证收件箱各状态；明确不把模拟 UI 当两周真实体验证据。
@@ -212,3 +222,63 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 4. 再接文档、记忆和定时任务，最后做收件箱 UI 与统一弹窗路由。
 
 出现以下任一情况立即停止扩大事件来源：同一状态跨重启产生重复通知；事件写入会改变领域真源；启动等待大范围扫描；收件箱保存敏感正文；被解决事件不能自动关闭；全局关闭后仍有主动弹窗；失败 run 被自动重放副作用。
+
+## 9. 实施记录与验收（2026-09-13）
+
+### 9.1 已落地的模块
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 数据库 | `src/db/migrations/0026_proactive_events.sql`、`src/db/schema.ts`、`src/db/repositories/proactive-events.ts` / `proactivity-decisions.ts` / `proactivity-deliveries.ts` / `proactivity-feedback.ts` | 四张账本表；`scheduled_tasks` 新增失败真源列；`markTaskFailure` / `markTaskRun` 维护 |
+| 领域 | `src/proactivity/contract.ts`、`collector.ts`、`sources.ts`、`policy.ts`、`coordinator.ts`、`service.ts`、`inbox.ts`、`ledger.ts`、`signals.ts` | 纯逻辑，不依赖 Electron；各领域 Repository 只发 `notifyLocalStateChanged(domain)` |
+| 主进程 | `electron/proactivity/runtime.ts`、`electron/ipc/proactivity.ts`、`electron/scheduler/cron.ts`、`electron/main.ts`、`electron/ipc/performance.ts` | 启动后延迟 8 秒首轮校对、信号合并 1.5 秒、每 30 分钟兜底、每分钟检查延后补发、唤醒后局部校对、关闭前先停协调器 |
+| 渲染 | `src/renderer/components/ProactiveInboxPanel.tsx`、`TitleBar.tsx`、`ChatPage.tsx`、`InputBar.tsx`、`settings/PerformancePage.tsx`、`settings/SettingsDrawer.tsx` | 收件箱面板、未读角标、回链打开设置页签或预填聊天草稿、预算 / 静音 / 历史保留设置 |
+| 每日管家 | `src/tasks/daily-steward.ts` | 早间简报新增"待处理的主动提示"，晚间复盘新增处理统计 |
+| 设置 | `src/config/performance.ts` | `notifyHourlyLimit`（默认 3）、`notifyDailyLimit`（默认 12）、`mutedEventDomains`、`keepInboxHistoryWhenDisabled` |
+
+### 9.2 路由与去重的确定性规则
+
+- 默认全部进收件箱；只有 `commitment_due_soon`（2 小时内）、`commitment_missed`、`schedule_failed`（连续 3 次）且紧急度 high 才有弹窗资格。
+- 弹窗前依次检查：同版本已弹过 → 抑制；投递账本内最近弹窗在去重窗口内 → 抑制；事件域静音 → 入箱；每小时 / 每日预算耗尽 → 入箱；安静时段 → 延后到时段结束再评估。
+- 显式定时提醒继续按用户订阅规则弹窗，但"最近通知时间"和"本次投递"改为读写投递账本：一次性提醒以 `run_at` 为发生键，周期提醒以分钟为发生键，重启不会重复。
+- 采集只在快照完整（未被 200 条上限截断）的域里自动解决旧事件，避免误关闭。
+
+### 9.3 验收结果
+
+| 项目 | 结果 |
+|---|---|
+| `pnpm typecheck` | 通过 |
+| `pnpm test:p3` | 23 个文件 / 120 用例通过（含 sql.js 与 better-sqlite3 双适配器、跨重启不重复弹窗、安静时段补发、预算与静音、snooze / 唤醒 / 忽略 / 完成、来源自动解决） |
+| `pnpm test` | 全量通过（一次因并行构建导致的超时在单独重跑后通过） |
+| `pnpm build` | 通过 |
+| `pnpm test:p3:ui` | 通过：未读角标、三段列表、展开解释、处理回链到运行记录、稍后固定档位、忽略、清除已处理、推送刷新、替代主题、360×520 最小窗口无横向溢出、设置页静音保存 |
+| `pnpm test:electron` | 运行时与窗口生命周期 smoke 通过 |
+| 连续两周真实使用 | 未开始；观察时用 `proactivity:metrics` 记录每日弹窗数、重复数、漏报数、打开 / 采纳 / 忽略率 |
+
+### 9.4 收口前全盘审查（2026-09-13）
+
+对 P0 至 P3 的全部改动做了五个切片的缺陷审查（数据库层、Agent 运行时与工具契约、记忆模型与文档新鲜度、调度与主动服务、渲染层与 IPC 边界），确认属实并已修复的问题：
+
+| 领域 | 修复 |
+|---|---|
+| 主动事件账本 | 被来源解决 / 过期 / 新版本收口的事件在同一条件再次出现时重新打开（此前会永久留在"已处理"）；用户忽略或标记完成的不会复活 |
+| 主动服务 | 唤醒的稍后事件在路由前重读账本状态，避免为已解决事件弹窗；文档事件改用稳定发生时间且不过期，不再每轮刷新；投影循环批量落盘；触发原因按优先级合并；"已处理"按最近变化排序；忽略原因限定三个枚举 |
+| 调度器 | 一次性提醒先生成正文再认领投递，认领超过 10 分钟未发送可重新认领，进程崩溃不会吞掉提醒；安静时段推迟的执行不再被 `reloadScheduler` 清掉（只在退出时清除，触发时以数据库当前任务为准）；以 `run_error` 结束的定时 Agent 运行记为失败而非成功 |
+| 数据库 | sql.js 引擎在每次落盘后重新启用 `PRAGMA foreign_keys`（`export()` 会重开连接丢失该设置） |
+| Agent / 工具 | 简报生成失败时记录 `failed` 并允许直接重试；`manage_commitments` 不能对 proposed / 终态承诺执行 update / complete，confirm 先校验再写入并同步已有待办的截止日期，`due_within_days` 保留默认状态过滤；`replace_text` 声明为非幂等；被裁剪段落的来源不再记为"已注入"；MCP `destructiveHint` 映射为高风险须确认；主循环校验产物 SHA-256；步骤审计使用按调用的契约 |
+| 记忆 / 文档 | 重新定位的来源路径按导入规则规范化，且不覆盖 mtime/size 基线（同步后能正确替代旧版本）；`model_use_policy = deny` 的内容不再送远端 embedding（语义查重与用户编辑后的重嵌入）；提取提示词给出今天日期，换算为过去的承诺截止时间丢弃；目标候选选择"并存"时保留原事实；用户明确要求记住时允许重新提出曾被拒绝的事实 |
+| 渲染层 | 设置页保存失败可见并夹紧数值范围；设置抽屉按回链页签渲染无闪帧；引用 / 上下文来源详情加载防串位；文档"重新定位"防重复；收件箱回链草稿不覆盖已输入；权限对话框长按 Enter 不再吞掉排队请求 |
+
+审查确认存在但本轮未改动（记录为已知限制）：
+
+- 快照文档（无本地来源）按标题版本链替代同名旧文档是既有设计（`importer.test.ts` 验证 v2）；对话归档若使用相同标题会替代前一份，需要时在归档标题中加入日期。
+- 自动提取与用户裁决并发时理论上可能出现同一 key 的 active + disputed 两行（网络等待期间的竞态），发生后候选会反复报错，需要手动拒绝再重新提出。
+- 升级前导入的本地文档首次检查没有 mtime/size 基线，只能采用当前状态作为基线；来源仅 touch 未改内容时会重新嵌入生成新版本；同步反复失败会累积 `index_failed` 记录。
+- 待确认候选在等待期间若同 key 已有记忆，只会提示刷新，不会自动升级为冲突候选。
+
+### 9.5 明确的取舍
+
+- 事件正文只保留标题与两三句脱敏摘要；记忆类事件只显示记忆键，不显示候选内容。
+- 文档"同步失败"没有独立真源状态，取 `index_failed` 或 `unknown + stale_reason` 投影。
+- 一次性提醒"错过"事件只在应用未运行导致 `run_at` 超过 15 分钟仍未执行时出现；应用启动后调度器会立即补发，因此该事件通常很快由来源自动解决。
+- `pnpm test:p3:ui` 使用固定模拟数据验证界面状态，不能替代两周真实体验。

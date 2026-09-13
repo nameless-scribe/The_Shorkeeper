@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AppStatus, AssistantMode } from '@/shared/types';
+import type { AppStatus, AssistantMode, ProactiveSourceTarget } from '@/shared/types';
 import { DEFAULT_ASSISTANT_MODE } from '@/assistant/mode';
 import { hasSpeakableDialogue } from '@/voice/text-for-speech';
 import { useAgentEvents } from './hooks/useAgentEvents';
@@ -13,6 +13,8 @@ import { MessageList } from './components/MessageList';
 import { InputBar } from './components/InputBar';
 import { SettingsDrawer } from './settings/SettingsDrawer';
 import { SessionHistoryPanel } from './components/SessionHistoryPanel';
+import { ProactiveInboxPanel } from './components/ProactiveInboxPanel';
+import type { SettingsTab } from './settings/SettingsSidebar';
 import { PermissionDialog } from './components/PermissionDialog';
 import { usePermissionRequests } from './hooks/usePermissionRequests';
 
@@ -23,6 +25,10 @@ export function ChatPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [inboxUnread, setInboxUnread] = useState(0);
+  const [requestedTab, setRequestedTab] = useState<{ tab: SettingsTab; nonce: number } | null>(null);
+  const [draftPrompt, setDraftPrompt] = useState<{ text: string; nonce: number } | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const voicePrefsRef = useRef({ enabled: false, autoPlay: false });
   const sessionIdRef = useRef(sessionId);
@@ -56,9 +62,17 @@ export function ChatPage() {
     }).catch(console.error);
 
     const off = window.shorekeeper.window.onOpenSettings(() => setSettingsOpen(true));
+    window.shorekeeper.proactivity
+      .unreadCount()
+      .then(setInboxUnread)
+      .catch(console.error);
+    const offInbox = window.shorekeeper.proactivity.onUpdated((payload) => {
+      setInboxUnread(payload.unreadCount);
+    });
     refreshVoiceSettings();
     return () => {
       off();
+      offInbox();
     };
   }, [refreshStatus, refreshVoiceSettings]);
 
@@ -158,6 +172,18 @@ export function ChatPage() {
     }
   }, [isRunning, sessionId]);
 
+  const handleOpenSource = useCallback((target: ProactiveSourceTarget) => {
+    if (target.open === 'chat') {
+      setInboxOpen(false);
+      if (target.suggestedPrompt) {
+        setDraftPrompt({ text: target.suggestedPrompt, nonce: Date.now() });
+      }
+      return;
+    }
+    setRequestedTab({ tab: target.open, nonce: Date.now() });
+    setSettingsOpen(true);
+  }, []);
+
   const handleOpenCall = useCallback(async () => {
     try {
       await window.shorekeeper.window.show('call');
@@ -177,6 +203,11 @@ export function ChatPage() {
           onSelect={handleSelectSession}
           refreshKey={historyRefreshKey}
         />
+        <ProactiveInboxPanel
+          open={inboxOpen}
+          onOpenSource={handleOpenSource}
+          onUnreadChange={setInboxUnread}
+        />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TitleBar
@@ -189,6 +220,9 @@ export function ChatPage() {
             onToggleHistory={() => setHistoryOpen((v) => !v)}
             onOpenCall={handleOpenCall}
             historyOpen={historyOpen}
+            onToggleInbox={() => setInboxOpen((v) => !v)}
+            inboxOpen={inboxOpen}
+            inboxUnread={inboxUnread}
           />
           <AgentWorkflowStrip status={workflow} />
           {agentPlan.length > 0 && (
@@ -213,9 +247,11 @@ export function ChatPage() {
             disabled={isRunning || !status?.apiConfigured}
             onSend={(text, attachments) => send(text, attachments)}
             onModelChange={refreshStatus}
+            draft={draftPrompt}
           />
           <SettingsDrawer
             open={settingsOpen}
+            requestedTab={requestedTab}
             onClose={() => {
               setSettingsOpen(false);
               refreshVoiceSettings();

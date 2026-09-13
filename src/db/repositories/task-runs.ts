@@ -13,6 +13,7 @@ import type {
   WorkspaceAttachment,
 } from '../../shared/types';
 import type { ApprovalRow, ArtifactRow, TaskRunRow, TaskRunStepRow } from '../schema';
+import { notifyLocalStateChanged } from '../../proactivity/signals';
 
 export const TASK_RUN_TERMINAL_PHASES: ReadonlySet<TaskRunPhase> = new Set([
   'finished',
@@ -295,6 +296,7 @@ export function finishTaskRun(
     now,
     id,
   );
+  if (input.phase === 'error') notifyLocalStateChanged('run');
   return getTaskRun(id, db);
 }
 
@@ -303,6 +305,7 @@ export function acknowledgeTaskRun(id: string, db: AppDatabase = getDatabase()):
     Date.now(),
     id,
   );
+  notifyLocalStateChanged('run');
 }
 
 /**
@@ -324,6 +327,7 @@ export function acknowledgeInterruptedRunsForSession(
     `UPDATE task_runs SET acknowledged_at = ?
      WHERE session_id = ? AND phase = 'interrupted' AND acknowledged_at IS NULL`,
   ).run(Date.now(), sessionId);
+  notifyLocalStateChanged('run');
   return rows.length;
 }
 
@@ -391,6 +395,7 @@ export function markInterruptedRuns(
        WHERE status = 'pending'`,
     ).run(now);
 
+    notifyLocalStateChanged('run');
     return {
       runIds,
       steps: Number(runningSteps?.count ?? 0),

@@ -265,6 +265,8 @@ export class SqliteDb implements AppDatabase {
   private persistSync(): void {
     if (this.closed) return;
     writeDatabaseFileAtomically(this.dbPath, this.db.export());
+    // sql.js 的 export() 会关闭再重新打开内部连接，连接级 PRAGMA 随之丢失，必须重新启用外键。
+    this.db.run('PRAGMA foreign_keys = ON');
   }
 
   persist(): void {

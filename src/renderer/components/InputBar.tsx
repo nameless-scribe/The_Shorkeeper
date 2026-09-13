@@ -1,4 +1,4 @@
-import { useCallback, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useCallback, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react';
 import type { WorkspaceAttachment } from '@/shared/types';
 import { ModelQuickSwitcher } from './ModelQuickSwitcher';
 
@@ -6,12 +6,20 @@ interface InputBarProps {
   disabled?: boolean;
   onSend: (text: string, attachments: WorkspaceAttachment[]) => void;
   onModelChange?: () => void;
+  /** 外部预填的草稿（例如收件箱回链）：只填入输入框，不自动发送 */
+  draft?: { text: string; nonce: number } | null;
 }
 
-export function InputBar({ disabled, onSend, onModelChange }: InputBarProps) {
+export function InputBar({ disabled, onSend, onModelChange, draft }: InputBarProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<WorkspaceAttachment[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!draft?.text) return;
+    // 不覆盖用户已输入的内容：有草稿时追加到末尾。
+    setText((prev) => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n${draft.text}` : draft.text));
+  }, [draft]);
 
   const addAttachments = useCallback((items: WorkspaceAttachment[]) => {
     if (!items.length) return;

@@ -13,13 +13,15 @@ import {
   requireRecord,
   requireString,
 } from '../../src/shared/ipc-validation';
+import { PROACTIVE_EVENT_DOMAINS } from '../../src/proactivity/contract';
+import { onProactivitySettingsChanged } from '../proactivity/runtime';
 
 function parsePerformancePatch(value: unknown): Partial<PerformanceSettingsInfo> {
   const input = requireRecord(value, '性能设置');
   const output: Partial<PerformanceSettingsInfo> = {};
   const booleanKeys = [
     'ragEnabled', 'ragFtsFirst', 'ragRerankEnabled', 'ragHydeEnabled',
-    'memorySemanticInContext', 'proactivityEnabled',
+    'memorySemanticInContext', 'proactivityEnabled', 'keepInboxHistoryWhenDisabled',
   ] as const;
   for (const key of booleanKeys) {
     if (input[key] !== undefined) output[key] = requireBoolean(input[key], key);
@@ -37,6 +39,8 @@ function parsePerformancePatch(value: unknown): Partial<PerformanceSettingsInfo>
     compressThreshold: [20, 200],
     contextMaxInputTokens: [8_000, 120_000],
     notificationDedupMinutes: [0, 1_440],
+    notifyHourlyLimit: [0, 60],
+    notifyDailyLimit: [0, 500],
   } as const;
   for (const [key, [min, max]] of Object.entries(numericRules)) {
     if (input[key] !== undefined) {
@@ -49,6 +53,14 @@ function parsePerformancePatch(value: unknown): Partial<PerformanceSettingsInfo>
   }
   if (input.memoryExtractMode !== undefined) {
     output.memoryExtractMode = requireEnum(input.memoryExtractMode, '记忆提取模式', ['always', 'manual', 'every_n'] as const);
+  }
+  if (input.mutedEventDomains !== undefined) {
+    if (!Array.isArray(input.mutedEventDomains) || input.mutedEventDomains.length > PROACTIVE_EVENT_DOMAINS.length) {
+      throw new TypeError('mutedEventDomains必须是事件域数组');
+    }
+    output.mutedEventDomains = input.mutedEventDomains.map((item) =>
+      requireEnum(item, '事件域', PROACTIVE_EVENT_DOMAINS),
+    );
   }
   for (const key of ['quietHoursStart', 'quietHoursEnd'] as const) {
     if (input[key] !== undefined) {
@@ -85,6 +97,10 @@ function toInfo(settings: PerformanceSettings): PerformanceSettingsInfo {
     quietHoursStart: settings.quietHoursStart,
     quietHoursEnd: settings.quietHoursEnd,
     notificationDedupMinutes: settings.notificationDedupMinutes,
+    notifyHourlyLimit: settings.notifyHourlyLimit,
+    notifyDailyLimit: settings.notifyDailyLimit,
+    mutedEventDomains: settings.mutedEventDomains,
+    keepInboxHistoryWhenDisabled: settings.keepInboxHistoryWhenDisabled,
   };
 }
 
@@ -105,6 +121,17 @@ export function registerPerformanceIpc(): void {
         normalizedPatch.notificationDedupMinutes != null
       ) {
         reloadScheduler();
+      }
+      if (
+        normalizedPatch.proactivityEnabled != null ||
+        normalizedPatch.quietHoursStart != null ||
+        normalizedPatch.quietHoursEnd != null ||
+        normalizedPatch.notifyHourlyLimit != null ||
+        normalizedPatch.notifyDailyLimit != null ||
+        normalizedPatch.mutedEventDomains != null ||
+        normalizedPatch.keepInboxHistoryWhenDisabled != null
+      ) {
+        onProactivitySettingsChanged(saved);
       }
       return toInfo(saved);
     },

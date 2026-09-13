@@ -5,6 +5,7 @@ import type {
   DocumentSourceKind,
   DocumentSyncPolicy,
 } from '../../shared/types';
+import { notifyLocalStateChanged } from '../../proactivity/signals';
 
 export type DocumentStatus =
   | 'importing'
@@ -735,6 +736,14 @@ export function updateDocumentMeta(
     `UPDATE documents SET ${sets.join(', ')}
      WHERE id = ? AND status NOT IN ('deleted', 'superseded')`,
   ).run(...params);
+  if (
+    meta.freshnessStatus !== undefined ||
+    meta.status !== undefined ||
+    meta.staleReason !== undefined ||
+    meta.deletedAt !== undefined
+  ) {
+    notifyLocalStateChanged('document');
+  }
 }
 
 export function recoverInterruptedDocumentImports(

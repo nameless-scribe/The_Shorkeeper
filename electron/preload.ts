@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
+  ProactiveEventInfo,
+  ProactiveInboxSnapshot,
+  ProactiveSourceTarget,
+  ProactivityFeedbackReason,
+  ProactivityMetricsInfo,
   AgentPresenceState,
   AgentSendPayload,
   AppStatus,
@@ -275,6 +280,28 @@ const shorekeeperApi = {
       ipcRenderer.on('tasks:updated', listener);
       return () => {
         ipcRenderer.removeListener('tasks:updated', listener);
+      };
+    },
+  },
+  proactivity: {
+    inbox: (): Promise<ProactiveInboxSnapshot> => ipcRenderer.invoke('proactivity:inbox'),
+    unreadCount: (): Promise<number> => ipcRenderer.invoke('proactivity:unreadCount'),
+    markRead: (id: string): Promise<ProactiveEventInfo | null> => ipcRenderer.invoke('proactivity:markRead', id),
+    markAllRead: (): Promise<number> => ipcRenderer.invoke('proactivity:markAllRead'),
+    dismiss: (id: string, reason?: ProactivityFeedbackReason | null): Promise<ProactiveEventInfo | null> =>
+      ipcRenderer.invoke('proactivity:dismiss', id, reason ?? null),
+    snooze: (id: string, minutes: number): Promise<ProactiveEventInfo | null> =>
+      ipcRenderer.invoke('proactivity:snooze', id, minutes),
+    resolve: (id: string): Promise<ProactiveEventInfo | null> => ipcRenderer.invoke('proactivity:resolve', id),
+    openSource: (id: string): Promise<ProactiveSourceTarget | null> => ipcRenderer.invoke('proactivity:openSource', id),
+    clearHandled: (): Promise<number> => ipcRenderer.invoke('proactivity:clearHandled'),
+    refresh: (): Promise<ProactiveInboxSnapshot> => ipcRenderer.invoke('proactivity:refresh'),
+    metrics: (days?: number): Promise<ProactivityMetricsInfo> => ipcRenderer.invoke('proactivity:metrics', days),
+    onUpdated: (callback: (payload: { ts: number; unreadCount: number }) => void) => {
+      const listener = (_: Electron.IpcRendererEvent, payload: { ts: number; unreadCount: number }) => callback(payload);
+      ipcRenderer.on('proactivity:inbox:updated', listener);
+      return () => {
+        ipcRenderer.removeListener('proactivity:inbox:updated', listener);
       };
     },
   },

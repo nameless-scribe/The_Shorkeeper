@@ -4,6 +4,7 @@ import { getDatabase } from './index';
 import type { ScheduledTaskRow } from './schema';
 import type { ScheduleKind, ScheduledTaskInfo } from '../shared/types';
 import { validateScheduleInput } from '../scheduler/format';
+import { notifyLocalStateChanged } from '../proactivity/signals';
 
 function rowToInfo(row: ScheduledTaskRow): ScheduledTaskInfo {
   const scheduleKind = (row.schedule_kind === 'once' ? 'once' : 'recurring') as ScheduleKind;
@@ -17,10 +18,14 @@ function rowToInfo(row: ScheduledTaskRow): ScheduledTaskInfo {
     actionPayload: row.action_payload,
     enabled: row.enabled === 1,
     lastRunAt: row.last_run_at,
+    lastError: row.last_error ?? null,
+    lastErrorAt: row.last_error_at ?? null,
+    failureCount: Number(row.failure_count ?? 0),
   };
 }
 
-const TASK_SELECT = `SELECT id, name, cron, action_type, action_payload, enabled, last_run_at, schedule_kind, run_at
+const TASK_SELECT = `SELECT id, name, cron, action_type, action_payload, enabled, last_run_at, schedule_kind, run_at,
+    last_error, last_error_at, failure_count
   FROM scheduled_tasks`;
 
 export function listScheduledTasks(): ScheduledTaskInfo[] {
@@ -94,6 +99,7 @@ export function createScheduledTask(input: CreateScheduledTaskInput): ScheduledT
       runAt,
     );
 
+  notifyLocalStateChanged('schedule');
   return getScheduledTask(id)!;
 }
 
@@ -140,11 +146,13 @@ export function updateScheduledTask(
       id,
     );
 
+  notifyLocalStateChanged('schedule');
   return getScheduledTask(id);
 }
 
 export function disableScheduledTask(id: string): void {
   getDatabase().prepare('UPDATE scheduled_tasks SET enabled = 0 WHERE id = ?').run(id);
+  notifyLocalStateChanged('schedule');
 }
 
 export function deleteScheduledTask(id: string): boolean {
@@ -152,11 +160,30 @@ export function deleteScheduledTask(id: string): boolean {
   const existing = db.prepare('SELECT id FROM scheduled_tasks WHERE id = ?').get(id);
   if (!existing) return false;
   db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
+  notifyLocalStateChanged('schedule');
   return true;
 }
 
+/** 成功执行：记录时间并清零失败计数，让"定时任务失败"事件可以因下次成功自动解除。 */
 export function markTaskRun(id: string): void {
   getDatabase()
-    .prepare('UPDATE scheduled_tasks SET last_run_at = ? WHERE id = ?')
+    .prepare('UPDATE scheduled_tasks SET last_run_at = ?, failure_count = 0, last_error = NULL, last_error_at = NULL WHERE id = ?')
     .run(Date.now(), id);
+  notifyLocalStateChanged('schedule');
+}
+
+const MAX_TASK_ERROR_CHARS = 200;
+
+/** 执行失败：持久化错误摘要与连续失败次数，作为 P3 主动事件的真源。 */
+export function markTaskFailure(id: string, error: unknown, at = Date.now()): void {
+  const raw = error instanceof Error ? error.message : String(error ?? '未知错误');
+  const summary = raw.trim().slice(0, MAX_TASK_ERROR_CHARS) || '未知错误';
+  getDatabase()
+    .prepare(
+      `UPDATE scheduled_tasks
+       SET last_error = ?, last_error_at = ?, failure_count = COALESCE(failure_count, 0) + 1
+       WHERE id = ?`,
+    )
+    .run(summary, at, id);
+  notifyLocalStateChanged('schedule');
 }

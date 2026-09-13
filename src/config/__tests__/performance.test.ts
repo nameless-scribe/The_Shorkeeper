@@ -30,6 +30,10 @@ const baseSettings: PerformanceSettings = {
   quietHoursStart: '',
   quietHoursEnd: '',
   notificationDedupMinutes: 5,
+  notifyHourlyLimit: 3,
+  notifyDailyLimit: 12,
+  mutedEventDomains: [],
+  keepInboxHistoryWhenDisabled: true,
 };
 
 describe('performance config', () => {

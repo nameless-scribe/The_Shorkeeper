@@ -189,6 +189,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 |------|------|
 | [DEVELOPMENT-CONTRACT.md](docs/DEVELOPMENT-CONTRACT.md) | 全仓库开发契约与完成标准 |
 | [P1-PERSONAL-MODEL-PLAN.md](docs/P1-PERSONAL-MODEL-PLAN.md) | P1 可追溯个人模型实施计划与阶段出口 |
+| [P3-LOCAL-PROACTIVITY-PLAN.md](docs/P3-LOCAL-PROACTIVITY-PLAN.md) | P3 本地主动服务实施契约、路由规则与验收记录 |
 | [P3-LOCAL-PROACTIVITY-PLAN.md](docs/P3-LOCAL-PROACTIVITY-PLAN.md) | P3 本地事件、主动收件箱、通知路由与降噪实施契约 |
 | [使用说明.md](docs/使用说明.md) | 技能、插件、工作区、待办 |
 | [DESIGN.md](docs/DESIGN.md) | 架构设计 |
@@ -209,7 +210,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 - **P0**：任务闭环、目标/承诺与每日管家工程已完成；真实使用观察持续进行
 - **P1**：可追溯个人模型、冲突裁决、来源回链与知识新鲜度工程已完成
 - **P2**：外部连接器方向已取消，不接入邮箱、外部日历、联系人或云盘
-- **P3**：调整为纯本地主动服务；方案与六阶段实施契约已完成，工程尚未开始
+- **P3**：纯本地主动服务工程已完成（持久事件账本、本地采集器、主动收件箱、统一路由与频率预算、四个纵向场景、`pnpm test:p3` / `pnpm test:p3:ui`）；连续两周真实使用观察尚未开始
 - **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地
 
 ## License

@@ -13,6 +13,7 @@ import {
   PERSONAL_MEMORY_STATUSES,
   PERSONAL_MEMORY_TYPES,
 } from '../../memory/personal-model';
+import { notifyLocalStateChanged } from '../../proactivity/signals';
 
 export interface MemoryEntry {
   id: string;
@@ -163,6 +164,20 @@ export function listActiveMemories(
   return rows.map(rowToEntry);
 }
 
+/** 即将过期或已过期但仍 active 的记忆：P3 记忆守望的真源查询。 */
+export function listExpiringMemories(
+  before: number,
+  limit = 200,
+  db: AppDatabase = getDatabase(),
+): MemoryEntry[] {
+  const rows = db.prepare(
+    `SELECT ${MEMORY_SELECT} FROM long_term_memory
+     WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?
+     ORDER BY expires_at ASC LIMIT ?`,
+  ).all(before, Math.max(1, Math.min(500, limit))) as unknown as MemoryRow[];
+  return rows.map(rowToEntry);
+}
+
 export function listMemoryHistory(
   memoryKey: string,
   db: AppDatabase = getDatabase(),
@@ -271,6 +286,7 @@ export function createMemory(
     entry.validFrom, entry.expiresAt, entry.supersededBy, entry.createdAt, entry.updatedAt,
     input.embedding ?? null,
   );
+  notifyLocalStateChanged('memory');
   return entry;
 }
 
@@ -358,6 +374,7 @@ export function setMemoryStatusById(
     `UPDATE long_term_memory
      SET status = ?, superseded_by = ?, updated_at = ? WHERE id = ?`,
   ).run(status, supersededBy, updatedAt, id);
+  notifyLocalStateChanged('memory');
   return getMemoryById(id, db);
 }
 
@@ -368,5 +385,6 @@ export function deleteMemoryById(
   const existing = getMemoryById(id, db);
   if (!existing) return undefined;
   db.prepare('DELETE FROM long_term_memory WHERE id = ?').run(id);
+  notifyLocalStateChanged('memory');
   return existing;
 }

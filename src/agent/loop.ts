@@ -289,7 +289,7 @@ async function executeAuthorizedTool(
     previewRevision: call.previewRevision,
   }));
   // 闭环第 5 步"验证"：声明产生文件产物的工具必须能读回产物，否则不算完成。
-  return enforceToolEvidence(result, call.contract, ctx.workspaceRoot);
+  return enforceToolEvidence(result, call.contract, ctx.workspaceRoot, { verifyDigest: true });
 }
 
 function markDuplicateSideEffect(prior: ToolResult): ToolResult {

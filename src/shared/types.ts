@@ -285,6 +285,13 @@ export interface PerformanceSettingsInfo {
   quietHoursStart: string;
   quietHoursEnd: string;
   notificationDedupMinutes: number;
+  /** 每小时 / 每日即时弹窗上限；达到后紧急度不足的事件只进收件箱 */
+  notifyHourlyLimit: number;
+  notifyDailyLimit: number;
+  /** 静音的事件域：仍写入收件箱，但不弹窗 */
+  mutedEventDomains: ProactiveEventDomain[];
+  /** 全局关闭主动服务后是否保留收件箱历史 */
+  keepInboxHistoryWhenDisabled: boolean;
 }
 
 export type FilesystemMode = 'readonly' | 'confirm' | 'full';
@@ -508,6 +515,10 @@ export interface ScheduledTaskInfo {
   actionPayload: string;
   enabled: boolean;
   lastRunAt: number | null;
+  /** P3：最近一次执行失败的摘要、时间与连续失败次数 */
+  lastError?: string | null;
+  lastErrorAt?: number | null;
+  failureCount?: number;
 }
 
 export type UserTaskStatus = 'pending' | 'in_progress' | 'done' | 'cancelled';
@@ -592,6 +603,179 @@ export interface BriefingInfo {
   summary: string | null;
   createdAt: number;
   updatedAt: number;
+}
+
+/* ---------- P3 本地主动服务 ---------- */
+
+export type ProactiveEventDomain =
+  | 'task'
+  | 'commitment'
+  | 'run'
+  | 'schedule'
+  | 'document'
+  | 'memory'
+  | 'goal';
+
+export type ProactiveEventKind =
+  | 'task_due_today'
+  | 'task_overdue'
+  | 'commitment_due_soon'
+  | 'commitment_missed'
+  | 'commitment_proposed'
+  | 'commitment_unattended'
+  | 'run_error'
+  | 'run_interrupted'
+  | 'schedule_failed'
+  | 'schedule_missed'
+  | 'document_changed'
+  | 'document_missing'
+  | 'document_sync_failed'
+  | 'memory_conflict'
+  | 'memory_sensitive'
+  | 'memory_expiring'
+  | 'goal_target_near'
+  | 'goal_stalled';
+
+export type ProactiveEventUrgency = 'low' | 'normal' | 'high';
+
+/** open：待处理；snoozed：用户稍后处理；dismissed：用户忽略；resolved：来源已解决或用户标记完成。 */
+export type ProactiveEventStatus = 'open' | 'snoozed' | 'dismissed' | 'resolved';
+
+export type ProactivityRoute = 'inbox' | 'notify' | 'defer' | 'suppress';
+
+export type ProactivityRouteReason =
+  | 'notified'
+  | 'inbox_default'
+  | 'disabled'
+  | 'quiet_hours'
+  | 'repeated'
+  | 'domain_muted'
+  | 'budget_exhausted'
+  | 'snoozed'
+  | 'resolved'
+  | 'dismissed'
+  | 'expired'
+  | 'low_urgency';
+
+export type ProactivityFeedbackAction = 'opened' | 'accepted' | 'dismissed' | 'snoozed' | 'resolved';
+
+export type ProactivityFeedbackReason =
+  | 'not_relevant'
+  | 'already_handled'
+  | 'too_noisy'
+  | 'later'
+  | 'source_opened'
+  | 'source_resolved'
+  | 'bulk_clear';
+
+export interface ProactiveEventInfo {
+  id: string;
+  domain: ProactiveEventDomain;
+  kind: ProactiveEventKind;
+  sourceType: string;
+  sourceId: string;
+  sourceRef: string | null;
+  dedupeKey: string;
+  sourceVersion: number;
+  title: string;
+  summary: string | null;
+  urgency: ProactiveEventUrgency;
+  status: ProactiveEventStatus;
+  dueAt: number | null;
+  occurredAt: number;
+  expiresAt: number | null;
+  snoozedUntil: number | null;
+  resolvedAt: number | null;
+  resolvedReason: string | null;
+  readAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProactivityDecisionInfo {
+  id: string;
+  eventId: string | null;
+  decisionKey: string;
+  subjectKind: 'event' | 'scheduled_reminder' | 'steward_notice';
+  subjectId: string;
+  policy: AssistantActionPolicy;
+  route: ProactivityRoute;
+  reason: string;
+  ruleVersion: string;
+  evaluatedAt: number;
+}
+
+export type ProactivityDeliveryChannel = 'popup' | 'inbox';
+export type ProactivityDeliveryStatus = 'planned' | 'sent' | 'failed' | 'cancelled';
+
+export interface ProactivityDeliveryInfo {
+  id: string;
+  eventId: string | null;
+  deliveryKey: string;
+  subjectKind: 'event' | 'scheduled_reminder' | 'steward_notice';
+  subjectId: string;
+  channel: ProactivityDeliveryChannel;
+  status: ProactivityDeliveryStatus;
+  scheduledAt: number | null;
+  sentAt: number | null;
+  errorCategory: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProactivityFeedbackInfo {
+  id: string;
+  eventId: string;
+  action: ProactivityFeedbackAction;
+  reasonCode: ProactivityFeedbackReason | null;
+  createdAt: number;
+}
+
+/** 收件箱卡片：事件本体加上最近一次路由结果与投递状态，供 UI 说明"为什么出现、是否被延后"。 */
+export interface ProactiveInboxItemInfo {
+  event: ProactiveEventInfo;
+  lastRoute: ProactivityRoute | null;
+  lastRouteReason: string | null;
+  deliveredAt: number | null;
+  deferredUntil: number | null;
+}
+
+export type ProactiveInboxSection = 'attention' | 'later' | 'handled';
+
+export interface ProactiveInboxSnapshot {
+  attention: ProactiveInboxItemInfo[];
+  later: ProactiveInboxItemInfo[];
+  handled: ProactiveInboxItemInfo[];
+  unreadCount: number;
+  generatedAt: number;
+}
+
+/** 点击"处理"时的回链目标；渲染层据此打开待办、承诺、运行、文档或记忆入口。 */
+export interface ProactiveSourceTarget {
+  domain: ProactiveEventDomain;
+  sourceType: string;
+  sourceId: string;
+  sourceRef: string | null;
+  /** 建议在渲染层打开的设置页签或聊天 */
+  open: 'userTodos' | 'tasks' | 'runs' | 'documents' | 'memory' | 'chat';
+  /** 打开聊天时的建议输入，不会自动发送 */
+  suggestedPrompt: string | null;
+}
+
+export interface ProactivityMetricsInfo {
+  since: number;
+  until: number;
+  eventsCreated: number;
+  notified: number;
+  inboxed: number;
+  deferred: number;
+  suppressed: number;
+  duplicateDeliveriesBlocked: number;
+  opened: number;
+  accepted: number;
+  dismissed: number;
+  snoozed: number;
+  resolvedBySource: number;
 }
 
 export type DocumentStatus =

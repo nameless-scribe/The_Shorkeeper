@@ -22,6 +22,12 @@ import { registerWindowIpc } from './ipc/window';
 import { registerTasksIpc } from './ipc/tasks';
 import { registerUserTasksIpc } from './ipc/user-tasks';
 import { registerStewardIpc } from './ipc/steward';
+import { registerProactivityIpc } from './ipc/proactivity';
+import {
+  shutdownProactivityRuntime,
+  startProactivityRuntime,
+  wakeProactivityRuntime,
+} from './proactivity/runtime';
 import { applyDailyStewardSchedule } from '../src/config/daily-steward';
 import { initDatabase, closeDatabaseAsync } from '../src/db';
 import { setDatabaseReady } from '../src/db/state';
@@ -118,6 +124,12 @@ function clearStartupTimers(): void {
 }
 
 async function settleRuntimeForShutdown(): Promise<void> {
+  try {
+    // 先停主动服务：取消定时器并等待当前采集周期结束，避免关库后仍有写入。
+    await shutdownProactivityRuntime(SHUTDOWN_GRACE_MS);
+  } catch (error) {
+    console.error('[shutdown] 主动服务停止失败:', error instanceof Error ? error.message : error);
+  }
   const result = await coordinateRuntimeShutdown({
     beginSessionRunShutdown,
     cancelAllPendingPermissions,
@@ -206,6 +218,7 @@ app.whenReady().then(async () => {
     registerTasksIpc();
     registerUserTasksIpc();
     registerStewardIpc();
+    registerProactivityIpc();
     await registerWorkspaceIpc();
     registerDockIpc();
     await registerDocumentsIpc();
@@ -236,11 +249,15 @@ app.whenReady().then(async () => {
       console.error('[steward] 每日管家任务同步失败:', err);
     }
     startScheduler();
+    // 启动后延迟做一次有界校对，不阻塞首窗；唤醒后再做局部校对。
+    startProactivityRuntime();
     removePowerLifecycle = bindPowerLifecycle(powerMonitor, {
-      suspend: () => stopScheduler(),
+      // 休眠只停 cron 与一次性计时器；安静时段推迟的执行保留，唤醒后按原计划补跑。
+      suspend: () => stopScheduler({ keepDeferred: true }),
       resume: () => {
         if (isAppQuitting()) return;
         reloadScheduler();
+        wakeProactivityRuntime();
         getWindowManager().reconcileVisibility();
         void scheduleAutomaticDocumentSync().catch((error) => {
           console.warn('[rag] 唤醒后的自动来源检查失败:', error instanceof Error ? error.message : error);

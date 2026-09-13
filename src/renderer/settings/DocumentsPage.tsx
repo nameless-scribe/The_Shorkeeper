@@ -106,6 +106,7 @@ export function DocumentsPage() {
   const [reindexingDocId, setReindexingDocId] = useState<string | null>(null);
   const [checkingDocId, setCheckingDocId] = useState<string | null>(null);
   const [syncingDocId, setSyncingDocId] = useState<string | null>(null);
+  const [relinkingDocId, setRelinkingDocId] = useState<string | null>(null);
   const [policyDocId, setPolicyDocId] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [reindexProgress, setReindexProgress] = useState<ReindexProgress | null>(null);
@@ -319,12 +320,16 @@ export function DocumentsPage() {
   };
 
   const handleRelinkSource = async (id: string) => {
+    if (relinkingDocId) return;
+    setRelinkingDocId(id);
     setError(null);
     try {
       const updated = await window.shorekeeper.documents.relinkSource(id);
       if (updated) replaceDocument(updated);
     } catch (relinkError) {
       setError(relinkError instanceof Error ? relinkError.message : String(relinkError));
+    } finally {
+      setRelinkingDocId(null);
     }
   };
 
@@ -541,8 +546,11 @@ export function DocumentsPage() {
                       </SettingsActionLink>
                     )}
                     {doc.sourceKind === 'local_file' && doc.freshnessStatus === 'missing' && (
-                      <SettingsActionLink onClick={() => void handleRelinkSource(doc.id)}>
-                        重新定位
+                      <SettingsActionLink
+                        onClick={() => void handleRelinkSource(doc.id)}
+                        disabled={relinkingDocId === doc.id}
+                      >
+                        {relinkingDocId === doc.id ? '选择文件中…' : '重新定位'}
                       </SettingsActionLink>
                     )}
                     {doc.sourceKind === 'local_file' && (

@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, type AppDatabase } from '../index';
 import type { GoalInfo, GoalProgress, GoalStatus } from '../../shared/types';
 import type { GoalRow } from '../schema';
+import { notifyLocalStateChanged } from '../../proactivity/signals';
 
 const GOAL_STATUSES: ReadonlySet<string> = new Set<GoalStatus>(['active', 'paused', 'done', 'dropped']);
 const CLOSED_GOAL_STATUSES: ReadonlySet<GoalStatus> = new Set(['done', 'dropped']);
@@ -56,6 +57,7 @@ export function createGoal(input: CreateGoalInput, db: AppDatabase = getDatabase
     now,
     now,
   );
+  notifyLocalStateChanged('goal');
   return getGoal(id, db)!;
 }
 
@@ -115,6 +117,7 @@ export function updateGoal(
     now,
     id,
   );
+  notifyLocalStateChanged('goal');
   return getGoal(id, db);
 }
 
@@ -129,6 +132,7 @@ export function closeGoal(
   db.prepare(
     `UPDATE goals SET status = ?, closed_at = COALESCE(closed_at, ?), updated_at = ? WHERE id = ?`,
   ).run(status, now, now, id);
+  notifyLocalStateChanged('goal');
   return getGoal(id, db);
 }
 
@@ -149,6 +153,23 @@ export function getGoalProgress(goalId: string, db: AppDatabase = getDatabase())
     doneTasks: Number(tasks?.done ?? 0),
     openCommitments: Number(commitments?.open ?? 0),
   };
+}
+
+/** 目标最近一次活动：目标本身、关联待办与承诺的最新 updated_at。 */
+export function getGoalLastActivityAt(goalId: string, db: AppDatabase = getDatabase()): number | null {
+  const goal = db.prepare('SELECT updated_at FROM goals WHERE id = ?').get(goalId) as { updated_at: number } | undefined;
+  if (!goal) return null;
+  const tasks = db
+    .prepare('SELECT MAX(updated_at) AS latest FROM user_tasks WHERE goal_id = ?')
+    .get(goalId) as { latest: number | null } | undefined;
+  const commitments = db
+    .prepare('SELECT MAX(updated_at) AS latest FROM commitments WHERE goal_id = ?')
+    .get(goalId) as { latest: number | null } | undefined;
+  return Math.max(
+    Number(goal.updated_at),
+    Number(tasks?.latest ?? 0),
+    Number(commitments?.latest ?? 0),
+  );
 }
 
 export function formatGoalList(goals: Array<GoalInfo & { progress?: GoalProgress }>): string {

@@ -78,11 +78,13 @@ export function proposeCommitmentsFromDrafts(
       continue;
     }
     const due = draft.due ? parseDueInput(draft.due) : null;
+    // 模型换算错误得到的过去时间不能写入：确认后会立刻被复盘标为 missed。
+    const dueAt = due && due.dueAt >= Date.now() ? due.dueAt : null;
     createCommitment({
       title: draft.title,
       owner: 'user',
       status: 'proposed',
-      dueAt: due?.dueAt ?? null,
+      dueAt,
       promisedTo: draft.promisedTo,
       sourceSessionId: context.sessionId,
       sourceRunId: context.runId ?? null,

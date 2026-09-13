@@ -88,7 +88,7 @@ export const manageCommitmentsTool: ToolDefinition = {
         }
         const items = listCommitments({
           status: status as CommitmentStatus | undefined,
-          ...(status === undefined && dueBefore === undefined ? { statuses: ['proposed', 'open'] } : {}),
+          ...(status === undefined ? { statuses: ['proposed', 'open'] } : {}),
           dueBefore,
         });
         return { success: true, output: formatCommitmentList(items) };
@@ -130,15 +130,20 @@ export const manageCommitmentsTool: ToolDefinition = {
         const dueRaw = readString(raw, 'due_at', 40);
         const due = dueRaw ? parseDueInput(dueRaw) : null;
         if (dueRaw && !due) return fail('due_at 须为 YYYY-MM-DD 或 ISO 本地时间');
-        if (due) updateCommitment(id, { dueAt: due.dueAt });
         const goalId = readString(raw, 'goal_id', 200);
         if (goalId && !getGoal(goalId)) return fail(`未找到目标: ${goalId}`);
+        // 先校验再写：截止时间只有在整个 confirm 能成立时才落库。
+        if (due) updateCommitment(id, { dueAt: due.dueAt });
         const confirmed = confirmProposedCommitment(id, { dueDate: due?.dueDate ?? null, goalId: goalId ?? undefined });
         notifyUserTasksChanged();
         return { success: true, output: `已确认承诺。\n${formatCommitmentList(confirmed ? [confirmed] : [])}` };
       }
 
       if (action === 'update') {
+        if (existing.status === 'proposed') return fail('待确认的承诺请先 confirm，再修改');
+        if (existing.status === 'done' || existing.status === 'cancelled' || existing.status === 'missed') {
+          return fail(`承诺已处于 ${existing.status} 状态，不能再修改；需要的话请重新 record`);
+        }
         const dueRaw = readString(raw, 'due_at', 40);
         const due = dueRaw ? parseDueInput(dueRaw) : null;
         if (dueRaw && !due) return fail('due_at 须为 YYYY-MM-DD 或 ISO 本地时间');
@@ -155,6 +160,8 @@ export const manageCommitmentsTool: ToolDefinition = {
 
       if (action === 'complete') {
         if (existing.status === 'done') return { success: true, output: `承诺已经是完成状态。\n${formatCommitmentList([existing])}` };
+        if (existing.status === 'proposed') return fail('待确认的承诺请先 confirm（会建立对应待办），再标记完成');
+        if (existing.status === 'cancelled') return fail('承诺已取消，不能标记完成');
         const completed = completeCommitment(id, { evidenceRunId: ctx.runId ?? null });
         notifyUserTasksChanged();
         return { success: true, output: `已标记承诺完成。\n${formatCommitmentList(completed ? [completed] : [])}` };

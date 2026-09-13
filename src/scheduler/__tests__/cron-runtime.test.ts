@@ -33,6 +33,7 @@ vi.mock('../../db/scheduled-tasks', () => ({
   disableScheduledTask: vi.fn(),
   listEnabledScheduledTasks: vi.fn(() => state.enabledTasks),
   markTaskRun: vi.fn(),
+  markTaskFailure: vi.fn(),
 }));
 vi.mock('../task-events', () => ({ notifyTasksChanged: vi.fn() }));
 vi.mock('../../db/repositories/commitments', () => ({
@@ -75,6 +76,7 @@ import {
   clearProactivityDecisions,
   listProactivityDecisions,
 } from '../../assistant/proactivity';
+import { resetProactivityLedgerMemory } from '../../proactivity/ledger';
 
 const task: ScheduledTaskInfo = {
   id: 'task-1',
@@ -111,7 +113,7 @@ describe('scheduled Agent runs', () => {
     ]));
 
     await expect(executeAgentPrompt(task, { prompt: '整理今天的计划' }))
-      .resolves.toEqual({ skipped: false });
+      .resolves.toEqual({ skipped: false, failed: false });
 
     expect(state.onRunStarted).toHaveBeenCalledOnce();
     expect(state.onRunFinished).toHaveBeenCalledOnce();
@@ -126,8 +128,9 @@ describe('scheduled Agent runs', () => {
       { type: 'run_error', runId: 'scheduled-error', message: '模型超时' },
     ]));
 
+    // 以 run_error 结束的定时运行是失败：调度器据此记录失败而不是清零失败计数。
     await expect(executeAgentPrompt(task, { prompt: '整理今天的计划' }))
-      .resolves.toEqual({ skipped: false });
+      .resolves.toEqual({ skipped: false, failed: true });
 
     expect(state.onRunError).toHaveBeenCalledOnce();
     expect(state.onRunFinished).not.toHaveBeenCalled();
@@ -200,6 +203,7 @@ describe('scheduled reminder visibility', () => {
     vi.clearAllMocks();
     vi.useRealTimers();
     clearProactivityDecisions();
+    resetProactivityLedgerMemory();
     state.settings.proactivityEnabled = true;
     state.settings.quietHoursStart = '';
     state.settings.quietHoursEnd = '';

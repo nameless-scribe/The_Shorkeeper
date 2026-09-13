@@ -34,10 +34,19 @@ interface SettingsDrawerProps {
   open: boolean;
   onClose: () => void;
   onConfigChange?: () => void;
+  /** 外部要求打开的页签（例如收件箱回链）；每次变化都会切换 */
+  requestedTab?: { tab: SettingsTab; nonce: number } | null;
 }
 
-export function SettingsDrawer({ open, onClose, onConfigChange }: SettingsDrawerProps) {
+export function SettingsDrawer({ open, onClose, onConfigChange, requestedTab }: SettingsDrawerProps) {
   const [tab, setTab] = useState<SettingsTab>('plugins');
+  const [seenNonce, setSeenNonce] = useState<number | null>(null);
+
+  // 在渲染期间切换页签，避免先挂载旧页签一帧再跳转。
+  if (requestedTab && requestedTab.nonce !== seenNonce) {
+    setSeenNonce(requestedTab.nonce);
+    setTab(requestedTab.tab);
+  }
 
   if (!open) return null;
 

@@ -45,7 +45,8 @@ export function contractFromMcpAnnotations(
     return { risk: 'read', idempotent: true, supportsPreview: false, reversible: 'none', evidence: 'output' };
   }
   return {
-    risk: 'medium',
+    // 服务端声明为破坏性的工具必须经过用户确认。
+    risk: annotations?.destructiveHint === true ? 'high' : 'medium',
     idempotent: annotations?.idempotentHint !== false,
     supportsPreview: false,
     reversible: 'none',

@@ -163,7 +163,10 @@ export function resolveMemoryCandidate(
         if (!legacyGoalMemory) {
           throw new Error('原事实已不存在，请刷新候选后重试');
         }
-        if (
+        if (resolution === 'coexist') {
+          // 并存：原事实恢复 active，新目标进入目标系统。
+          if (legacyGoalMemory.status === 'disputed') setMemoryStatusById(legacyGoalMemory.id, 'active', null, db);
+        } else if (
           legacyGoalMemory.status === 'active' || legacyGoalMemory.status === 'disputed'
         ) {
           setMemoryStatusById(legacyGoalMemory.id, 'superseded', null, db);

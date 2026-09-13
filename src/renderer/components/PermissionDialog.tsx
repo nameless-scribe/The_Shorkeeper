@@ -203,6 +203,7 @@ export function PermissionDialog({ request, onRespond }: PermissionDialogProps) 
   useEffect(() => {
     if (!request) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       if (e.key === 'Escape') onRespond(false);
       if (e.key === 'Enter') onRespond(true);
     };

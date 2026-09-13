@@ -9,6 +9,7 @@ import {
 import { importDocumentFromPath, type ImportProgress } from './importer';
 import type { DocumentSyncPolicy } from '../shared/types';
 import { AbortSignalError } from '../agent/abort';
+import { normalizeDocumentSourcePath } from './document-identity';
 
 export const AUTO_DOCUMENT_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const MAX_AUTO_DOCUMENTS_PER_PASS = 20;
@@ -105,11 +106,11 @@ export async function relinkDocumentSource(
     throw new Error('仅支持 .md / .txt / .docx / .doc / .pdf');
   }
   if (stat.size > MAX_SOURCE_BYTES) throw new Error('文件超过 10MB');
+  // 路径规范化必须与导入时一致，否则同步生成的新版本找不到旧版本，留下两份"当前"文档。
+  // 不覆盖 mtime/size 基线：基线仍指向旧快照来源，这样"检查来源"会继续报告 changed，直到真正同步。
   updateDocumentMeta(documentId, {
-    sourcePath: resolved,
+    sourcePath: normalizeDocumentSourcePath(resolved),
     sourceKind: 'local_file',
-    sourceModifiedAt: Math.floor(stat.mtimeMs),
-    sourceSize: stat.size,
     lastCheckedAt: Date.now(),
     freshnessStatus: 'changed',
     staleReason: '已重新定位来源，当前仍使用旧快照；请同步生成新版本',

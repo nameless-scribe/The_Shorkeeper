@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ContextSourceDetailInfo } from '@/shared/types';
 
 const CITATION_PATTERN = /〔((?:mem|goal|commitment):[A-Za-z0-9_-]{1,200}|doc:[A-Za-z0-9_-]{1,200}#chunk:\d{1,6})〕/g;
@@ -31,23 +31,30 @@ export function MessageContent({ content }: { content: string }) {
   const [detail, setDetail] = useState<ContextSourceDetailInfo | null>(null);
   const [loadingRef, setLoadingRef] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const latestRef = useRef<string | null>(null);
   const parts = parseMessageCitations(content);
 
   const openSource = async (ref: string) => {
     if (expandedRef === ref) {
       setExpandedRef(null);
+      latestRef.current = null;
       return;
     }
     setExpandedRef(ref);
+    latestRef.current = ref;
     setDetail(null);
     setError(null);
     setLoadingRef(ref);
     try {
-      setDetail(await window.shorekeeper.agent.sourceDetail(ref));
+      const loaded = await window.shorekeeper.agent.sourceDetail(ref);
+      // 用户已切到别的引用：丢弃迟到的结果，避免串位。
+      if (latestRef.current !== ref) return;
+      setDetail(loaded);
     } catch (loadError) {
+      if (latestRef.current !== ref) return;
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
-      setLoadingRef(null);
+      if (latestRef.current === ref) setLoadingRef(null);
     }
   };
 

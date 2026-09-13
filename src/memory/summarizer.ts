@@ -34,6 +34,7 @@ import { parseCommitmentDrafts, proposeCommitmentsFromDrafts } from './commitmen
 import { stageMemoryConflict } from './personal-memory-service';
 import { embedText } from '../rag/embedding';
 import { isSemanticallyDuplicateMemory } from './dedupe';
+import { formatLocalDate } from '../tasks/due-date';
 
 export interface ExtractMemoriesOptions {
   assistantMode?: AssistantMode;
@@ -45,7 +46,10 @@ export interface StructuredMemoryFact extends MemoryCandidateDraft {
 }
 
 function buildExtractionPrompt(existingMemories: string): string {
+  const today = new Date();
+  const weekday = ['日', '一', '二', '三', '四', '五', '六'][today.getDay()];
   return `你是记忆提取助手。你的任务是从「本轮新对话」中提取值得长期记住的用户事实。
+今天是 ${formatLocalDate(today)}（星期${weekday}）；"明天""周五前"等相对时间请据此换算成绝对日期。
 
 【已有长期记忆】
 ${existingMemories}
@@ -264,7 +268,8 @@ export async function extractMemoriesFromSession(
       continue;
     }
 
-    if (await isSemanticDuplicate(evaluation.content, signal)) continue;
+    // deny 策略（敏感 / 私密）的内容不得离开本机：跳过远端语义查重。
+    if (evaluation.modelUsePolicy !== 'deny' && (await isSemanticDuplicate(evaluation.content, signal))) continue;
 
     if (evaluation.decision === 'silent') {
       if (hasRejectedMemoryFact(evaluation.key, evaluation.content)) continue;

@@ -87,6 +87,7 @@ pnpm db:seed
 | `0023_personal_memory_model.sql` | P1 个人事实类型/状态/敏感与时效字段、仅 active key 唯一、候选冲突元数据、`memory_sources` 来源链 |
 | `0024_context_sources.sql` | P1 每次 run 实际注入的记忆、文档、目标与承诺来源账本 |
 | `0025_document_freshness.sql` | P1 本地文档来源、mtime/size、检查状态与手工/自动同步策略 |
+| `0026_proactive_events.sql` | P3 本地主动服务：`proactive_events`、`proactivity_decisions`、`proactivity_deliveries`、`proactivity_feedback`，以及 `scheduled_tasks` 的失败真源列（`last_error`、`last_error_at`、`failure_count`） |
 
 打包时 migration 以 `extraResources/db-migrations/` 形式随安装包分发；开发态直接读 `src/db/migrations/`。
 
@@ -128,6 +129,17 @@ pnpm db:seed
 | `commitments` | 承诺：`owner = user` 必挂一条待办（`task_id`），`owner = assistant` 指向提醒（`scheduled_task_id`）；状态 `proposed / open / done / missed / cancelled`，完成时记录 `evidence_run_id` |
 | `briefings` | 每日简报记录，`(brief_date, kind)` 唯一，保证早/晚简报每天只生成一次 |
 | `task_run_context_sources` | run 实际使用的上下文来源；只保存稳定引用和限长脱敏摘要，不保存完整 prompt |
+| `proactive_events` | P3 主动事件账本：由待办、承诺、运行、定时任务、文档、记忆、目标的当前状态投影而来；`(dedupe_key, source_version)` 唯一，状态 `open / snoozed / dismissed / resolved`，只存限长脱敏标题与摘要 |
+| `proactivity_decisions` | 路由决策：`decision_key` 唯一，记录 subject（事件 / 显式提醒 / 管家提示）、策略、路由 `inbox / notify / defer / suppress`、原因与规则版本；替代原先仅进程内的最近 50 条 |
+| `proactivity_deliveries` | 投递记录：`delivery_key` 唯一，跨重启去重与每小时 / 每日弹窗预算的依据；`planned` 表示安静时段延后待补发 |
+| `proactivity_feedback` | 用户对事件的反馈：`opened / accepted / dismissed / snoozed / resolved` 与有限枚举原因码，不保存自由文本 |
+
+### 主动事件的生命周期
+
+- 事件不是真源：collector 只读取领域表并幂等 upsert；来源恢复（待办完成、承诺关闭、任务成功、文档同步、候选裁决、目标推进）后事件自动 `resolved`，原因写作 `source:<domain>`。
+- 同一 `dedupe_key` 出现新的 `source_version` 时，旧活动事件标记 `resolved(superseded)` 再创建新事件；用户已忽略的同键同版本事件不会复活。
+- 决策与投递使用独立幂等键：重复扫描、休眠恢复或应用重启都不会为同一版本生成第二次弹窗。
+- 已处理事件保留 90 天后连同决策 / 投递 / 反馈清理；活动事件不受保留策略影响。全局关闭主动提醒且选择不保留历史时会清空全部事件。
 
 ### 运行记录的生命周期
 

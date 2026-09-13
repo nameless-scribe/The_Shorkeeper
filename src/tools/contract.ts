@@ -24,6 +24,12 @@ export const PREVIEWABLE_WORKSPACE_WRITE_CONTRACT: ToolSideEffectContract = {
   supportsPreview: true,
 };
 
+/** 依赖当前文件内容的工作区改写（精确替换）：同一调用重复执行会二次改写，不能视为幂等。 */
+export const CONTENT_DEPENDENT_WRITE_CONTRACT: ToolSideEffectContract = {
+  ...PREVIEWABLE_WORKSPACE_WRITE_CONTRACT,
+  idempotent: false,
+};
+
 /** 本机数据库的追加型写入（记账、新建待办等）：重复调用会产生重复记录。 */
 export const LOCAL_APPEND_CONTRACT: ToolSideEffectContract = {
   risk: 'low',

@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { getDatabase, type AppDatabase } from './index';
 import type { UserTaskInfo, UserTaskStatus } from '../shared/types';
+import { notifyLocalStateChanged } from '../proactivity/signals';
 
 export type { UserTaskInfo, UserTaskStatus } from '../shared/types';
 
@@ -129,6 +130,8 @@ export function createUserTask(
       now,
       now,
     );
+  notifyLocalStateChanged('task');
+  if (input.goalId) notifyLocalStateChanged('goal');
   return getUserTask(id, db)!;
 }
 
@@ -167,6 +170,8 @@ export function updateUserTask(
       now,
       id,
     );
+  notifyLocalStateChanged('task');
+  if (existing.goalId || patch.goalId) notifyLocalStateChanged('goal');
   return getUserTask(id, db);
 }
 

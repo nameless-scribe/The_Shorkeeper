@@ -4,12 +4,16 @@ import { getProfileValue } from '../db/repositories/user-profile';
 import { getGoalProgress, listGoals } from '../db/repositories/goals';
 import { listCommitments, markMissedCommitments } from '../db/repositories/commitments';
 import { listArtifactsSince, listTaskRuns } from '../db/repositories/task-runs';
+import { listProactiveEvents } from '../db/repositories/proactive-events';
+import { countFeedbackByActionSince } from '../db/repositories/proactivity-feedback';
+import { EVENT_DOMAIN_LABELS, EVENT_KIND_LABELS } from '../proactivity/contract';
 import { formatScheduleLabel } from '../scheduler/format';
 import type {
   ArtifactInfo,
   CommitmentInfo,
   GoalInfo,
   GoalProgress,
+  ProactiveEventInfo,
   ScheduledTaskInfo,
   TaskRunInfo,
   UserTaskInfo,
@@ -20,6 +24,9 @@ import { addLocalDays, formatLocalDate, localDayEnd } from './due-date';
 const CITY_PROFILE_KEYS = ['user.city', 'city', '城市', 'location'];
 const DUE_SOON_DAYS = 2;
 const MAX_PROPOSED = 3;
+/** 早间简报只带高价值的主动事件：待办 / 承诺已经单独列出，这里聚焦运行、定时任务、文档、记忆与目标。 */
+const MAX_BRIEF_EVENTS = 8;
+const BRIEF_EVENT_DOMAINS = ['run', 'schedule', 'document', 'memory', 'goal'] as const;
 
 export const MORNING_BRIEF_PROMPT =
   '【每日管家】请生成今天的早间简报。先调用 build_daily_brief 取得今日数据；若返回今天已生成过，只简短说明一句即可。' +
@@ -72,6 +79,19 @@ export interface MorningBriefData {
   dueCommitments: CommitmentInfo[];
   proposedCommitments: CommitmentInfo[];
   goals: Array<GoalInfo & { progress: GoalProgress }>;
+  /** P3：收件箱里尚未处理的高价值本地事件（不含待办 / 承诺，避免与上面重复） */
+  pendingEvents: ProactiveEventInfo[];
+}
+
+function safeListPendingEvents(): ProactiveEventInfo[] {
+  try {
+    return listProactiveEvents({ statuses: ['open'], domains: [...BRIEF_EVENT_DOMAINS], limit: 50 })
+      .filter((event) => event.urgency !== 'low')
+      .slice(0, MAX_BRIEF_EVENTS);
+  } catch (error) {
+    console.warn('[steward] 读取主动事件失败:', error instanceof Error ? error.message : error);
+    return [];
+  }
 }
 
 export function buildMorningBriefData(now = new Date()): MorningBriefData {
@@ -109,7 +129,12 @@ export function buildMorningBriefData(now = new Date()): MorningBriefData {
     dueCommitments,
     proposedCommitments,
     goals,
+    pendingEvents: safeListPendingEvents(),
   };
+}
+
+function eventLine(event: ProactiveEventInfo): string {
+  return `- [${EVENT_DOMAIN_LABELS[event.domain]}·${EVENT_KIND_LABELS[event.kind]}] ${event.title}${event.urgency === 'high' ? '（紧急）' : ''}`;
 }
 
 function taskLine(task: UserTaskInfo): string {
@@ -168,11 +193,17 @@ export function formatMorningBrief(data: MorningBriefData): string {
       : '目标进度：当前没有进行中的目标',
   );
 
+  sections.push(
+    data.pendingEvents.length
+      ? `待处理的主动提示（${data.pendingEvents.length}，来自主动收件箱，处理后自动消失）：\n${data.pendingEvents.map(eventLine).join('\n')}`
+      : '待处理的主动提示：无',
+  );
+
   return sections.join('\n\n');
 }
 
 export function summarizeMorningBrief(data: MorningBriefData): string {
-  return `逾期 ${data.overdueTasks.length}，今日 ${data.todayTasks.length}，提醒 ${data.onceRemindersToday.length + data.recurringReminders.length}，到期承诺 ${data.dueCommitments.length}，待确认 ${data.proposedCommitments.length}，目标 ${data.goals.length}`;
+  return `逾期 ${data.overdueTasks.length}，今日 ${data.todayTasks.length}，提醒 ${data.onceRemindersToday.length + data.recurringReminders.length}，到期承诺 ${data.dueCommitments.length}，待确认 ${data.proposedCommitments.length}，目标 ${data.goals.length}，主动提示 ${data.pendingEvents.length}`;
 }
 
 export interface EveningReviewData {
@@ -183,6 +214,28 @@ export interface EveningReviewData {
   completedCommitments: CommitmentInfo[];
   runsToday: TaskRunInfo[];
   artifactsToday: ArtifactInfo[];
+  /** P3：今天对主动提示的处理情况 */
+  eventsHandledToday: { resolved: number; dismissed: number; snoozed: number; accepted: number };
+  eventsStillOpen: number;
+}
+
+function safeEventStats(dayStart: number): Pick<EveningReviewData, 'eventsHandledToday' | 'eventsStillOpen'> {
+  try {
+    const feedback = countFeedbackByActionSince(dayStart);
+    const open = listProactiveEvents({ statuses: ['open'], limit: 500 }).length;
+    return {
+      eventsHandledToday: {
+        resolved: feedback.resolved,
+        dismissed: feedback.dismissed,
+        snoozed: feedback.snoozed,
+        accepted: feedback.accepted,
+      },
+      eventsStillOpen: open,
+    };
+  } catch (error) {
+    console.warn('[steward] 读取主动事件统计失败:', error instanceof Error ? error.message : error);
+    return { eventsHandledToday: { resolved: 0, dismissed: 0, snoozed: 0, accepted: 0 }, eventsStillOpen: 0 };
+  }
 }
 
 /** 晚间复盘数据；会把到期仍 open 的承诺标为 missed（这是复盘唯一的写操作）。 */
@@ -204,7 +257,16 @@ export function buildEveningReviewData(now = new Date()): EveningReviewData {
   const runsToday = listTaskRuns({ since: dayStart, limit: 200 });
   const artifactsToday = listArtifactsSince(dayStart, 200);
 
-  return { date, doneToday, unfinishedDue, missedCommitments, completedCommitments, runsToday, artifactsToday };
+  return {
+    date,
+    doneToday,
+    unfinishedDue,
+    missedCommitments,
+    completedCommitments,
+    runsToday,
+    artifactsToday,
+    ...safeEventStats(dayStart),
+  };
 }
 
 export function formatEveningReview(data: EveningReviewData): string {
@@ -240,6 +302,11 @@ export function formatEveningReview(data: EveningReviewData): string {
     data.artifactsToday.length
       ? `今日产物（可作为“已完成”的证据）：\n${data.artifactsToday.map((artifact) => `- ${artifact.relativePath}（${artifact.toolName}，${formatClock(artifact.createdAt)}）`).join('\n')}`
       : '今日产物：无。没有产物或工具结果支撑的事项不要说成已完成。',
+  );
+
+  const handled = data.eventsHandledToday;
+  sections.push(
+    `主动提示：今日处理 ${handled.resolved + handled.accepted} 条，忽略 ${handled.dismissed} 条，延后 ${handled.snoozed} 条；仍待处理 ${data.eventsStillOpen} 条。这些只是提示，真实进度以待办、承诺和运行记录为准。`,
   );
 
   return sections.join('\n\n');

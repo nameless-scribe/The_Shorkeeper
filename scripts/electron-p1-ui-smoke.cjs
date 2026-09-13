@@ -87,7 +87,8 @@ const performance = {
   ragHydeEnabled: false, memoryExtractMode: 'always', memoryExtractInterval: 3,
   maxHistoryMessages: 20, compressThreshold: 30, contextMaxInputTokens: 24000,
   memorySemanticInContext: true, proactivityEnabled: true, quietHoursStart: '', quietHoursEnd: '',
-  notificationDedupMinutes: 5,
+  notificationDedupMinutes: 5, notifyHourlyLimit: 3, notifyDailyLimit: 12, mutedEventDomains: [],
+  keepInboxHistoryWhenDisabled: true,
 };
 
 function registerMocks() {
@@ -114,6 +115,8 @@ function registerMocks() {
     'skills:list': () => [],
     'update:getVersion': () => '1.3.0',
     'performance:get': () => performance,
+    'proactivity:unreadCount': () => 0,
+    'proactivity:inbox': () => ({ attention: [], later: [], handled: [], unreadCount: 0, generatedAt: Date.now() }),
     'performance:set': (_event, patch) => Object.assign(performance, patch),
     'memory:list': () => [],
     'memory:get': (_event, id) => id === original.id ? original : null,

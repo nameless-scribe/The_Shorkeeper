@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   ApprovalInfo,
   TaskRunDetail,
@@ -91,18 +91,24 @@ function ContextSourcesList({ sources }: { sources: TaskRunContextSourceInfo[] }
   const [expandedRef, setExpandedRef] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContextSourceDetailInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const latestRef = useRef<string | null>(null);
 
   const open = async (source: TaskRunContextSourceInfo) => {
     if (expandedRef === source.sourceRef) {
       setExpandedRef(null);
+      latestRef.current = null;
       return;
     }
     setExpandedRef(source.sourceRef);
+    latestRef.current = source.sourceRef;
     setDetail(null);
     setError(null);
     try {
-      setDetail(await window.shorekeeper.agent.sourceDetail(source.sourceRef));
+      const loaded = await window.shorekeeper.agent.sourceDetail(source.sourceRef);
+      if (latestRef.current !== source.sourceRef) return;
+      setDetail(loaded);
     } catch (loadError) {
+      if (latestRef.current !== source.sourceRef) return;
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     }
   };
@@ -132,7 +138,9 @@ function ContextSourcesList({ sources }: { sources: TaskRunContextSourceInfo[] }
 }
 
 function RunDetailView({ detail, onBack }: { detail: TaskRunDetail; onBack: () => void }) {
-  const { run, steps, approvals, artifacts, contextSources } = detail;
+  const { run, steps, approvals, artifacts } = detail;
+  // 旧版本主进程可能不返回来源列表：按空处理，不让整页崩溃。
+  const contextSources = detail.contextSources ?? [];
   const runIssue = formatRunIssue(run);
   return (
     <SettingsPageShell>

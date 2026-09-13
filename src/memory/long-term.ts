@@ -346,7 +346,8 @@ export async function updateManagedMemory(id: string, content: string): Promise<
 
   const updated = replaceMemoryFromUserEdit(existing, trimmed);
 
-  if (updated.memoryKey) {
+  // deny 策略的记忆不会被检索使用，也不能把内容发给远端 embedding 服务。
+  if (updated.memoryKey && updated.modelUsePolicy === 'allow') {
     queueMemoryReembed(updated.memoryKey, trimmed);
   }
 

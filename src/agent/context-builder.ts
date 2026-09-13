@@ -302,9 +302,10 @@ export async function buildSystemPromptParts(
     dynamic,
     combined,
     budget: budgeted.report,
-    contextSources: budgeted.report.includedSectionIds.flatMap(
-      (sectionId) => sourcesBySection.get(sectionId) ?? [],
-    ),
+    // 被裁剪的段落不能保证其中每条来源都进入了 prompt，因此只记录完整保留的段落。
+    contextSources: budgeted.report.includedSectionIds
+      .filter((sectionId) => !budgeted.report.truncatedSectionIds.includes(sectionId))
+      .flatMap((sectionId) => sourcesBySection.get(sectionId) ?? []),
     ...(interruptedInjected ? { interruptedRunId: interrupted.runId } : {}),
   };
 }
