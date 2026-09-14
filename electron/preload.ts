@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
+  AsrSettingsInfo,
+  AsrSettingsPatch,
   AudioTranscriptInfo,
   ProactiveEventInfo,
   ProactiveInboxSnapshot,
@@ -436,6 +438,11 @@ const shorekeeperApi = {
     getSettings: (): Promise<WebSearchSettingsInfo> => ipcRenderer.invoke('web-search:getSettings'),
     saveSettings: (patch: WebSearchSettingsPatch): Promise<WebSearchSettingsInfo> =>
       ipcRenderer.invoke('web-search:saveSettings', patch),
+  },
+  asr: {
+    getSettings: (): Promise<AsrSettingsInfo> => ipcRenderer.invoke('asr:getSettings'),
+    saveSettings: (patch: AsrSettingsPatch): Promise<AsrSettingsInfo> =>
+      ipcRenderer.invoke('asr:saveSettings', patch),
   },
   voice: {
     getSettings: (): Promise<VoiceSettingsInfo> => ipcRenderer.invoke('voice:getSettings'),

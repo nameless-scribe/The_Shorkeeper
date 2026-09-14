@@ -59,6 +59,7 @@ import { registerPerformanceIpc } from './ipc/performance';
 import { registerPluginsIpc } from './ipc/plugins';
 import { registerWebSearchIpc } from './ipc/web-search';
 import { registerVoiceIpc, shutdownVoiceRuntime } from './ipc/voice';
+import { registerAsrIpc } from './ipc/asr';
 import { registerPermissionIpc, requestPermissionConfirm } from './ipc/permission';
 import { registerUpdateIpc } from './ipc/update';
 import { initAutoUpdater, shutdownAutoUpdaterRuntime } from './update/auto-updater';
@@ -237,6 +238,7 @@ app.whenReady().then(async () => {
     registerPluginsIpc();
     registerWebSearchIpc();
     registerVoiceIpc();
+    registerAsrIpc();
     registerPermissionIpc();
     setPermissionConfirmer(requestPermissionConfirm);
 

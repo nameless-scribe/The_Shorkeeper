@@ -979,6 +979,31 @@ export type {
   VoiceSource,
 } from '../voice/types';
 
+/** 录音转写（腾讯云）设置：设置页只拿掩码，明文永不出主进程 */
+export interface AsrSettingsInfo {
+  secretIdMasked: string;
+  secretKeyMasked: string;
+  /** AppID 不是密钥，明文回显便于核对 */
+  appId: string;
+  engineType: import('../voice/asr-contract').AsrEngineType;
+  diarization: boolean;
+  configured: boolean;
+  /** 未配置时指名道姓说缺哪个 */
+  reason: string | null;
+  credentialsSource: 'settings' | 'env' | 'none';
+}
+
+export interface AsrSettingsPatch {
+  /** 凭证字段留空或省略表示不修改 */
+  secretId?: string;
+  secretKey?: string;
+  appId?: string;
+  engineType?: import('../voice/asr-contract').AsrEngineType;
+  diarization?: boolean;
+  /** 删除应用内保存的三个凭证，之后回落到环境变量 */
+  clearCredentials?: boolean;
+}
+
 export interface VoiceSettingsInfo {
   ttsEnabled: boolean;
   ttsAutoPlay: boolean;
