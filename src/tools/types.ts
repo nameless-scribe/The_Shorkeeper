@@ -70,7 +70,7 @@ export interface ToolDefinition {
   name: string;
   description: string;
   parameters: JSONSchema;
-  category: 'file' | 'web' | 'doc' | 'memory' | 'life' | 'mcp' | 'skill';
+  category: 'file' | 'web' | 'doc' | 'memory' | 'life' | 'voice' | 'mcp' | 'skill';
   requiresPermission: PermissionFlag[];
   /** 副作用契约；内置工具必须显式声明，动态工具（MCP）缺省时按权限推导保守值。 */
   sideEffects?: ToolSideEffectContract;

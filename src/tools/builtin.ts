@@ -29,6 +29,7 @@ import {
   deleteScheduledTaskTool,
   listScheduledTasksTool,
 } from './schedule/schedule-tools';
+import { transcribeAudioTool } from './voice/transcribe-audio';
 import { updateAgentPlanTool } from './plan/plan-tools';
 import {
   createUserTaskTool,
@@ -77,6 +78,7 @@ export function createBuiltinRegistry(): ToolRegistry {
   registry.register(manageCommitmentsTool);
   registry.register(buildDailyBriefTool);
   registry.register(buildEveningReviewTool);
+  registry.register(transcribeAudioTool);
   return registry;
 }
 

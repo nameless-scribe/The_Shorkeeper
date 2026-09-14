@@ -276,6 +276,29 @@ export interface ApprovalRow {
   decided_at: number | null;
 }
 
+/** P4 录音转写账本；正文不入库，只存产物路径。 */
+export interface AudioTranscriptRow {
+  id: string;
+  source_path: string;
+  source_hash: string;
+  size_bytes: number;
+  duration_ms: number | null;
+  provider: string;
+  engine_type: string;
+  diarization: number;
+  status: string;
+  transcript_path: string | null;
+  sentence_count: number | null;
+  speaker_count: number | null;
+  error: string | null;
+  provider_code: number | null;
+  provider_request_id: string | null;
+  sensitivity: string;
+  created_at: number;
+  updated_at: number;
+  completed_at: number | null;
+}
+
 export interface ProactiveEventRow {
   id: string;
   domain: string;

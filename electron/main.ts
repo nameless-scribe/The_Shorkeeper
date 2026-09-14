@@ -65,6 +65,7 @@ import { configureAppIdentity } from './app-icon';
 import { showSplashWindow, closeSplashWindow } from './windows/splash';
 import { setPermissionConfirmer } from '../src/agent/permissions';
 import { reconcileInterruptedRuns } from '../src/agent/run-recovery';
+import { failStaleRunningTranscripts } from '../src/db/repositories/audio-transcripts';
 import { shutdownPendingSessionWork } from '../src/agent/session-background';
 import {
   abortAllSessionRuns,
@@ -186,6 +187,10 @@ app.whenReady().then(async () => {
     setDatabaseReady(true);
     // 进程刚启动，此时不存在活动 run：上次遗留的非终态记录一律收口为 interrupted。
     reconcileInterruptedRuns();
+    // 转写用的是同步接口，进程退出即请求中断，服务端没有任务可接回——
+    // 残留的 running 永远不会自己推进，不收口就会在界面上永远显示“转写中”。
+    const staleTranscripts = failStaleRunningTranscripts();
+    if (staleTranscripts) console.log(`[startup] 收口 ${staleTranscripts} 条中断的转写记录`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('数据库初始化失败:', err);
