@@ -23,6 +23,18 @@ release/
 # VAD / ONNX 静态资源（由 scripts/copy-vad-assets.mjs 从 node_modules 同步）
 public/vad/
 
+# 音频与转写产物（P4）：录音与逐字稿属于敏感内容，绝不入库
+*.m4a
+*.mp3
+*.wav
+*.aac
+*.flac
+*.ogg
+*.opus
+*.amr
+*.silk
+*.pcm
+
 # 日志与系统文件
 *.log
 .DS_Store
