@@ -342,6 +342,43 @@ export function VoicePage() {
         </section>
 
         <section className="rounded-2xl border border-keeper-cyan/15 bg-keeper-navy/30 p-4 space-y-3">
+          <p className="text-sm font-medium text-keeper-ice">语音输入（聊天框）</p>
+          <p className="text-xs text-keeper-ice/45">
+            在聊天输入框用麦克风说话，识别结果填入输入框。录音会发送到语音识别服务。
+          </p>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-keeper-ice">启用语音输入</p>
+              <p className="mt-1 text-xs text-keeper-ice/45">关闭后输入框的麦克风按钮不可用</p>
+            </div>
+            <SettingsToggle
+              checked={settings.sttEnabled}
+              onChange={(sttEnabled) => void save({ sttEnabled })}
+            />
+          </div>
+          <SettingsSegmented
+            value={settings.pushToTalk ? 'hold' : 'toggle'}
+            options={[
+              { value: 'hold', label: '按住说话' },
+              { value: 'toggle', label: '点击开始 / 结束' },
+            ]}
+            onChange={(value) => void save({ pushToTalk: value === 'hold' })}
+          />
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-keeper-ice">识别后自动发送</p>
+              <p className="mt-1 text-xs text-keeper-ice/45">
+                关闭时只填入输入框，可以先改再发；识别为空时一律不发送
+              </p>
+            </div>
+            <SettingsToggle
+              checked={settings.sttAutoSend}
+              onChange={(sttAutoSend) => void save({ sttAutoSend })}
+            />
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-keeper-cyan/15 bg-keeper-navy/30 p-4 space-y-3">
           <p className="text-sm font-medium text-keeper-ice">语音通话</p>
           <p className="text-xs text-keeper-ice/45">
             默认连续聆听、可直接插话打断；若环境嘈杂可在下方改回按住说话。

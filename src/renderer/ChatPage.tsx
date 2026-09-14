@@ -30,11 +30,15 @@ export function ChatPage() {
   const [requestedTab, setRequestedTab] = useState<{ tab: SettingsTab; nonce: number } | null>(null);
   const [draftPrompt, setDraftPrompt] = useState<{ text: string; nonce: number } | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceSettingsNonce, setVoiceSettingsNonce] = useState(0);
   const voicePrefsRef = useRef({ enabled: false, autoPlay: false });
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
 
   const refreshVoiceSettings = useCallback(() => {
+    // 同时通知输入栏重读语音输入相关设置（sttEnabled / pushToTalk / sttAutoSend），
+    // 复用既有的"抽屉关闭 / 配置变更"两个刷新点，不新增调用处。
+    setVoiceSettingsNonce((n) => n + 1);
     window.shorekeeper?.voice
       .getSettings()
       .then((s) => {
@@ -248,6 +252,7 @@ export function ChatPage() {
             onSend={(text, attachments) => send(text, attachments)}
             onModelChange={refreshStatus}
             draft={draftPrompt}
+            voiceSettingsNonce={voiceSettingsNonce}
           />
           <SettingsDrawer
             open={settingsOpen}
