@@ -16,9 +16,14 @@ import {
   SETTINGS_INPUT_CLASS,
 } from './components/settings-ui';
 
-function clampInt(raw: string, min: number, max: number, fallback: number): number {
+/**
+ * 空串或非数字返回 null，调用方跳过保存。
+ * 这三处的 0 都表示"不限制 / 不抑制"，若把清空重输的中间态当成 0 落库，
+ * 等于用户一清空就悄悄把上限彻底放开，与他的意图正好相反。
+ */
+function clampInt(raw: string, min: number, max: number): number | null {
   const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return fallback;
+  if (!Number.isFinite(parsed)) return null;
   return Math.max(min, Math.min(max, parsed));
 }
 
@@ -189,9 +194,10 @@ export function PerformancePage() {
               max={1440}
               value={settings.notificationDedupMinutes}
               disabled={!settings.proactivityEnabled}
-              onChange={(e) =>
-                void update({ notificationDedupMinutes: clampInt(e.target.value, 0, 1440, 0) })
-              }
+              onChange={(e) => {
+                const next = clampInt(e.target.value, 0, 1440);
+                if (next != null) void update({ notificationDedupMinutes: next });
+              }}
               className={`${SETTINGS_INPUT_CLASS} max-w-[140px] disabled:opacity-40`}
             />
             <span className="text-xs text-keeper-ice/45">分钟</span>
@@ -212,7 +218,10 @@ export function PerformancePage() {
               max={60}
               value={settings.notifyHourlyLimit}
               disabled={!settings.proactivityEnabled}
-              onChange={(e) => void update({ notifyHourlyLimit: clampInt(e.target.value, 0, 60, 0) })}
+              onChange={(e) => {
+                const next = clampInt(e.target.value, 0, 60);
+                if (next != null) void update({ notifyHourlyLimit: next });
+              }}
               className={`${SETTINGS_INPUT_CLASS} max-w-[140px] disabled:opacity-40`}
             />
           </SettingsField>
@@ -223,7 +232,10 @@ export function PerformancePage() {
               max={500}
               value={settings.notifyDailyLimit}
               disabled={!settings.proactivityEnabled}
-              onChange={(e) => void update({ notifyDailyLimit: clampInt(e.target.value, 0, 500, 0) })}
+              onChange={(e) => {
+                const next = clampInt(e.target.value, 0, 500);
+                if (next != null) void update({ notifyDailyLimit: next });
+              }}
               className={`${SETTINGS_INPUT_CLASS} max-w-[140px] disabled:opacity-40`}
             />
           </SettingsField>

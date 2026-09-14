@@ -22,11 +22,16 @@ const KINDS: ReadonlySet<string> = new Set(PROACTIVE_EVENT_KINDS);
 const STATUSES: ReadonlySet<string> = new Set(PROACTIVE_EVENT_STATUSES);
 const URGENCIES: ReadonlySet<string> = new Set(PROACTIVE_EVENT_URGENCIES);
 
-/** 由来源恢复 / 过期 / 新版本自动收口的事件可以重新打开；用户主动忽略或标记完成的不会复活。 */
+/**
+ * 由来源恢复 / 新版本自动收口的事件可以重新打开；用户主动忽略或标记完成的不会复活。
+ * `expired` 不在其列：过期事件的 expires_at 由 occurred_at 推导，不会因为再次投影而前移，
+ * 重开只会在下个周期被再次过期，形成 open / resolved 无限翻转并反复清空已读。
+ * 来源真的产生了新状态时 source_version 会变，走的是新建分支，不依赖这里复活。
+ */
 function isReopenable(event: ProactiveEventInfo): boolean {
   if (event.status !== 'resolved') return false;
   const reason = event.resolvedReason ?? '';
-  return reason.startsWith('source:') || reason === 'expired' || reason === 'superseded';
+  return reason.startsWith('source:') || reason === 'superseded';
 }
 
 function truncate(value: string, max: number): string {
@@ -85,8 +90,12 @@ export interface UpsertProactiveEventInput {
 
 export interface UpsertProactiveEventResult {
   event: ProactiveEventInfo;
-  /** created：首次写入或自动收口后重新出现；updated：同键同版本刷新；unchanged：已存在且无变化；superseded：旧版本已解决、新版本创建 */
-  outcome: 'created' | 'updated' | 'unchanged' | 'superseded';
+  /**
+   * created：首次写入；reopened：来源恢复后同一状态再次出现，复用原行；
+   * updated：同键同版本刷新；unchanged：已存在且无变化或已处于终态；superseded：旧版本已解决、新版本创建。
+   * reopened 与 created 分开，是因为复用原行意味着决策与投递账本里已有首次记录，路由必须换一个 attempt。
+   */
+  outcome: 'created' | 'reopened' | 'updated' | 'unchanged' | 'superseded';
 }
 
 export function getProactiveEvent(id: string, db: AppDatabase = getDatabase()): ProactiveEventInfo | null {
@@ -118,9 +127,10 @@ export function findActiveProactiveEventByDedupeKey(
 
 /**
  * 幂等投影：`dedupe_key + source_version` 唯一。
- * - 同键同版本：只刷新标题 / 摘要 / 紧急度 / 时间，不改变用户已设置的状态。
+ * - 同键同版本且仍在活动中：只刷新标题 / 摘要 / 紧急度 / 时间，不改变用户已设置的状态。
+ * - 同键同版本且由来源恢复收口：重新打开原行（reopened）。
  * - 同键新版本：把旧的活动事件标记为 resolved（原因 superseded），再创建新事件。
- * - 用户已忽略同键同版本：保持忽略，不复活。
+ * - 用户已忽略或已过期收口的同键同版本：保持终态，不复活也不刷新。
  */
 export function upsertProactiveEvent(
   input: UpsertProactiveEventInput,
@@ -149,9 +159,14 @@ export function upsertProactiveEvent(
         now,
         existing.id,
       );
-      return { event: getProactiveEvent(existing.id, db)!, outcome: 'created' as const };
+      return { event: getProactiveEvent(existing.id, db)!, outcome: 'reopened' as const };
     }
     if (existing) {
+      // 已被用户忽略或已过期收口的记录保持终态，也不再刷新内容：它不会回到活动列表，
+      // 持续刷新只会让 updated_at 永远前移，把保留策略的清理窗口顶开。
+      if (existing.status === 'dismissed' || existing.status === 'resolved') {
+        return { event: existing, outcome: 'unchanged' as const };
+      }
       const unchanged =
         existing.title === title &&
         existing.summary === summary &&

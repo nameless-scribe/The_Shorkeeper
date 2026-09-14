@@ -206,8 +206,12 @@ app.whenReady().then(async () => {
       sandbox: true,
     },
   });
+  // 见 electron-p3-ui-smoke.cjs：开发版 React 下的违规只体现为 console 告警，只打印等于放过。
+  const rendererConsoleErrors = [];
   window.webContents.on('console-message', (_event, level, message) => {
-    if (level >= 2) console.error(`[renderer:${level}] ${message}`);
+    if (level < 2) return;
+    console.error(`[renderer:${level}] ${message}`);
+    rendererConsoleErrors.push(`[${level}] ${message}`);
   });
 
   try {
@@ -305,9 +309,14 @@ app.whenReady().then(async () => {
     setStage('capture Excel preview');
     const xlsxPreviewScreenshot = await capture(window, screenshotDirectory, 'xlsx-preview.png');
 
+    assert(
+      rendererConsoleErrors.length === 0,
+      `渲染进程输出了 ${rendererConsoleErrors.length} 条 console 错误 / 告警：\n${rendererConsoleErrors.join('\n')}`,
+    );
     console.log(JSON.stringify({
       ok: true,
       rendererDomVerified: true,
+      rendererConsoleClean: true,
       screenshots: [historyScreenshot, detailScreenshot, previewScreenshot, xlsxPreviewScreenshot],
       ...result,
     }, null, 2));

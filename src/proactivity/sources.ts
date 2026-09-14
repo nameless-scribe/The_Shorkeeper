@@ -50,7 +50,7 @@ export function loadLocalStateSnapshot(
     snapshot.runs = bounded(items);
   }
   if (wants('schedule')) {
-    snapshot.schedules = bounded(listScheduledTasks());
+    snapshot.schedules = bounded(listScheduledTasks(db));
   }
   if (wants('document')) {
     const documents = listDocuments(db).map((document) => ({

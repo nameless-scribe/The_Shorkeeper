@@ -8,7 +8,13 @@ import { completeCommitment, createCommitment } from '../../db/repositories/comm
 import { createScheduledTask, markTaskFailure, markTaskRun } from '../../db/scheduled-tasks';
 import { createMemoryCandidate, setMemoryCandidateStatus } from '../../db/repositories/memory-candidates';
 import { getProactiveEvent, listProactiveEvents } from '../../db/repositories/proactive-events';
-import { getLastSentPopupAt, listDeliveries, listPlannedDeliveries } from '../../db/repositories/proactivity-deliveries';
+import {
+  claimDelivery,
+  getLastSentPopupAt,
+  listDeliveries,
+  listPlannedDeliveries,
+  markDeliverySent,
+} from '../../db/repositories/proactivity-deliveries';
 import { listDecisions } from '../../db/repositories/proactivity-decisions';
 import { addLocalDays, formatLocalDate } from '../../tasks/due-date';
 import { runProactivityCycle, type ProactivityServiceDeps } from '../service';
@@ -214,6 +220,67 @@ describe('P3 proactivity service closed loop', () => {
     const after = await runProactivityCycle(deps(), { trigger: 'signal' });
     expect(after.created).toBe(0);
     expect(getProactiveEvent(first.id)?.status).toBe('dismissed');
+  });
+
+  it('keeps an expired event resolved instead of flapping it back to unread every cycle', async () => {
+    // 逾期 40 天的待办：投影出的 expires_at 由 occurred_at 推导，永远停在过去。
+    const longOverdue = addLocalDays(formatLocalDate(new Date(clock)), -40)!;
+    createUserTask({ title: '归档旧项目', dueAt: longOverdue });
+
+    const first = await runProactivityCycle(deps(), { trigger: 'startup' });
+    expect(first.created).toBe(1);
+    const event = listProactiveEvents({})[0];
+
+    const second = await runProactivityCycle(deps(), { trigger: 'sweep' });
+    expect(second.expired).toBe(1);
+    expect(getProactiveEvent(event.id)).toMatchObject({ status: 'resolved', resolvedReason: 'expired' });
+
+    // 稳态：后续周期既不重建也不再收口，已读状态与收件箱分段都不再抖动。
+    for (const trigger of ['signal', 'sweep', 'signal'] as const) {
+      const report = await runProactivityCycle(deps(), { trigger });
+      expect(report.created).toBe(0);
+      expect(report.expired).toBe(0);
+    }
+    expect(getProactiveEvent(event.id)).toMatchObject({ status: 'resolved', resolvedReason: 'expired' });
+    expect(listProactiveEvents({ statuses: ['open'] })).toHaveLength(0);
+    expect(getInboxSnapshot().unreadCount).toBe(0);
+  });
+
+  it('does not let explicit reminder popups consume the proactive event budget', async () => {
+    settings = { ...settings, notifyHourlyLimit: 1 };
+    // 显式到点提醒与每日管家提示共用投递账本，但不属于事件弹窗预算。
+    const reminder = claimDelivery({
+      deliveryKey: 'delivery:reminder:r1',
+      subjectKind: 'scheduled_reminder',
+      subjectId: 'r1',
+      channel: 'popup',
+    });
+    markDeliverySent(reminder.delivery.id, clock);
+
+    createCommitment({ title: '回复客户', owner: 'user', dueAt: clock + HOUR });
+    const report = await runProactivityCycle(deps(), { trigger: 'signal' });
+    expect(report.routed).toMatchObject({ notify: 1 });
+    expect(popup).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-routes a reopened event so a recurring failure can notify again', async () => {
+    const schedule = createScheduledTask({ name: '备份', cron: '0 * * * *', actionType: 'reminder', actionPayload: '{}' });
+    for (let i = 0; i < 3; i += 1) markTaskFailure(schedule.id, new Error('磁盘满'));
+    await runProactivityCycle(deps(), { trigger: 'signal' });
+    expect(popup).toHaveBeenCalledTimes(1);
+    const event = listProactiveEvents({ sourceId: schedule.id })[0];
+
+    markTaskRun(schedule.id);
+    await runProactivityCycle(deps(), { trigger: 'signal' });
+    expect(getProactiveEvent(event.id)?.status).toBe('resolved');
+
+    clock += 30 * 60 * 1000; // 越过通知去重窗口
+    for (let i = 0; i < 3; i += 1) markTaskFailure(schedule.id, new Error('磁盘又满了'));
+    const again = await runProactivityCycle(deps(), { trigger: 'signal' });
+    expect(getProactiveEvent(event.id)?.status).toBe('open');
+    expect(again.duplicatesBlocked).toBe(0);
+    expect(again.routed.notify).toBe(1);
+    expect(popup).toHaveBeenCalledTimes(2);
   });
 
   it('does nothing while proactivity is globally disabled', async () => {

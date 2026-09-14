@@ -208,7 +208,10 @@ export function projectCommitmentEvents(commitments: CommitmentInfo[], now: numb
     if (item.status !== 'open') continue;
     if (item.dueAt != null && item.dueAt - now <= COMMITMENT_DUE_SOON_MS) {
       const overdue = item.dueAt < now;
-      const withinNotify = item.dueAt - now <= COMMITMENT_NOTIFY_WINDOW_MS;
+      // 弹窗资格要求截止时间落在通知窗口的前后两侧：只有"即将到期"和"刚刚过期"才够紧急。
+      // 少了下界，逾期数天乃至数月的承诺也会算成 high，升级后第一轮就会一起抢弹窗预算。
+      const withinNotify =
+        item.dueAt - now <= COMMITMENT_NOTIFY_WINDOW_MS && now - item.dueAt <= COMMITMENT_NOTIFY_WINDOW_MS;
       result.push(event('commitment_due_soon', 'commitment', {
         sourceType: 'commitment',
         sourceId: item.id,

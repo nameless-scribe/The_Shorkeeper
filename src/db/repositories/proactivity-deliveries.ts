@@ -161,12 +161,16 @@ export function getLatestDeliveryForEvent(
   return row ? rowToDelivery(row) : null;
 }
 
-/** 频率预算：某时间点之后成功发送的弹窗数量（所有 subject 合计）。 */
+/**
+ * 频率预算：某时间点之后成功发送的**本地事件**弹窗数量。
+ * 显式到点提醒与每日管家提示（scheduled_reminder / steward_notice）共用这张账本做跨重启去重，
+ * 但不受频率预算约束，也不能占用事件的配额——否则几条整点提醒就会把主动事件全部挤进收件箱。
+ */
 export function countPopupsSentSince(since: number, db: AppDatabase = getDatabase()): number {
   const row = db
     .prepare(
       `SELECT COUNT(*) AS count FROM proactivity_deliveries
-       WHERE channel = 'popup' AND status = 'sent' AND sent_at >= ?`,
+       WHERE subject_kind = 'event' AND channel = 'popup' AND status = 'sent' AND sent_at >= ?`,
     )
     .get(since) as { count: number } | undefined;
   return Number(row?.count ?? 0);

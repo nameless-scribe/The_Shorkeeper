@@ -71,6 +71,8 @@ describe('P3.1 local event projection', () => {
       commitment({ id: 'missed', status: 'missed', closedAt: now - 2 * HOUR }),
       commitment({ id: 'soon', dueAt: now + 90 * 60 * 1000 }),
       commitment({ id: 'tomorrow', dueAt: now + 20 * HOUR }),
+      commitment({ id: 'just_missed', dueAt: now - HOUR }),
+      commitment({ id: 'long_overdue', dueAt: now - 5 * DAY }),
       commitment({ id: 'far', dueAt: now + 5 * DAY }),
       commitment({ id: 'stale', createdAt: now - 10 * DAY, lastFollowedUpAt: null }),
       commitment({ id: 'done', status: 'done' }),
@@ -80,6 +82,9 @@ describe('P3.1 local event projection', () => {
     expect(byId.missed).toMatchObject({ kind: 'commitment_missed', urgency: 'high' });
     expect(byId.soon).toMatchObject({ kind: 'commitment_due_soon', urgency: 'high' });
     expect(byId.tomorrow).toMatchObject({ kind: 'commitment_due_soon', urgency: 'normal' });
+    // 刚过期仍值得弹窗；逾期很久的只留在收件箱，不再算高紧急度。
+    expect(byId.just_missed).toMatchObject({ kind: 'commitment_due_soon', urgency: 'high' });
+    expect(byId.long_overdue).toMatchObject({ kind: 'commitment_due_soon', urgency: 'normal' });
     expect(byId.far).toBeUndefined();
     expect(byId.stale).toMatchObject({ kind: 'commitment_unattended', urgency: 'low', dedupeKey: 'commitment:stale:unattended:w1' });
     expect(byId.done).toBeUndefined();

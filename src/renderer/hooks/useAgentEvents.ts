@@ -1,21 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgUiEvent, AgentPlanItem, WorkspaceAttachment } from '@/shared/types';
-import type { UiToolCall } from '../components/ToolCallCard';
-import { extractFilesFromToolCall, mergeAttachments } from '../components/file-attachment-utils';
 import { formatRunErrorForUser } from '../../agent/run-errors';
+import {
+  appendStreamPlaceholder,
+  appendTextDelta,
+  attachToolArtifacts,
+  dropStreamingMessages,
+  endToolCall,
+  finalizeStream,
+  findLastPersistedAssistant,
+  markThinking,
+  startToolCall,
+  streamIdForRun,
+  toUiMessages,
+  type UiMessage,
+} from './agent-messages';
 
-export interface UiMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  streaming?: boolean;
-  thinking?: boolean;
-  toolCalls?: UiToolCall[];
-  attachments?: WorkspaceAttachment[];
-  /** 本轮工具涉及的工作区文件（用于可点击打开） */
-  relatedFiles?: WorkspaceAttachment[];
-  createdAt?: number;
-}
+export type { UiMessage } from './agent-messages';
 
 export interface AssistantReplyFinishedPayload {
   id: string;
@@ -55,32 +56,34 @@ export function useAgentEvents(
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
+  // 消息列表的唯一写入口。刻意不用 setState 的 updater 形式：
+  // StrictMode 会双调用 updater，而运行结束那条分支需要在拿到新列表后发 IPC，
+  // 放在 updater 里会发两次。这里 ref 先落值再 setState，handler 永远读得到最新列表，
+  // 也不在渲染期回写 ref（React 批处理时会把 ref 退回旧值）。
+  const messagesRef = useRef<UiMessage[]>(messages);
+  const applyMessages = useCallback((next: UiMessage[] | ((prev: UiMessage[]) => UiMessage[])) => {
+    const value = typeof next === 'function' ? next(messagesRef.current) : next;
+    messagesRef.current = value;
+    setMessages(value);
+  }, []);
+
   useEffect(() => {
     if (!sessionId) {
-      setMessages([]);
+      applyMessages([]);
       setIsRunning(false);
       return;
     }
 
     setIsRunning(false);
     setError(null);
-    setMessages([]);
+    applyMessages([]);
     loadGenerationRef.current += 1;
     setLoadingMessages(true);
     window.shorekeeper.messages
       .list(sessionId)
       .then((list) => {
         if (sessionIdRef.current !== sessionId) return;
-        setMessages(
-          list
-            .filter((m) => m.role === 'user' || m.role === 'assistant')
-            .map((m) => ({
-              id: m.id,
-              role: m.role as 'user' | 'assistant',
-              content: m.content,
-              createdAt: m.createdAt,
-            })),
-        );
+        applyMessages(toUiMessages(list));
       })
       .catch(console.error)
       .finally(() => {
@@ -88,7 +91,7 @@ export function useAgentEvents(
           setLoadingMessages(false);
         }
       });
-  }, [sessionId]);
+  }, [sessionId, applyMessages]);
 
   useEffect(() => {
     currentRunIdRef.current = null;
@@ -103,10 +106,9 @@ export function useAgentEvents(
       if (event.type === 'run_finished') {
         const runId = event.runId;
         setAgentPlan([]);
-        const streamId = `stream-${runId}`;
+        const streamId = streamIdForRun(runId);
         const streamEntry = streamRunsRef.current.get(runId);
-        const finishedSessionId =
-          runSessionIdRef.current ?? streamEntry?.sessionId ?? null;
+        const finishedSessionId = runSessionIdRef.current ?? streamEntry?.sessionId ?? null;
         streamRunsRef.current.delete(runId);
         const content = streamEntry?.content ?? '';
         const hasContent = Boolean(content.trim());
@@ -116,89 +118,35 @@ export function useAgentEvents(
         runSessionIdRef.current = null;
         options?.onRunFinished?.();
 
-        let toolCalls: UiMessage['toolCalls'];
-        let relatedFiles: UiMessage['relatedFiles'];
-        const hasToolCallsFromState = { value: false };
+        const finalized = finalizeStream(messagesRef.current, streamId, content);
+        applyMessages(finalized.messages);
 
-        setMessages((prev) => {
-          const streamMsg = prev.find((m) => m.id === streamId);
-          toolCalls = streamMsg?.toolCalls;
-          relatedFiles = streamMsg?.relatedFiles;
-          const hasToolCalls = Boolean(toolCalls?.length);
-          hasToolCallsFromState.value = hasToolCalls;
+        if (finishedSessionId && finishedSessionId === sessionIdRef.current) {
+          const generation = loadGenerationRef.current;
+          window.shorekeeper.messages.list(finishedSessionId).then((list) => {
+            if (sessionIdRef.current !== finishedSessionId || loadGenerationRef.current !== generation) {
+              return;
+            }
+            const dbMessages = attachToolArtifacts(toUiMessages(list), finalized);
 
-          const withoutEmpty = prev
-            .map((m) =>
-              m.id === streamId
-                ? { ...m, streaming: false, thinking: false, content: content || m.content }
-                : m,
-            )
-            .filter(
-              (m) =>
-                !(m.id === streamId && !content.trim() && !hasToolCalls),
-            );
+            if (dbMessages.length > 0 || (!hasContent && !finalized.hasToolCalls)) {
+              applyMessages(dbMessages);
+            }
 
-          if (
-            finishedSessionId &&
-            finishedSessionId === sessionIdRef.current
-          ) {
-            const generation = loadGenerationRef.current;
-            window.shorekeeper.messages.list(finishedSessionId).then((list) => {
-              if (
-                sessionIdRef.current !== finishedSessionId ||
-                loadGenerationRef.current !== generation
-              ) {
-                return;
+            if (optionsRef.current?.onAssistantMessagePersisted) {
+              const persisted = findLastPersistedAssistant(dbMessages);
+              if (persisted) {
+                optionsRef.current.onAssistantMessagePersisted({
+                  streamId,
+                  persistedId: persisted.id,
+                  sessionId: finishedSessionId,
+                });
               }
-              const dbMessages: UiMessage[] = list
-                .filter((m) => m.role === 'user' || m.role === 'assistant')
-                .map((m) => ({
-                  id: m.id,
-                  role: m.role as 'user' | 'assistant',
-                  content: m.content,
-                  createdAt: m.createdAt,
-                }));
+            }
+          });
+        }
 
-              if (toolCalls?.length || relatedFiles?.length) {
-                for (let i = dbMessages.length - 1; i >= 0; i -= 1) {
-                  if (dbMessages[i].role === 'assistant') {
-                    dbMessages[i] = {
-                      ...dbMessages[i],
-                      ...(toolCalls?.length ? { toolCalls } : {}),
-                      ...(relatedFiles?.length ? { relatedFiles } : {}),
-                    };
-                    break;
-                  }
-                }
-              }
-
-              if (dbMessages.length > 0 || (!hasContent && !hasToolCallsFromState.value)) {
-                setMessages(dbMessages);
-              }
-
-              if (finishedSessionId && optionsRef.current?.onAssistantMessagePersisted) {
-                for (let i = dbMessages.length - 1; i >= 0; i -= 1) {
-                  if (dbMessages[i].role === 'assistant' && dbMessages[i].content.trim()) {
-                    optionsRef.current.onAssistantMessagePersisted({
-                      streamId,
-                      persistedId: dbMessages[i].id,
-                      sessionId: finishedSessionId,
-                    });
-                    break;
-                  }
-                }
-              }
-            });
-          }
-
-          return withoutEmpty;
-        });
-
-        if (
-          finishedSessionId &&
-          finishedSessionId === sessionIdRef.current &&
-          hasContent
-        ) {
+        if (finishedSessionId && finishedSessionId === sessionIdRef.current && hasContent) {
           optionsRef.current?.onAssistantReplyFinished?.({
             id: streamId,
             content,
@@ -215,33 +163,18 @@ export function useAgentEvents(
         runSessionIdRef.current = event.sessionId;
         currentRunIdRef.current = event.runId;
         streamRunsRef.current.set(event.runId, { sessionId: event.sessionId, content: '' });
-        const streamId = `stream-${event.runId}`;
         setIsRunning(true);
         setError(null);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: streamId,
-            role: 'assistant',
-            content: '',
-            streaming: true,
-            thinking: true,
-            createdAt: Date.now(),
-          },
-        ]);
+        applyMessages((prev) => appendStreamPlaceholder(prev, streamIdForRun(event.runId), Date.now()));
         return;
       }
 
       const currentRunId = currentRunIdRef.current;
       if (!currentRunId || runSessionIdRef.current !== activeSessionId) return;
-      const streamId = `stream-${currentRunId}`;
+      const streamId = streamIdForRun(currentRunId);
 
       if (event.type === 'reasoning_delta') {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamId ? { ...m, thinking: true, streaming: true } : m,
-          ),
-        );
+        applyMessages((prev) => markThinking(prev, streamId));
       }
 
       if (event.type === 'text_delta') {
@@ -253,68 +186,17 @@ export function useAgentEvents(
         if (entry) {
           entry.content += event.delta;
         }
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamId
-              ? {
-                  ...m,
-                  content: m.content + event.delta,
-                  thinking: false,
-                  streaming: true,
-                }
-              : m,
-          ),
-        );
+        applyMessages((prev) => appendTextDelta(prev, streamId, event.delta));
       }
 
       if (event.type === 'tool_call_start') {
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.id !== streamId) return m;
-            const existing = m.toolCalls ?? [];
-            if (existing.some((tc) => tc.callId === event.callId)) {
-              return m;
-            }
-            return {
-              ...m,
-              thinking: false,
-              streaming: true,
-              toolCalls: [
-                ...existing,
-                {
-                  callId: event.callId,
-                  name: event.name,
-                  args: event.args,
-                  status: 'running' as const,
-                },
-              ],
-            };
-          }),
+        applyMessages((prev) =>
+          startToolCall(prev, streamId, { callId: event.callId, name: event.name, args: event.args }),
         );
       }
 
       if (event.type === 'tool_call_end') {
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.id !== streamId) return m;
-            const toolCalls = (m.toolCalls ?? []).map((tc) =>
-              tc.callId === event.callId
-                ? {
-                    ...tc,
-                    status: event.result.success
-                      ? ('done' as const)
-                      : ('error' as const),
-                    result: event.result,
-                  }
-                : tc,
-            );
-            const ended = toolCalls.find((tc) => tc.callId === event.callId);
-            const relatedFiles = ended
-              ? mergeAttachments(m.relatedFiles, extractFilesFromToolCall(ended))
-              : m.relatedFiles;
-            return { ...m, toolCalls, relatedFiles };
-          }),
-        );
+        applyMessages((prev) => endToolCall(prev, streamId, { callId: event.callId, result: event.result }));
       }
 
       if (event.type === 'plan_updated') {
@@ -327,15 +209,11 @@ export function useAgentEvents(
         setAgentPlan([]);
         streamRunsRef.current.delete(event.runId);
         if (runSessionIdRef.current !== activeSessionId) {
-          if (
-            event.sessionId &&
-            event.sessionId === activeSessionId &&
-            !runSessionIdRef.current
-          ) {
+          if (event.sessionId && event.sessionId === activeSessionId && !runSessionIdRef.current) {
             setIsRunning(false);
             currentRunIdRef.current = null;
             setError(formatRunErrorForUser(event.message, event.runId));
-            setMessages((prev) => prev.filter((m) => !m.streaming));
+            applyMessages(dropStreamingMessages(messagesRef.current));
           }
           return;
         }
@@ -344,13 +222,13 @@ export function useAgentEvents(
         currentRunIdRef.current = null;
         runSessionIdRef.current = null;
         setError(formatRunErrorForUser(event.message, event.runId));
-        setMessages((prev) => prev.filter((m) => !m.streaming));
+        applyMessages(dropStreamingMessages(messagesRef.current));
       }
     });
     return () => {
       unsubscribe();
     };
-  }, [sessionId]);
+  }, [sessionId, applyMessages]);
 
   const send = async (text: string, attachments: WorkspaceAttachment[] = []) => {
     const trimmed = text.trim();
@@ -377,7 +255,7 @@ export function useAgentEvents(
       attachments: attachments.length ? attachments : undefined,
       createdAt: Date.now(),
     };
-    setMessages((prev) => [...prev, userMsg]);
+    applyMessages((prev) => [...prev, userMsg]);
     setError(null);
 
     const result = await window.shorekeeper.agent.send({

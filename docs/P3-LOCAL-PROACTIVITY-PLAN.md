@@ -179,7 +179,7 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 
 ### P3.5 — 全局回归与两周真实使用（3–5 天 + 观察）
 
-**状态：自动化部分已完成；两周真实使用观察未开始。** `pnpm test:p3` 23 个文件 119 用例、`pnpm test` 全量、`pnpm typecheck`、`pnpm build`、`pnpm test:p3:ui` 与 Electron 生命周期 smoke 均通过；`proactivity:metrics` IPC 已提供两周指标（事件数、弹窗 / 入箱 / 延后 / 抑制、打开 / 采纳 / 忽略 / 延后、来源自动解决数）供观察期记录。
+**状态：自动化部分已完成；两周真实使用观察未开始。** `pnpm test:p3` 23 个文件 123 用例、`pnpm test` 全量、`pnpm typecheck`、`pnpm build`、`pnpm test:p3:ui` 与 Electron 生命周期 smoke 均通过；`proactivity:metrics` IPC 已提供两周指标（事件数、弹窗 / 入箱 / 延后 / 抑制、打开 / 采纳 / 忽略 / 延后、来源自动解决数）供观察期记录。
 
 - `pnpm test:p3` 覆盖 migration、collector、投影幂等、路由、预算、snooze、反馈、生命周期和来源解决。
 - `pnpm test:p3:ui` 在 Electron renderer 使用固定模拟数据验证收件箱各状态；明确不把模拟 UI 当两周真实体验证据。
@@ -248,8 +248,8 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 | 项目 | 结果 |
 |---|---|
 | `pnpm typecheck` | 通过 |
-| `pnpm test:p3` | 23 个文件 / 120 用例通过（含 sql.js 与 better-sqlite3 双适配器、跨重启不重复弹窗、安静时段补发、预算与静音、snooze / 唤醒 / 忽略 / 完成、来源自动解决） |
-| `pnpm test` | 全量通过（一次因并行构建导致的超时在单独重跑后通过） |
+| `pnpm test:p3` | 23 个文件 / 123 用例通过（含 sql.js 与 better-sqlite3 双适配器、跨重启不重复弹窗、过期事件稳态不翻转、重开后可再次路由、安静时段补发、预算与静音、snooze / 唤醒 / 忽略 / 完成、来源自动解决） |
+| `pnpm test` | 全量通过。此前的偶发超时已定位为默认 5s 超时对本仓库偏紧（建临时库、跑 migration、加载 better-sqlite3 / ExcelJS 的用例单跑 1–4s，全量并发时会被拉长），已在 `vitest.config.ts` 设 `testTimeout: 15_000`，连续两次全量稳定 |
 | `pnpm build` | 通过 |
 | `pnpm test:p3:ui` | 通过：未读角标、三段列表、展开解释、处理回链到运行记录、稍后固定档位、忽略、清除已处理、推送刷新、替代主题、360×520 最小窗口无横向溢出、设置页静音保存 |
 | `pnpm test:electron` | 运行时与窗口生命周期 smoke 通过 |
@@ -261,7 +261,7 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 
 | 领域 | 修复 |
 |---|---|
-| 主动事件账本 | 被来源解决 / 过期 / 新版本收口的事件在同一条件再次出现时重新打开（此前会永久留在"已处理"）；用户忽略或标记完成的不会复活 |
+| 主动事件账本 | 被来源解决 / 新版本收口的事件在同一条件再次出现时重新打开（此前会永久留在"已处理"）；用户忽略或标记完成的不会复活。**注：本轮曾把"过期"也列为可重开，已在 9.6 撤销** |
 | 主动服务 | 唤醒的稍后事件在路由前重读账本状态，避免为已解决事件弹窗；文档事件改用稳定发生时间且不过期，不再每轮刷新；投影循环批量落盘；触发原因按优先级合并；"已处理"按最近变化排序；忽略原因限定三个枚举 |
 | 调度器 | 一次性提醒先生成正文再认领投递，认领超过 10 分钟未发送可重新认领，进程崩溃不会吞掉提醒；安静时段推迟的执行不再被 `reloadScheduler` 清掉（只在退出时清除，触发时以数据库当前任务为准）；以 `run_error` 结束的定时 Agent 运行记为失败而非成功 |
 | 数据库 | sql.js 引擎在每次落盘后重新启用 `PRAGMA foreign_keys`（`export()` 会重开连接丢失该设置） |
@@ -282,3 +282,25 @@ P2 没有产生 migration，因此若开工时最新仍为 `0025`，P3 从 `0026
 - 文档"同步失败"没有独立真源状态，取 `index_failed` 或 `unknown + stale_reason` 投影。
 - 一次性提醒"错过"事件只在应用未运行导致 `run_at` 超过 15 分钟仍未执行时出现；应用启动后调度器会立即补发，因此该事件通常很快由来源自动解决。
 - `pnpm test:p3:ui` 使用固定模拟数据验证界面状态，不能替代两周真实体验。
+
+### 9.6 收口后复审与修复（2026-09-13）
+
+对 9.4 收口的改动又做了一次逻辑审查，发现并修复的问题。每条都先补回归测试复现，再动代码。
+
+| 严重度 | 问题 | 修复 |
+|---|---|---|
+| 高 | **过期事件每周期翻转**。`expireProactiveEvents` 在投影前把超 TTL 的事件收口为 `expired`，但投影会用同一 `dedupe_key` 和同一条陈旧的 `expires_at` 再写一次，而 `isReopenable` 把 `expired` 当作可重开，于是逾期 >30 天的待办、>44 天的目标停滞、长期未处理的逾期承诺会被"解决 → 重建"无限循环；重开的 SQL 还会清空 `read_at`，已读条目每 30 分钟重新点亮角标，卡片在"需要处理"与"已处理"之间反复跳 | `isReopenable` 移除 `expired`：过期事件的 `expires_at` 由 `occurred_at` 推导，不会因再次投影前移，重开必然在下一周期被再次过期。来源真的产生新状态时 `source_version` 会变，走新建分支，不依赖复活。同时让已 `dismissed` / `resolved` 的终态行不再刷新内容——原来每天刷新 `updated_at`，会把保留策略的清理窗口永远顶开 |
+| 中 | **重开的事件永远不会再路由**。决策键是 `(eventId, sourceVersion, attempt)`，重开复用原行且仍按 `attempt: 'initial'` 路由，`recordDecision` 命中首次决策返回 `created: false`，函数在 `duplicatesBlocked` 处退出。表现：定时任务失败 3 次（弹窗）→ 成功（自动收口）→ 当天再失败 3 次，事件回到收件箱却没有弹窗、没有投递记录，卡片上的"为什么出现"还是上一轮的陈旧原因 | `upsertProactiveEvent` 新增 `outcome: 'reopened'`（并入类型联合，让 tsc 点出所有分支），路由时用 `reopen:${updatedAt}` 作 attempt，并与 `wake:` 一样纳入 `alreadyDelivered` 豁免。防轰炸仍由去重窗口与频率预算兜底；`report.created` 继续把重开计入 created，指标语义不变 |
+| 中 | **弹窗预算被无关通知吃掉**。`countPopupsSentSince` 只过滤 `channel = 'popup'`，而显式到点提醒与每日管家提示经 `claimPopup` 写入同一张表同一 channel。默认 `notifyHourlyLimit: 3` 时，三条整点提醒就会在任何主动事件被评估前耗尽预算，所有 `commitment_due_soon` / `schedule_failed` 被静默降级进收件箱，与设置页"显式创建的到点提醒不受此限制"的文案效果相反 | 预算查询加 `subject_kind = 'event'`。该函数只被预算计算与一个测试使用，`getProactivityMetrics` 走另一套查询，无连带影响 |
+| 中 | **StrictMode 下丢失排队的权限请求**。`usePermissionRequests` 在 `setRequest` 的 updater 里 `shift()` / `push()`，updater 被双调用等于弹两次、压两份；被丢掉的请求永远得不到回答，Agent 会一直卡在那个决策上 | 队列语义抽成纯状态机 `src/renderer/hooks/permission-queue.ts`，hook 只做 ref 推进与同步 state；新增 8 个用例，含"同一 state + action 调两次 reducer 结果一致"的回归 |
+| 低 | `sources.ts` 的 `bounded(listScheduledTasks())` 漏传 `db`，其余来源查询都传了。一旦 `deps.db` 指向别的库，schedule 快照来自全局库而 `completeDomains` 仍含 `'schedule'`，目标库里的 schedule 事件会被当作"来源恢复"全部自动解决 | `listScheduledTasks` 增加可选 `db` 参数（对 8 个现有调用方向后兼容），由 `loadLocalStateSnapshot` 传入 |
+| 低 | `commitment_due_soon` 的弹窗资格只有上界，逾期数天乃至数月的承诺也算 `high`，升级后第一轮会一起抢弹窗预算 | 改为要求截止时间落在通知窗口前后两侧（只有"即将到期"和"刚刚过期"才够紧急）；补 `just_missed` / `long_overdue` 两个用例 |
+| 低 | 设置页三个数字框清空时 `clampInt` 回落到 0 并立即落库，而 0 在这三项里都表示"不限制 / 不抑制"——用户一清空就把上限彻底放开 | `clampInt` 改为返回 `number \| null`，空串或非数字时跳过保存（签名变化让 tsc 检出全部调用点）；显式输入 0 仍然有效 |
+| 低 | `manage_commitments` 的 `due_before` 查询被强制成 `['proposed', 'open']`，"哪些承诺在 X 之前到期"恰好过滤掉了 `missed` | 未指定状态时仍排除 done / cancelled，但带 `due_before` 时把 `missed` 纳回默认状态集；无参 `list` 行为不变 |
+
+同时补上了两处测试基建：
+
+- `pnpm test:ui:strict`（`scripts/build-dev-react.mjs` + 三个现有 UI smoke）。原先所有 `test:*:ui` 都先 `pnpm build`，跑的是 production React，而 StrictMode 的双调用只在 development 构建生效——**冒烟结构上无法发现上面那条权限请求 bug**。注意开关是 `NODE_ENV=development` 而非 `vite build --mode development`（后者只影响 `.env` 加载与 `import.meta.env.MODE`，产物仍是生产版 React）。三个冒烟另补了"渲染进程 console 零错误零告警"的收尾断言，原先只打印不断言等于放过；已用注入 `console.error` 做过负向验证。
+- 渲染层纯逻辑抽层：`agent-messages.ts`（流式消息变换，10 例）、`permission-queue.ts`（8 例）、`voice/pcm-frames.ts`（PCM 定长分帧，7 例）。其中 `useAgentEvents` 的 `run_finished` 原先在 updater 里发 IPC，StrictMode 下每次运行结束会发两次 `messages.list` 并让两个结果竞争写回；现由 `applyMessages` 统一写入，不再使用 updater 形式。
+
+仍需真人验证、自动化覆盖不到的部分：`useAgentEvents` 的接线（流式输出、工具卡片在运行结束后保留、切换会话不串台）、权限弹窗连续两次的真实 IPC 往返、语音通话的流式 STT 分帧。UI smoke 不跑真实 Agent 对话与真实音频链路。

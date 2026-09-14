@@ -115,8 +115,9 @@ export async function routeAndDeliverEvent(
     settings,
     budget,
     lastPopupAt: getLastSentPopupAt('event', event.id, db),
-    // 稍后提醒唤醒后允许再评估一次弹窗；其余情况下同一版本只弹一次。
-    alreadyDelivered: attempt.startsWith('wake:')
+    // 稍后提醒唤醒、以及来源恢复后再次出现的同一状态，都允许再评估一次弹窗；
+    // 其余情况下同一版本只弹一次。重复轰炸仍由去重窗口与频率预算兜底。
+    alreadyDelivered: attempt.startsWith('wake:') || attempt.startsWith('reopen:')
       ? false
       : latestDelivery?.status === 'sent' &&
         latestDelivery.channel === 'popup' &&
@@ -295,11 +296,15 @@ export async function runProactivityCycle(
       for (const projected of projection.events) {
         produced.add(projected.dedupeKey);
         const result = upsertProactiveEvent(projected, db);
-        if (result.outcome === 'created') report.created += 1;
+        if (result.outcome === 'created' || result.outcome === 'reopened') report.created += 1;
         else if (result.outcome === 'updated') report.updated += 1;
         else if (result.outcome === 'superseded') report.superseded += 1;
         if (result.outcome === 'created' || result.outcome === 'superseded') {
           toRoute.push({ event: result.event, attempt: 'initial' });
+        } else if (result.outcome === 'reopened') {
+          // 复用原行意味着 (eventId, sourceVersion, 'initial') 已被首次决策占用；
+          // 不带重开时间就会被当成重复拦下，事件回到收件箱却再也不会路由或通知。
+          toRoute.push({ event: result.event, attempt: `reopen:${result.event.updatedAt}` });
         } else if (result.outcome === 'updated' && result.event.status === 'open') {
           // 紧急度升级（如承诺进入 2 小时窗口）时允许再评估一次；决策键含紧急度，不会反复弹窗。
           const latest = getLatestDecisionForEvent(result.event.id, db);

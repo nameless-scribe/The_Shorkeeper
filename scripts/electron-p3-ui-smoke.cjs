@@ -282,8 +282,14 @@ app.whenReady().then(async () => {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
     },
   });
+  // 收尾统一断言：开发版 React（pnpm test:ui:strict）下的 StrictMode 双调用、
+  // effect 双挂载与 key / hook 违规都只表现为 console 告警，不会让 DOM 断言失败。
+  // 只打印等于放过，必须让它们把冒烟判失败。
+  const rendererConsoleErrors = [];
   window.webContents.on('console-message', (_event, level, message) => {
-    if (level >= 2) console.error(`[renderer:${level}] ${message}`);
+    if (level < 2) return;
+    console.error(`[renderer:${level}] ${message}`);
+    rendererConsoleErrors.push(`[${level}] ${message}`);
   });
 
   try {
@@ -376,9 +382,14 @@ app.whenReady().then(async () => {
     assert(performance.mutedEventDomains.includes('document'), '静音设置未通过 IPC 保存');
     const settingsScreenshot = await capture(window, outputDirectory, 'p3_inbox_settings_verified.png');
 
+    assert(
+      rendererConsoleErrors.length === 0,
+      `渲染进程输出了 ${rendererConsoleErrors.length} 条 console 错误 / 告警：\n${rendererConsoleErrors.join('\n')}`,
+    );
     console.log(JSON.stringify({
       ok: true,
       rendererDomVerified: true,
+      rendererConsoleClean: true,
       unreadBadgeVerified: true,
       openSourceVerified: true,
       snoozeVerified: true,

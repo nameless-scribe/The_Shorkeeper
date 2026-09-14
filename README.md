@@ -175,6 +175,8 @@ pnpm dev                      # 开发（Vite + Electron）
 pnpm test                     # Vitest
 pnpm typecheck                # TypeScript
 pnpm build                    # 生产构建（不打安装包）
+pnpm test:ui:strict           # 开发版 React 下跑 UI smoke（查 StrictMode 类问题，见下）
+pnpm build:dev-react          # 仅产出开发版 React 的 dist/（供上一条使用）
 pnpm dist                     # Windows 安装包 → release/
 pnpm db:init                  # 初始化 DB + migration
 pnpm db:migrate               # 同 db:init
@@ -182,6 +184,10 @@ pnpm db:seed                  # 人设 / Worldbook 种子
 pnpm db:cleanup-sessions      # 删除空会话
 pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 ```
+
+**关于 `pnpm test:ui:strict`：** 其余 `test:*:ui` 都先 `pnpm build`，跑的是 production React，此时 `React.StrictMode` 是空操作——updater 双调用、effect 双挂载这类问题在那里**结构上测不出来**。该入口改用 `NODE_ENV=development` 构建（注意不是 `vite build --mode development`，后者只影响 `.env` 与 `import.meta.env.MODE`，React 仍是生产版），并要求渲染进程 console 零错误零告警。
+
+它会把 `dist/` 与 `dist-electron/` 换成开发版产物，**打包或发布前请重新执行 `pnpm build`**。
 
 ## 文档
 
@@ -210,7 +216,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 - **P0**：任务闭环、目标/承诺与每日管家工程已完成；真实使用观察持续进行
 - **P1**：可追溯个人模型、冲突裁决、来源回链与知识新鲜度工程已完成
 - **P2**：外部连接器方向已取消，不接入邮箱、外部日历、联系人或云盘
-- **P3**：纯本地主动服务工程已完成（持久事件账本、本地采集器、主动收件箱、统一路由与频率预算、四个纵向场景、`pnpm test:p3` / `pnpm test:p3:ui`）；连续两周真实使用观察尚未开始
+- **P3**：纯本地主动服务工程已完成（持久事件账本、本地采集器、主动收件箱、统一路由与频率预算、四个纵向场景、`pnpm test:p3` / `pnpm test:p3:ui`）；收口后又做了一轮复审并修复 8 个问题（过期事件周期性翻转、重开事件不再路由、弹窗预算被显式提醒占用等，见 [P3 计划 §9.6](docs/P3-LOCAL-PROACTIVITY-PLAN.md)）；连续两周真实使用观察尚未开始
 - **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地
 
 ## License

@@ -25,6 +25,10 @@ afterEach(async () => {
   await fs.rm(integrationRoot, { recursive: true, force: true });
 });
 
+// 下面三个用例要动态加载 ExcelJS 并真实读写 xlsx，全量并发跑时会明显慢于默认 5s 超时
+// （单文件跑不到 1s，整套并发时实测 9s+）。给它们单独放宽，避免全量 `pnpm test` 偶发失败。
+const EXCEL_TEST_TIMEOUT_MS = 30_000;
+
 describe('progress tracker validation', () => {
   it('does not silently coerce unknown task statuses', () => {
     expect(normalizeImportedTaskStatus('已延期')).toBeNull();
@@ -49,7 +53,7 @@ describe('progress tracker validation', () => {
     expect(result.error).toContain('未写入任何待办');
     expect(result.error).toContain('状态无法识别');
     expect(result.error).toContain('截止日期须为 YYYY-MM-DD');
-  });
+  }, EXCEL_TEST_TIMEOUT_MS);
 
   it('imports valid rows atomically and preserves workbook formulas when syncing status', async () => {
     const ExcelJS = await loadExcelJS();
@@ -77,7 +81,7 @@ describe('progress tracker validation', () => {
     await verified.xlsx.readFile(path.join(integrationRoot, 'tasks.xlsx'));
     expect(verified.getWorksheet('Tasks')?.getCell('B2').value).toBe('✅ 已完成');
     expect(verified.getWorksheet('Tasks')?.getCell('D2').value).toMatchObject({ formula: '1+1' });
-  });
+  }, EXCEL_TEST_TIMEOUT_MS);
 
   it('rolls back the database update when Excel synchronization cannot complete', async () => {
     const ExcelJS = await loadExcelJS();
@@ -103,5 +107,5 @@ describe('progress tracker validation', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('数据库更新已撤销');
     expect(listUserTasks()[0].status).toBe('pending');
-  });
+  }, EXCEL_TEST_TIMEOUT_MS);
 });

@@ -88,7 +88,11 @@ export const manageCommitmentsTool: ToolDefinition = {
         }
         const items = listCommitments({
           status: status as CommitmentStatus | undefined,
-          ...(status === undefined ? { statuses: ['proposed', 'open'] } : {}),
+          // 未显式指定状态时都排除 done / cancelled；但带 due_before 的"过去到期"查询必须包含 missed，
+          // 否则"哪些承诺在 X 之前到期"恰好过滤掉了最该被看到的那一类。
+          ...(status === undefined
+            ? { statuses: dueBefore === undefined ? ['proposed', 'open'] : ['proposed', 'open', 'missed'] }
+            : {}),
           dueBefore,
         });
         return { success: true, output: formatCommitmentList(items) };

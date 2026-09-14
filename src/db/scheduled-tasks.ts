@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { v4 as uuid } from 'uuid';
-import { getDatabase } from './index';
+import { getDatabase, type AppDatabase } from './index';
 import type { ScheduledTaskRow } from './schema';
 import type { ScheduleKind, ScheduledTaskInfo } from '../shared/types';
 import { validateScheduleInput } from '../scheduler/format';
@@ -28,8 +28,9 @@ const TASK_SELECT = `SELECT id, name, cron, action_type, action_payload, enabled
     last_error, last_error_at, failure_count
   FROM scheduled_tasks`;
 
-export function listScheduledTasks(): ScheduledTaskInfo[] {
-  const rows = getDatabase().prepare(`${TASK_SELECT} ORDER BY name ASC`).all() as unknown as ScheduledTaskRow[];
+/** db 可显式传入：主动服务的快照必须和本轮周期读的是同一个库。 */
+export function listScheduledTasks(db: AppDatabase = getDatabase()): ScheduledTaskInfo[] {
+  const rows = db.prepare(`${TASK_SELECT} ORDER BY name ASC`).all() as unknown as ScheduledTaskRow[];
   return rows.map(rowToInfo);
 }
 

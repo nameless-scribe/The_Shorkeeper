@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SttLanguage } from '@/shared/types';
 import { STT_FRAME_BYTES } from '@/voice/types';
 import { startPcmRecording, type PcmRecorder } from '../voice/record-pcm';
+import { splitPcmFrames, type PcmBytes } from '../voice/pcm-frames';
 
 export type VoiceInputStatus = 'idle' | 'recording' | 'transcribing';
 
@@ -26,7 +27,7 @@ interface UseVoiceInputResult {
 export function useVoiceInput(): UseVoiceInputResult {
   const recorderRef = useRef<PcmRecorder | null>(null);
   const callIdRef = useRef<string | null>(null);
-  const pcmBufferRef = useRef<Uint8Array>(new Uint8Array(0));
+  const pcmBufferRef = useRef<PcmBytes>(new Uint8Array(0));
   const pushQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pushFailedRef = useRef(false);
   const generationRef = useRef(0);
@@ -56,15 +57,10 @@ export function useVoiceInput(): UseVoiceInputResult {
 
   const pushPcmFrame = useCallback(
     async (callId: string, pcm: ArrayBuffer) => {
-      const incoming = new Uint8Array(pcm);
-      const merged = new Uint8Array(pcmBufferRef.current.byteLength + incoming.byteLength);
-      merged.set(pcmBufferRef.current, 0);
-      merged.set(incoming, pcmBufferRef.current.byteLength);
-      pcmBufferRef.current = merged;
-
-      while (pcmBufferRef.current.byteLength >= STT_FRAME_BYTES) {
-        const frame = pcmBufferRef.current.slice(0, STT_FRAME_BYTES);
-        pcmBufferRef.current = pcmBufferRef.current.slice(STT_FRAME_BYTES);
+      const { frames, remainder } = splitPcmFrames(pcmBufferRef.current, new Uint8Array(pcm), STT_FRAME_BYTES);
+      // 先把余数落回缓冲：即使某一帧发送失败抛出，已切出的帧也不会被重复发送。
+      pcmBufferRef.current = remainder;
+      for (const frame of frames) {
         const result = await window.shorekeeper.voice.stt.pushChunk({
           callId,
           chunk: frame.buffer,

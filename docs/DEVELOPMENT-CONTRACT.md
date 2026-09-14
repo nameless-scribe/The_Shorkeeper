@@ -90,6 +90,7 @@ UI 改动交付前必须在实际 Electron 页面中预览，而不只看 JSX。
 | 所有代码改动 | `pnpm typecheck`、相关 Vitest、`git diff --check` |
 | Bug 修复 | 新增回归测试，并证明覆盖原始失败路径 |
 | UI / renderer | 相关组件/逻辑测试、`pnpm build`、实际 Electron 视觉检查 |
+| renderer 的 state / effect / 事件订阅 | 另加 `pnpm test:ui:strict`。生产版 React 下 `StrictMode` 是空操作，updater 双调用、effect 双挂载、cleanup 缺失这类问题只在开发版构建下暴露；改动 hook 或组件内部状态时不得跳过。带副作用的逻辑应抽成纯函数或 reducer 单独测试，不要留在 `setState` 的 updater 里 |
 | 数据库 / migration | 临时库、双 adapter、迁移/回滚或健康检查测试，不触碰真实库 |
 | Agent / 工具 / 权限 | 相关 S2/S3/P0 契约测试，覆盖成功、拒绝、失败、取消和重复调用 |
 | 生命周期 / 打包 | 对应 Electron smoke、窗口生命周期或 packaged-native 测试 |
