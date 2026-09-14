@@ -184,7 +184,7 @@ async function main() {
     cases.push(await runCase('Skill 路由正向与误触发', async () => {
       invalidateSkillsCache();
       const skills = discoverSkills().filter((skill) => skill.kind !== 'internal');
-      assert(skills.length === 5 && skills.every((skill) => skill.validationErrors.length === 0), '产品 Skill 配置未全部通过');
+      assert(skills.length === 7 && skills.every((skill) => skill.validationErrors.length === 0), '产品 Skill 配置未全部通过');
       const ordinaryReport = resolveActiveSkillsWithDiagnostics(
         '[用户已上传以下文件到工作区]\n- sales.xlsx → 工作区: sales.xlsx\n\n请分析销售报表' +
           '\n\n[工作区附件已解析]\n数据行:[["导入待办"]]',
@@ -196,7 +196,11 @@ async function main() {
       assert(complexTask.activeSkills.some((skill) => skill.id === 'task-execution'), '复杂任务未激活执行 Skill');
       const simpleTask = resolveActiveSkillsWithDiagnostics('分析一下这句话', skills);
       assert(!simpleTask.activeSkills.some((skill) => skill.id === 'task-execution'), '简单分析误触发执行 Skill');
-      return 5;
+      const meeting = resolveActiveSkillsWithDiagnostics('帮我把 周会.m4a 整理成会议纪要', skills);
+      assert(meeting.activeSkills.some((skill) => skill.id === 'meeting-notes'), '录音整理未激活会议纪要 Skill');
+      const meetingRoom = resolveActiveSkillsWithDiagnostics('明天的会议室帮我订一下', skills);
+      assert(!meetingRoom.activeSkills.some((skill) => skill.id === 'meeting-notes'), '订会议室误触发会议纪要 Skill');
+      return 7;
     }));
 
     console.log(JSON.stringify({

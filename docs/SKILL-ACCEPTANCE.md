@@ -26,6 +26,12 @@ pnpm build
 
 `test:skills:ui` 使用生产构建、真实 preload 和隔离 IPC 数据加载技能设置页，验证 Skill 列表、触发原因、工具摘要与诊断隐私边界能够在 Electron 渲染器中显示。
 
+## 2026-09-14 增补：meeting-notes
+
+- 新增产品 Skill `meeting-notes`（会议纪要），产品 Skill 共 7 个。它只编排已有工具，不新增写路径；写入待办与承诺必须先经用户确认。
+- `scripts/skill-acceptance.ts` 里写死的产品 Skill 数从 5 修正为 7（`daily-steward` 加入时未同步），并新增会议纪要的正向与误触发断言。
+- `pnpm test:skills` 58 项、`pnpm test:skills:acceptance` 7 个用例通过。
+
 ## 2026-09-13 验收快照
 
 - Skill 专项：54 项通过。
