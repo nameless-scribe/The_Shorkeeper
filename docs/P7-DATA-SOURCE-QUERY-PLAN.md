@@ -124,7 +124,7 @@
 ### 3.5 执行与可核对的结果
 
 - 连接层：`mysql2`，会话 `SET SESSION TRANSACTION READ ONLY`，`SET time_zone` 按数据源配置，
-  `utf8mb4`，30 秒超时，可取消。设置页"测试连接"时探测账号是否有写权限（事务内试探后回滚），有则标"⚠ 建议换只读账号"。
+  `utf8mb4`，30 秒超时，可取消。设置页"测试连接"时探测账号是否有写权限：**用 `SHOW GRANTS FOR CURRENT_USER()` 解析**，含 `ALL`、`INSERT`、`UPDATE`、`DELETE`、`DROP` 等任一即标"⚠ 该账号有写权限，建议换只读账号"。不做"试插入再回滚"——那会触发触发器、消耗自增值、写 binlog。
 - `run_sql_query` 返回：列名与类型、行数、前 20 行、方案摘要、SQL、耗时；**完整结果写成工作区 `.csv` 产物**。
   其中 SQL 与耗时是给运行记录和开发者视图的，**模型的回复里不得复述 SQL**（3.11）。
 - 每份产物带来源：Excel 加 `来源` 工作表（数据源、方案、SQL、时间、行数）；图表 SVG 加 `<desc>`。
@@ -408,6 +408,77 @@ P7.0 与 P7.1 可在 P5 / P6 进行中并行。
 
 ---
 
-## 11. 实施记录
+## 11. 落地细节（2026-09-14 复核）
+
+### 11.1 查询方案的数据结构（P7.0）
+
+`src/datasources/query-plan.ts`，编译器与渲染器的唯一输入：
+
+```ts
+interface QueryPlan {
+  sourceId: string;
+  fact: { table: string };                                   // 事实表（字典里标为真源）
+  dimensions: Array<{ table: string; join: string }>;        // join 引用字典里的合法连接 id
+  timeRange?: { column: string; from: string; to: string };  // 左闭右开，ISO 日期
+  filters: Array<{ column: string; op: 'eq' | 'in' | 'neq' | 'gte' | 'lte' | 'like'; values: string[] }>;
+  grain: string[];                                           // 分组列（业务名解析后的物理列）
+  metrics: Array<{ name: string; fragment: string }>;        // 来自指标定义；未定义指标不得出现在方案里
+  compare?: { kind: 'yoy' | 'mom' };                         // 同比 / 环比
+  orderBy?: { metric: string; direction: 'asc' | 'desc' };
+  limit: number;                                             // 1–5000
+  unresolved: Array<{ slot: '指标' | '时间范围' | '粒度' | '范围过滤' | '排序数量'; question: string; options?: string[] }>;
+  rawSql?: string;                                           // 逃生口：方案表达不了时模型直接写；有它则跳过编译器
+}
+```
+
+`unresolved` 非空时不进编译器，先按 3.12 追问。`propose_query_plan` 的产出必须通过这个类型的校验（zod 或手写校验，与 `ipc-validation` 风格一致）。
+
+### 11.2 编译器（P7.0）
+
+`compileQueryPlan(plan, dictionary): { sql: string; selfChecks: string[] }`，纯函数：
+
+- 先按事实表粒度聚合成 CTE：`WITH f AS (SELECT <grain 里属于事实表的列>, <metrics> FROM fact WHERE <timeRange> AND <filters on fact> GROUP BY …)`，再 `JOIN` 维度表取展示列。一对多连接因此不会放大指标。
+- `compare` 生成第二段同结构 CTE（时间范围平移一年或一月），最终 `SELECT` 里并列本期、上期、差值与增幅。
+- 所有标识符用反引号，字面量用参数占位（`?`），执行时走 `mysql2` 的参数绑定，不拼字符串。
+- `selfChecks`：两条只读 SQL——整体合计（同一过滤、无分组）与实际日期覆盖（`MIN/MAX` 时间列）。仅编译路径有；`rawSql` 路径没有自检，回复里注明"这个结果未经自动核对"。
+- 逃生口 `rawSql`：过校验器；外层统一包一层 `SELECT * FROM (<sql>) AS _q LIMIT n`，不解析内部 `LIMIT`。
+
+### 11.3 连接层（P7.1）
+
+- `src/datasources/mysql.ts` 用 `mysql2/promise` 连接池（每数据源最多 3 连接）。每个连接建立时执行：
+  `SET SESSION TRANSACTION READ ONLY`、`SET SESSION max_execution_time = 30000`、`SET time_zone = ?`、`SET NAMES utf8mb4`。
+- `query(sql, params, { maxRows, signal })`：用 `connection.query` 的流式接口按行计数，超过 `maxRows` 即 `destroy()` 连接（不能优雅取消时以断连为准）；`signal` 触发同样断连。
+- `fetchSchema`：`information_schema.TABLES / COLUMNS / KEY_COLUMN_USAGE`，一并读 `TABLE_COMMENT` / `COLUMN_COMMENT`。
+- `fetchValues`：只对类型为 `enum` 或 `char/varchar(≤ 64)` 且表行数估计 ≤ 500 万的列执行 `SELECT col FROM t GROUP BY col LIMIT 201`，每列 2 秒超时；201 行即标高基数不存。只在用户点"刷新"时跑。
+- 密码存储 `protectSecret`，与转写凭证一致；`options_json` 含 `ssl`、`timeZone`、`sampleValues`、`focusTables`。
+
+### 11.4 命名查询的相似检索（P7.3）
+
+不新建索引体系：保存时用 `src/rag/embedding.ts` 的 `embedText(question)` 得到向量，存 `named_queries.question_embedding`（BLOB，float32）。
+提问时对同一数据源的命名查询在 JS 里做余弦相似度（几百条量级），取 ≥ 0.80 的前 3 条作为示例注入；没有嵌入模型配置时退化为关键词重叠，回复不受影响。
+
+### 11.5 技能与工具可达性（P7.2）
+
+- `skills/data-query/SKILL.md`：`trigger: auto`，`matchKeywords: [查一下, 查询, 查数据, 数据库, 报表, 统计一下, 汇总一下, 看看数据]`，`priority: 16`。
+- `list_data_sources` 与 `describe_data_source` 加入 `CORE_TOOL_NAMES`：即使技能未被关键词激活，模型也能发现有数据源可查。
+- 没有配置任何数据源时，技能的 `requiredTools` 仍存在，但 `describe_data_source` 返回"尚未配置数据源，请到设置 → 数据源添加"，技能说明里要求此时不要猜。
+
+### 11.6 评测集与无头运行（P7.0 / P7.2）
+
+- `docs/p7-eval/questions.json`：`[{ id, question, expect: { slots?: {...}, rowCountBetween?: [a, b], aggregate?: { column, equalsQueryName } , mustAsk?: true, mustNotContain: ['SELECT', 'JOIN', '<表名>'] } }]`。
+- `scripts/p7-eval.ts`（`pnpm test:p7:eval`）：无头运行 orchestrator（参考 `scripts/stability-soak.ts` 的启动方式，P7.0 时先验证可行），对真实库跑，输出通过率、追问次数、逃生口比例。它调用模型、花钱、要真实库，**不进 `pnpm test`**，手动跑并把结果记进实施记录。
+
+### 11.7 产物细节（P7.2 / P7.4）
+
+- `.csv` 产物带 UTF-8 BOM，否则 Excel 打开中文乱码；日期列写 ISO 字符串；数字不加千分位。
+- Excel 导出的 `来源` 工作表四列：项 / 值（数据源、方案业务语言摘要、SQL、执行时间、行数）；SQL 在这里可见是因为文件是给核对用的，与 3.11 不冲突。
+- 确认弹窗新增 `ToolPreviewInfo.kind = 'query-plan'`：`summary` 是业务语言摘要，`details` 是折叠的 SQL；`PermissionDialog` 的 `ToolPreviewPanel` 加一个分支。
+
+### 11.8 迁移与测试入口
+
+- 迁移编号按实际开工顺序取下一个（P6 用掉 0028 则本阶段 0029），五张表一个迁移文件。
+- `pnpm test:p7`：`src/datasources/__tests__/*.test.ts`（校验器、编译器、方案渲染、字典格式化、值定位、相似检索的纯函数部分）、`src/tools/data/__tests__/*.test.ts`（工具契约与参数校验，用 mock 连接层）、`src/db/__tests__/p7-*.test.ts`（仓储）、`src/skills/__tests__/contracts.test.ts`。连接层的真实库测试放 `scripts/p7-eval.ts`。
+
+## 12. 实施记录
 
 （开工后按"症状 → 证据 → 根因 → 修法"逐节追加。）

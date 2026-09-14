@@ -197,7 +197,7 @@ P5.3 放后面，它的主要消费者是 P7。
 
 出现以下任一情况立即停止扩大范围：
 
-- 原位修改后文件里除目标段落之外的任何字节发生变化；
+- 原位修改后，解压比对各部件：除 `word/document.xml` 的目标段落外，任何部件的字节发生变化（重新打包会改变 zip 本身的字节，因此以解压后的部件为准）；
 - 预览通过后未经确认就写入，或执行时未校验修订号；
 - 为了某种排版效果开始在 OOXML 里手写样式；
 - 扫描件 PDF 返回了空内容而没有报错；
@@ -216,6 +216,54 @@ P5.3 放后面，它的主要消费者是 P7。
 
 ---
 
-## 10. 实施记录
+## 10. 落地细节（2026-09-14 复核）
+
+按"明天打开就能动手"的标准补的细节。与上文冲突时以本节为准。
+
+### 10.1 P5.0 PDF 可读
+
+- `src/workspace/allowed-extensions.ts`：`.pdf` 加进 `WORKSPACE_OFFICE_EXTENSIONS`（分类为 `office`，导入上限 20MB）；`workspaceFileToolHint('.pdf')` 返回 `convert_to_markdown`。
+- `src/tools/doc/convert-markdown.ts`：新增 `PDF_EXT`，分支调用 `../../rag/format-converters` 的 `convertPdfToMarkdown`。文字层为空（去空白后 < 20 字符）时返回失败："这份 PDF 没有文字层（可能是扫描件），本版本未支持 OCR"。
+- 分页：先在 P5.0 开工时验证 pdf-parse v2 的 `getText()` 返回里是否有逐页文本；有则每页前插 `<!-- page N -->`，没有就不插。
+- 测试：`src/tools/doc/__tests__/convert-pdf.test.ts`，用 pdf-lib 在测试里现生成一份两页 PDF（英文即可，Helvetica 能画），断言转出的 Markdown 含两页文字；再生成一份无文字的空白 PDF，断言报错文案。
+
+### 10.2 P5.0 `gen_pdf` 改走 `printToPDF`
+
+- `src/tools` 不能引用 Electron。做法与权限确认相同：`src/documents/pdf-renderer.ts` 暴露 `setPdfRenderer(fn)`，`gen_pdf` 调用注入的函数；`electron/print/markdown-to-pdf.ts` 在主进程实现并在 `main.ts` 注入。
+- 渲染函数：`new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false, contextIsolation: true } })`，
+  `loadURL('data:text/html;base64,…')`，`webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { top: 1.5, bottom: 1.5, left: 1.6, right: 1.6 } })`（单位 cm），
+  `finally` 里 `destroy()`；总超时 30 秒。`javascript: false` 是硬要求：文档内容来自模型，不能执行脚本。
+- HTML：由 10.3 的 AST 渲染，所有文本经 HTML 转义；内联 CSS 固定字体栈 `"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`，表格加边框，标题层级字号固定。
+- 测试：AST → HTML 渲染是纯函数，断言转义与结构；`printToPDF` 本身只在 `test:electron` 冒烟里验证（生成一份含中文与表格的 PDF，断言文件非空且以 `%PDF` 开头）。
+
+### 10.3 P5.1 Markdown AST
+
+- 依赖里没有 Markdown 解析库，也不为此引入：`src/documents/markdown-ast.ts` 自写一个**子集**解析器，约两百行，纯函数。
+- 块级：`#`–`######` 标题、段落（空行分隔）、无序列表 `-`/`*`、有序列表 `1.`、嵌套（每级 2 个空格，最多两级）、GFM 管道表格（首行表头、第二行分隔）、`---` 分页。
+- 行内：`**粗体**`、`*斜体*`、`` `代码` ``（docx 里用等宽字体，PDF 里用 `<code>`）、`[文本](链接)` 只保留文本。
+- 不支持的语法原样当文本，绝不抛错。测试用固定样本覆盖每种块与行内、嵌套边界、空文档。
+- 两个消费者：`markdown-to-docx.ts`（AST → `docx` 库对象）与 `markdown-to-html.ts`（AST → HTML 字符串）。
+
+### 10.4 P5.2 `update_docx_text` 的 OOXML 处理
+
+- 只处理 `word/document.xml`。用字符串级的宽容解析，不引入 XML 库：按 `<w:p` … `</w:p>` 切段，段内按 `<w:r` … `</w:r>` 切 run，run 内取 `<w:t …>…</w:t>` 文本并解码实体；`<w:tab/>` 计作 `\t`、`<w:br/>` 计作 `\n` 参与拼接（因此跨制表符的 `find` 不会命中，文档里写明）。
+- 跳过：含 `<w:fldChar` 或 `<w:instrText` 的段落（域代码）不参与匹配。文件里出现 `<w:ins` 或 `<w:del`（修订记录）则整体拒绝，提示先在 Word 里接受修订。
+- 替换：命中范围落在的第一个 run 写入替换文本（XML 转义 `& < >`，`<w:t xml:space="preserve">`），其余命中 run 的 `<w:t>` 清空但保留 run 节点与其 `<w:rPr>`。
+- 重新打包：用 `jszip` 读取，按**原有条目顺序**写回，`compression: 'DEFLATE'`；除 `document.xml` 外的条目原样透传。验收用"解压后逐部件比对"，见第 8 节。
+- `jszip` 提升为直接依赖并加 `vite.config.ts` externals；打包白名单已含。
+- 测试样本用 `docx` 库现生成：多 run 段落（加粗片段拆 run）、同文本多处、表格单元格、含域代码段落、含修订记录文件。
+
+### 10.5 P5.3 `gen_chart`
+
+- `src/documents/chart-svg.ts` 纯函数：固定 800×480 画布、左右留白、6 色调色板、`<title>` 与 `<desc>`（来源写在 `<desc>`）。文本用 `font-family` 系统字体栈，与 10.2 相同。
+- PNG：P5.3 开工时先跑一次 `@napi-rs/canvas` 的 `loadImage(Buffer.from(svg))`；能画就同时出 `.png`，否则只出 `.svg`，两种情况都在实施记录里写明。
+- 预览：先看 `FileAttachmentCard` 是否按扩展名内联显示图片；`.svg` 走 `<img>` 即可（CSP `img-src` 已允许 `sk-asset:`），不需要脚本。
+
+### 10.6 技能与测试入口
+
+- `skills/doc-compose/SKILL.md`：`trigger: auto`，`matchKeywords: [写一份, 出一份, 整理成文档, 整理成方案, 生成 word, 写成 word, 做成 pdf, 生成 pdf]`，`priority: 14`，`allowedTools: [list_dir, read_file, gen_docx, gen_pdf, gen_markdown]`（P6.3 后加 `ask_user`）。与 `workspace-doc-edit` 的触发词不重叠；契约测试技能列表与验收脚本技能数加 1。
+- `pnpm test:p5`：`src/documents/__tests__/*.test.ts`（AST、docx 映射、HTML 渲染、OOXML 替换、SVG）、`src/tools/doc/__tests__/*.test.ts`、`src/workspace/__tests__/import.test.ts`、`src/skills/__tests__/contracts.test.ts`。
+
+## 11. 实施记录
 
 （开工后按"症状 → 证据 → 根因 → 修法"逐节追加，格式与 P4 第 10 节一致。）

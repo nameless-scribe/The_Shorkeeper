@@ -216,6 +216,50 @@ P6.1 是主体；P6.2 补落库；P6.3 让已有功能立刻受益。
 
 ---
 
-## 9. 实施记录
+## 9. 落地细节（2026-09-14 复核）
+
+### 9.1 稳定提示词的规则原文（P6.0）
+
+`src/agent/stable-context.ts` 新增块，措辞固定，测试断言逐句存在：
+
+```
+【证据不足先问】动手前先判断信息够不够。歧义会改变产物或副作用时（目标文件不唯一、时间按哪个日期、
+收件人是谁、待办归谁、口径含不含某项），先问一个问题再做；歧义不影响结果时，直接做，并在回复里写明你的假设。
+问之前先用 recall_memory 与当前上下文里的目标、承诺、资料找答案，找得到的不问。一次只问一个问题，
+给 2–4 个选项并说明为什么需要。用户回答里的稳定偏好，用 save_memory 记为候选。
+高风险动作永远走权限确认，提问不能代替确认。
+```
+
+P6.1 之后在句首补一句："有 `ask_user` 工具时用它提问，不要在正文里问。"
+
+### 9.2 `ask_user` 工具（P6.1）
+
+- 文件 `src/tools/interaction/ask-user.ts`。`category: 'skill'`，`requiresPermission: []`，
+  契约 `{ risk: 'read', idempotent: false, supportsPreview: false, reversible: 'none', evidence: 'output' }`。加入 `agent-registry.ts` 的 `CORE_TOOL_NAMES`，不受技能白名单限制。
+- 参数校验：`question` 1–300 字；`options` 0 或 2–6 项，每项 `{ id, label, hint? }`，`id` 唯一；`allow_free_text` 默认 true；`why` ≤ 120 字。
+- `execute` 调 `src/agent/user-questions.ts` 的 `requestUserAnswer(payload, { runId: ctx.runId, sessionId: ctx.sessionId, signal: ctx.signal })`；该模块暴露 `setUserQuestionResponder(fn)`，默认实现返回 `decidedBy: 'abort'`（无界面时不假装有答案）。
+- 返回：成功时 `output` 为 `用户回答：<answer>`（选项则附 `optionId`），`metadata: { optionId, decidedBy }`；超时 / abort / 窗口关闭时 `success: false`，`error` 为"这一步需要你的回答（未收到）"，模型据规则停下。
+- **语音通话运行不注册它**：`call-session.ts` 发起的运行传入排除列表，模型在通话里用语音提问。
+
+### 9.3 主进程与渲染层（P6.1）
+
+- `electron/ipc/ask.ts` 镜像 `permission.ts`：`pending` 表、`requestId`、超时 10 分钟、abort 与窗口关闭监听、`ask:request` 推送、`ask:respond` 处理、`cancelAllPendingQuestions()` 接入 `coordinateRuntimeShutdown`。`main.ts` 里 `setUserQuestionResponder(requestUserAnswerViaWindow)`。
+- `src/shared/types.ts`：`UserQuestionRequestPayload { requestId, question, options, allowFreeText, why }`、`UserQuestionResponse { requestId, answer, optionId? }`；`ipc-validation.ts` 加 `parseUserQuestionResponse`。
+- `preload.ts`：`ask: { onRequest, respond }`。
+- 渲染层：`permission-queue.ts` 泛化为提示队列，条目 `{ kind: 'permission' | 'question', payload }`，reducer 不变；`usePromptRequests` 同时订阅两个通道；新增 `QuestionDialog.tsx`（选项按钮 + 可选输入框，Enter 提交、Esc 稍后再答），与 `PermissionDialog` 一起挂在 `ChatPage.tsx` 与 `CallStage.tsx`。
+- 运行阶段：`TaskRunPhase` 加 `waiting_user`；`loop.ts` 在执行 `ask_user` 前后调用新钩子 `onQuestionStart / onQuestionEnd`，`RunRecorder` 记 `waiting_user`；`run-history-view.ts` 标签"等待回答"、颜色与 `waiting_approval` 同为 cyan。内存态 `RunLifecycle` 的阶段集合不动。
+- 计划项：`AgentPlanItemStatus` 加 `waiting_user`；`loop.ts` 在 `onQuestionStart` 时把当前 `in_progress` 项改为 `waiting_user` 并广播 `plan_updated`，结束时改回；`AgentPlanPanel` 图标 `?`。
+
+### 9.4 落库与恢复（P6.2）
+
+- 迁移 `0028_user_questions.sql`（编号按实际开工顺序取下一个）；仓储 `src/db/repositories/user-questions.ts`：`createUserQuestion / answerUserQuestion / listUserQuestions`。
+- `requestUserAnswer` 在有数据库时先 `createUserQuestion`（`pending`），回答后 `answerUserQuestion`；`markInterruptedRuns` 把 `pending` 改 `interrupted`、`decided_by = 'startup'`。
+- `run-recovery.ts` 的 `formatInterruptedRunNotice` 附上该运行最后一条 `interrupted` 问题："当时在等你回答：<question>"。
+
+### 9.5 测试入口
+
+`pnpm test:p6`：`src/agent/__tests__/stable-context.test.ts`（规则原文）、`src/tools/__tests__/ask-user.test.ts`（参数校验、mock 响应器的四种结果）、`src/agent/__tests__/loop-question-phase.test.ts`（阶段切换、计划项标记）、`src/renderer/hooks/__tests__/prompt-queue.test.ts`（两种条目混排、一次一个）、`src/db/__tests__/user-questions.test.ts`（落库、启动收口）、`src/agent/__tests__/run-recovery.test.ts`（说明含问题）、`src/shared/__tests__/ipc-validation.test.ts`（新载荷）。弹窗本身在 `test:ui:strict` 的 P0 冒烟里加一个"弹出问题 → 选项回答"的截图步骤。
+
+## 10. 实施记录
 
 （开工后按"症状 → 证据 → 根因 → 修法"逐节追加。）
