@@ -21,6 +21,8 @@ export interface VadControllerOptions {
   positiveSpeechThreshold?: number;
   onSpeechStart: () => void | Promise<void>;
   onSpeechEnd: () => void | Promise<void>;
+  /** vad-web 判定说话过短（misfire）时触发，此时不会再有 onSpeechEnd。 */
+  onMisfire?: () => void | Promise<void>;
   onError?: (message: string) => void;
 }
 
@@ -61,6 +63,9 @@ export async function createVadController(options: VadControllerOptions): Promis
       },
       onSpeechEnd: () => {
         runCallback(options.onSpeechEnd);
+      },
+      onVADMisfire: () => {
+        if (options.onMisfire) runCallback(options.onMisfire);
       },
     });
   } catch (err) {

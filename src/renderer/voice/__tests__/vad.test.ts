@@ -59,4 +59,29 @@ describe('VAD resource boundaries', () => {
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('speech callback failed'));
     await controller.destroy();
   });
+
+  it('forwards vad-web misfires so callers can cancel a recording that will never get speech end', async () => {
+    let runtimeOptions: { onVADMisfire(): void } | undefined;
+    state.create.mockImplementation(async (options) => {
+      runtimeOptions = options;
+      return {
+        errored: null,
+        start: vi.fn(),
+        pause: vi.fn(),
+        setOptions: vi.fn(),
+        destroy: vi.fn(),
+      };
+    });
+    const onMisfire = vi.fn();
+    const controller = await createVadController({
+      redemptionMs: 800,
+      onSpeechStart: vi.fn(),
+      onSpeechEnd: vi.fn(),
+      onMisfire,
+    });
+
+    runtimeOptions?.onVADMisfire();
+    await vi.waitFor(() => expect(onMisfire).toHaveBeenCalledOnce());
+    await controller.destroy();
+  });
 });

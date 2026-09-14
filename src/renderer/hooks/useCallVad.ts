@@ -16,6 +16,8 @@ export interface UseCallVadOptions {
   callState: CallState;
   onSpeechStart: () => void | Promise<void>;
   onSpeechEnd: () => void | Promise<void>;
+  /** 说话太短被判为误触发：vad-web 此时不会再发 onSpeechEnd，调用方须自行收尾。 */
+  onMisfire?: () => void | Promise<void>;
   onError?: (message: string) => void;
 }
 
@@ -69,6 +71,10 @@ export function useCallVad(options: UseCallVadOptions): void {
     await optionsRef.current.onSpeechEnd();
   }, []);
 
+  const handleMisfire = useCallback(async () => {
+    await optionsRef.current.onMisfire?.();
+  }, []);
+
   const ensureController = useCallback(async (): Promise<VadController | null> => {
     if (controllerRef.current) return controllerRef.current;
     if (controllerPromiseRef.current) return controllerPromiseRef.current;
@@ -81,6 +87,7 @@ export function useCallVad(options: UseCallVadOptions): void {
           positiveSpeechThreshold: getThreshold(),
           onSpeechStart: handleSpeechStart,
           onSpeechEnd: handleSpeechEnd,
+          onMisfire: handleMisfire,
           onError: (message) => {
             optionsRef.current.onError?.(message);
           },
@@ -105,7 +112,7 @@ export function useCallVad(options: UseCallVadOptions): void {
         controllerPromiseRef.current = null;
       }
     }
-  }, [getThreshold, handleSpeechEnd, handleSpeechStart]);
+  }, [getThreshold, handleMisfire, handleSpeechEnd, handleSpeechStart]);
 
   const syncVad = useCallback(async () => {
     const { callState } = optionsRef.current;
@@ -131,6 +138,21 @@ export function useCallVad(options: UseCallVadOptions): void {
     }
   }, [ensureController, getThreshold, shouldRunVad]);
 
+  // 挂载/卸载效果必须写在同步效果之前，且挂载时要把 disposed 复位：
+  // React StrictMode 在开发模式下会"挂载 → 模拟卸载 → 再挂载"，ref 跨这两次挂载保留。
+  // 此前清理只置 true 不复位，导致第二次挂载后 shouldRunVad 永远为 false，
+  // 通话页一直停在"正在聆听"却从不检测说话，且没有任何报错。
+  useEffect(() => {
+    disposedRef.current = false;
+    return () => {
+      disposedRef.current = true;
+      controllerGenerationRef.current += 1;
+      runningRef.current = false;
+      void controllerRef.current?.destroy().catch(() => undefined);
+      controllerRef.current = null;
+    };
+  }, []);
+
   useEffect(() => {
     const sync = syncQueueRef.current
       .catch(() => undefined)
@@ -150,14 +172,4 @@ export function useCallVad(options: UseCallVadOptions): void {
     options.callState,
   ]);
 
-  useEffect(
-    () => () => {
-      disposedRef.current = true;
-      controllerGenerationRef.current += 1;
-      runningRef.current = false;
-      void controllerRef.current?.destroy().catch(() => undefined);
-      controllerRef.current = null;
-    },
-    [],
-  );
 }
