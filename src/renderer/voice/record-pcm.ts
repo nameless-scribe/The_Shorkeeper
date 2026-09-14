@@ -7,20 +7,16 @@
 const TARGET_SAMPLE_RATE = 16000;
 export const MAX_BUFFERED_PCM_SAMPLES = TARGET_SAMPLE_RATE * 5 * 60;
 
-/** Inline AudioWorklet: forwards every input frame to the main thread untouched. */
-const WORKLET_SOURCE = `
-class PcmCollector extends AudioWorkletProcessor {
-  process(inputs) {
-    const channel = inputs[0] && inputs[0][0];
-    if (channel && channel.length) {
-      // Copy: the underlying buffer is reused by the engine after process().
-      this.port.postMessage(channel.slice(0));
-    }
-    return true;
-  }
+/**
+ * PCM 采集 worklet 放在 public/worklets/ 下按同源路径加载（与 public/vad/ 同一做法）。
+ * 不能用 blob URL：index.html 的 CSP 是 `script-src 'self'`，blob 脚本会被拦下，
+ * 表现为 addModule 抛 "Unable to load a worklet's module"。
+ */
+const WORKLET_PATH = 'worklets/pcm-collector.js';
+
+function resolveWorkletUrl(): string {
+  return new URL(WORKLET_PATH, window.location.href).href;
 }
-registerProcessor('pcm-collector', PcmCollector);
-`;
 
 export interface PcmRecordingOptions {
   /** Called with Int16 PCM for each captured frame (after Float32→Int16). */
@@ -50,6 +46,10 @@ function describeCaptureError(err: unknown): string {
     }
     if (err.name === 'NotReadableError') {
       return '麦克风被其他程序占用，请关闭后重试';
+    }
+    if (err.name === 'AbortError' && /worklet/i.test(err.message)) {
+      // addModule 失败：worklet 脚本没加载到（路径不对或被 CSP 拦下），与麦克风硬件无关。
+      return '录音组件加载失败（AudioWorklet），请重启应用；若仍出现请反馈';
     }
   }
   return err instanceof Error ? err.message : '无法访问麦克风';
@@ -97,13 +97,7 @@ export async function startPcmRecording(options: PcmRecordingOptions = {}): Prom
   let ctx: AudioContext;
   try {
     ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
-    const blob = new Blob([WORKLET_SOURCE], { type: 'application/javascript' });
-    const url = URL.createObjectURL(blob);
-    try {
-      await ctx.audioWorklet.addModule(url);
-    } finally {
-      URL.revokeObjectURL(url);
-    }
+    await ctx.audioWorklet.addModule(resolveWorkletUrl());
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop());
     throw new Error(describeCaptureError(err));
