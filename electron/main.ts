@@ -23,6 +23,7 @@ import { registerTasksIpc } from './ipc/tasks';
 import { registerUserTasksIpc } from './ipc/user-tasks';
 import { registerStewardIpc } from './ipc/steward';
 import { registerProactivityIpc } from './ipc/proactivity';
+import { registerTranscriptsIpc } from './ipc/transcripts';
 import {
   shutdownProactivityRuntime,
   startProactivityRuntime,
@@ -224,6 +225,7 @@ app.whenReady().then(async () => {
     registerUserTasksIpc();
     registerStewardIpc();
     registerProactivityIpc();
+    registerTranscriptsIpc();
     await registerWorkspaceIpc();
     registerDockIpc();
     await registerDocumentsIpc();

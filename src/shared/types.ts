@@ -762,6 +762,29 @@ export interface ProactiveSourceTarget {
   suggestedPrompt: string | null;
 }
 
+/** P4 录音转写记录（渲染层视图）。正文不在其中，只有产物路径。 */
+export interface AudioTranscriptInfo {
+  id: string;
+  sourcePath: string;
+  sourceHash: string;
+  sizeBytes: number;
+  durationMs: number | null;
+  provider: string;
+  engineType: string;
+  diarization: boolean;
+  status: 'running' | 'succeeded' | 'failed' | 'cancelled';
+  transcriptPath: string | null;
+  sentenceCount: number | null;
+  speakerCount: number | null;
+  error: string | null;
+  providerCode: number | null;
+  providerRequestId: string | null;
+  sensitivity: string;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+}
+
 export interface ProactivityMetricsInfo {
   since: number;
   until: number;

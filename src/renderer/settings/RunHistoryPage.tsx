@@ -1,5 +1,6 @@
 import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
+  AudioTranscriptInfo,
   ApprovalInfo,
   TaskRunDetail,
   TaskRunInfo,
@@ -8,6 +9,20 @@ import type {
   ContextSourceDetailInfo,
 } from '@/shared/types';
 import { FileAttachmentCard } from '../components/FileAttachmentCard';
+import {
+  canOpenTranscript,
+  formatTranscriptIssue,
+  formatTranscriptMeta,
+  transcriptStatusView,
+} from './transcript-history-view';
+
+/** transcript-history-view 的语义色 → SettingsBadge 的既有取值，不新增配色。 */
+const TRANSCRIPT_BADGE_TONE = {
+  running: 'cyan',
+  success: 'green',
+  error: 'amber',
+  muted: 'muted',
+} as const;
 import { toolDisplayName } from '../components/tool-labels';
 import {
   SettingsActionLink,
@@ -219,12 +234,22 @@ function RunDetailView({ detail, onBack }: { detail: TaskRunDetail; onBack: () =
 
 export function RunHistoryPage() {
   const [runs, setRuns] = useState<TaskRunInfo[]>([]);
+  const [transcripts, setTranscripts] = useState<AudioTranscriptInfo[]>([]);
   const [filter, setFilter] = useState<RunFilter>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TaskRunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const loadTranscripts = useCallback(async () => {
+    try {
+      setTranscripts(await window.shorekeeper.transcripts.list(50));
+    } catch {
+      // 转写记录只是附加信息，读不到不该让整页报错遮住运行记录
+      setTranscripts([]);
+    }
+  }, []);
 
   const loadRuns = useCallback(async () => {
     setError(null);
@@ -239,12 +264,17 @@ export function RunHistoryPage() {
 
   useEffect(() => {
     void loadRuns();
+    void loadTranscripts();
     const off = window.shorekeeper.agent.onEvent((event) => {
       const item = event as { type?: string };
-      if (item.type === 'run_finished' || item.type === 'run_error') void loadRuns();
+      if (item.type === 'run_finished' || item.type === 'run_error') {
+        void loadRuns();
+        // 转写由工具发起，结束时机与 run 一致，顺带刷新
+        void loadTranscripts();
+      }
     });
     return off;
-  }, [loadRuns]);
+  }, [loadRuns, loadTranscripts]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -321,6 +351,26 @@ export function RunHistoryPage() {
           </div>
         )}
       </SettingsSection>
+
+      {transcripts.length > 0 && (
+        <SettingsSection title="录音转写" hint={`${transcripts.length} 条`}>
+          <div className="space-y-2">
+            {transcripts.map((item) => {
+              const status = transcriptStatusView(item.status);
+              const issue = formatTranscriptIssue(item);
+              return (
+                <SettingsListCard
+                  key={item.id}
+                  title={item.sourcePath}
+                  subtitle={issue ?? (canOpenTranscript(item) ? `逐字稿：${item.transcriptPath}` : '尚未产出逐字稿')}
+                  meta={formatTranscriptMeta(item)}
+                  badge={<SettingsBadge tone={TRANSCRIPT_BADGE_TONE[status.tone]}>{status.label}</SettingsBadge>}
+                />
+              );
+            })}
+          </div>
+        </SettingsSection>
+      )}
     </SettingsPageShell>
   );
 }

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
+  AudioTranscriptInfo,
   ProactiveEventInfo,
   ProactiveInboxSnapshot,
   ProactiveSourceTarget,
@@ -282,6 +283,9 @@ const shorekeeperApi = {
         ipcRenderer.removeListener('tasks:updated', listener);
       };
     },
+  },
+  transcripts: {
+    list: (limit?: number): Promise<AudioTranscriptInfo[]> => ipcRenderer.invoke('transcripts:list', limit),
   },
   proactivity: {
     inbox: (): Promise<ProactiveInboxSnapshot> => ipcRenderer.invoke('proactivity:inbox'),

@@ -591,3 +591,31 @@ P4.0 紧随其后：它不发任何真实网络请求、不改生产行为，却
 顺带修了两处"断言当前事实"的清单式测试：`native-migration` 硬编码了 migration 数量
 （26→27），`tool-contract` 断言"内置工具里没有 high 风险的"。后者改为列出具体工具名，
 这样将来新增 high 风险工具时会在此处显形，而不是让断言悄悄变成永真。
+
+### 10.7 P4.2 运行记录页显示转写（2026-09-14）
+
+完成第 8 步。此前把它和第 10 步一起推迟是判断失误：推迟的理由只适用于
+`InputBar`（P4.1 的麦克风接线在那里且未经真机验证，叠改动会难定位），
+而 `RunHistoryPage` 与麦克风毫无关系。用户指出后已纠正。
+
+| 层 | 文件 |
+|---|---|
+| IPC | `electron/ipc/transcripts.ts`（**只读**） |
+| 纯逻辑 | `src/renderer/settings/transcript-history-view.ts`（13 用例） |
+| 界面 | `RunHistoryPage` 末尾新增「录音转写」段 |
+
+几个决定：
+
+- **IPC 只读**。转写由 `transcribe_audio` 发起，走工具权限确认那条路；
+  界面不该有第二条能触发转写（并计费）的入口。
+- **读不到转写记录不让整页报错**。它只是附加信息，不该遮住运行记录。
+- **取消不用报错配色**。`cancelled` 映射到 muted 而非 danger——主动取消不是故障。
+- **错误码与 request id 放在正文之后**，不塞进主消息里：码值对用户没意义，
+  但提工单时需要。
+- 语义色到 `SettingsBadge` 既有取值的映射单独成表，**不新增配色**。
+
+验收：`tsc`、全量 884 用例、`pnpm build`、`pnpm test:ui:strict` 三个冒烟
+（`rendererConsoleClean`）均通过。
+
+**仍未做**：第 10 步附件分类（要改 `WorkspaceAttachment` 与 `InputBar`），
+等 P4.1 的麦克风真机验证之后再动。
