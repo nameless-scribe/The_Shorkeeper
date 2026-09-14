@@ -144,6 +144,7 @@ function registerMocks() {
     }),
     'skills:list': () => [],
     'agent:runHistory': () => [run],
+    'transcripts:list': () => [],
     'agent:runDetail': (_event, requestedRunId) => requestedRunId === runId ? detail : null,
     'permission:respond': () => ({ ok: true }),
     'update:getVersion': () => '1.3.0',

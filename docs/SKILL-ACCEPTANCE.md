@@ -31,6 +31,7 @@ pnpm build
 - 新增产品 Skill `meeting-notes`（会议纪要），产品 Skill 共 7 个。它只编排已有工具，不新增写路径；写入待办与承诺必须先经用户确认。
 - `scripts/skill-acceptance.ts` 里写死的产品 Skill 数从 5 修正为 7（`daily-steward` 加入时未同步），并新增会议纪要的正向与误触发断言。
 - `pnpm test:skills` 58 项、`pnpm test:skills:acceptance` 7 个用例通过。
+- 同日 P4 收口回归：全量 168 文件 907 用例、`test:ui:strict`、`test:electron` 全部通过。
 
 ## 2026-09-13 验收快照
 
