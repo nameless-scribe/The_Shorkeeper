@@ -622,6 +622,114 @@ P4.0 紧随其后：它不发任何真实网络请求、不改生产行为，却
 
 ---
 
+### 10.8 真机测试第一轮：转写通过，麦克风被 CSP 拦下（2026-09-14）
+
+**转写链路首次在应用内跑通。** 对助理说"把 测试会议.wav 转写成逐字稿"，
+账本记录 `succeeded`，58 秒合成音频、11 句、2 位说话人全部分对（中文 Huihui 与英文
+Zira 两个音色），发起到完成 1.7 秒，逐字稿 `测试会议.transcript.md` 带时间戳与说话人标签。
+引擎用的是默认 `16k_zh`，英文段也识别正确，清单里"建议指定 `16k_zh_en`"可以放宽。
+
+**麦克风与语音通话同时失效，根因是 CSP，不是设备。** 症状：点麦克风按钮报
+`Unable to load a worklet's module`，语音通话也不可用。排查路径：
+
+1. `record-pcm.ts` 用 `Blob` + `URL.createObjectURL` 内联 AudioWorklet 源码，再 `addModule(blobUrl)`
+2. `2d7937c`（2026-09-12）给 `index.html` 加了 CSP，`script-src 'self' 'wasm-unsafe-eval'` 不含 `blob:`
+3. Chromium 对 worklet 模块同样执行 `script-src`，blob 脚本被拒，`addModule` 抛 `AbortError`
+4. `CallStage.tsx` 与 `InputBar.tsx` 都经 `useVoiceInput → startPcmRecording`，因此两处一起坏
+5. VAD 不受影响：`vad-web` 从 `public/vad/` 同源加载 worklet
+
+在加 CSP 之前 P4.1 只有单元测试、没有真机验证，所以这个回归静默了两天。
+
+**修法：把 worklet 改成同源静态文件，不放宽 CSP。**
+
+| 改动 | 说明 |
+|---|---|
+| 新增 `public/worklets/pcm-collector.js` | 与 `public/vad/` 同一加载方式，dev 与 build 路径一致 |
+| `record-pcm.ts` | 删掉内联源码与 blob 逻辑，按 `worklets/pcm-collector.js` 相对 `window.location.href` 解析 |
+| `describeCaptureError` | `AbortError` 且信息含 worklet 时给出"录音组件加载失败"的明确文案，不再透传英文原文 |
+
+没有选 `script-src` 加 `blob:`：CSP 的价值正在于不给运行时拼脚本留口子，
+为一个 15 行的 worklet 放宽整站策略不值。
+
+验收：`tsc` 通过；语音相关 6 个测试文件 41 用例通过；dev 服务器对
+`/worklets/pcm-collector.js` 返回 200 `text/javascript`。真机复测：麦克风按钮可用，聊天框语音输入通过。
+
+**教训**：加 CSP 这类全局约束时，应把"页面里所有 blob/data 加载点"列一遍，
+麦克风这种依赖硬件的路径尤其要真机点一次，单元测试里 `addModule` 是被 mock 掉的。
+
+---
+
+### 10.9 真机测试第二轮：通话页永远"正在聆听"（2026-09-14）
+
+10.8 的修复之后，聊天框语音输入在真机通过（"录不上"是系统默认录音设备没选到蓝牙耳机，
+与应用无关）。语音通话仍不可用：全双工下一直显示"正在聆听"，说话没有任何反应，也没有报错。
+
+**排查过程**（每一步都有独立证据）：
+
+1. 批量识别与流式识别共用 `createSttStreamSession` 与同一 WebSocket 端点、同一 Key。
+   聊天框既然通了，通话的鉴权与网络就不是问题。
+2. 用运行中的 Vite 开发服务器起临时页面，以与应用相同的 CSP、`public/vad/` 资源与依赖
+   初始化 `MicVAD`：1 秒初始化完成，8 秒处理 83 帧，说话概率最高 0.705，两次 speech start。
+   VAD 库本身在这套约束下工作正常。
+3. 数据库里最近三小时没有任何 `kind = 'voice'` 的运行记录：识别文本从未送到模型。
+4. 通话页"正在聆听"只在 `callState === 'listening'` 且 `starting === false` 时显示，
+   说明通话已建立、VAD 初始化没有抛错（抛错会显示红框）。剩下唯一可能：VAD 从未被启动。
+
+**根因**：`c658196`（2026-09-13）给 `useCallVad` 加了 `disposedRef`，卸载清理里置 true，
+但从不复位。`main.tsx` 开着 React StrictMode，开发模式下每个组件"挂载 → 模拟卸载 → 再挂载"，
+ref 跨这两次挂载保留。于是第二次挂载后 `shouldRunVad()` 永远返回 false，
+VAD 永远不会 `start()`，没有任何报错。打包后的版本不双调用，所以这个问题只在 `pnpm dev` 下出现。
+
+**修法**：
+
+| 改动 | 说明 |
+|---|---|
+| `useCallVad.ts` | 挂载/卸载效果移到同步效果之前，挂载时 `disposedRef.current = false` |
+| `vad.ts` | 透传 vad-web 的 `onVADMisfire` 为 `onMisfire` |
+| `CallStage.tsx` | 误触发时若在录音则 `cancel()` |
+
+第二、三项修的是顺带发现的另一个问题：vad-web 判定说话过短（misfire）时**不会再发 speech end**，
+此前通话页在 speech start 时已开始录音与流式识别，误触发后没人收尾，界面会卡在"录音中"，
+直到下一次真正的说话结束才被一起送出。
+
+验收：`tsc` 通过；渲染层 15 个测试文件 89 用例通过；`vad.test.ts` 新增 misfire 透传用例。
+真机复测：全双工通话可用。
+
+**教训**：`useRef` 里的"已销毁"标志必须在挂载效果里复位，否则在 StrictMode 下必坏。
+仓库里 `permission-queue.ts` 已经记录过一次 StrictMode 相关的丢请求 bug，这是同一类问题的第二次。
+
+---
+
+### 10.10 通话开口丢字：麦克风常开 + 前导缓冲（2026-09-14）
+
+10.9 之后全双工通话可用，但用户反馈"说了大概两个字之后才开始被接收"。
+
+**原因在流程本身，不是网络。** 此前的顺序是：VAD 判定说话 → 建流（WebSocket 握手、run-task）
+→ `getUserMedia` → 建 AudioContext、加载 worklet → 才开始送音频。VAD 判定本身晚于开口
+一两帧（每帧 96 ms），后面几步再加起来约半秒到一秒，这段时间的语音全部丢掉，正好是开头两个字。
+
+**修法：通话期间麦克风常开，空闲时保留最近 700 ms 的 PCM 作为"前导"。**
+
+| 改动 | 说明 |
+|---|---|
+| `pre-roll-buffer.ts`（新） | 环形缓冲的纯逻辑：按整块丢最旧的，取出时给出恰好覆盖自身 ArrayBuffer 的视图（可直接经 IPC 发送）。6 个用例 |
+| `useVoiceInput.ts` | 新增 `arm()` / `disarm()`：通话建立即开麦，音频空闲时进前导缓冲。`start(callId)` 若发现麦克风已常开，**立刻**进入录音态，建流期间的音频先在本地排队；流建好后按"前导 → 排队 → 实时"的顺序送出 |
+| `CallStage.tsx` | 通话建立后 `arm()`，挂断时 `disarm()` |
+
+几个决定：
+
+- **前导 700 ms**。要盖住 VAD 判定延迟（1–2 帧）加一点余量；过长只是多送一点静音，
+  Paraformer 对前导静音不敏感。用了耳机时也不会把上一轮朗读的尾巴录进去。
+- **借用与自有两种录音区分开**（`ActiveCapture.owned`）：聊天框的语音输入仍然自己开麦、
+  结束自己关，行为不变；只有通话借用常开的麦克风，结束时只断开送出、不关麦。
+- **麦克风占用指示在整个通话期间都亮着**。这是通话的正常语义；挂断后立即熄灭。
+- 建流失败、取消、组件卸载三种路径都会把常开麦克风或本次借用收干净，不留下没人管的采集。
+
+验收：`tsc` 通过；渲染层 16 个测试文件 96 用例通过。真机复测：用户确认开口不再丢字。
+若日后再出现，把前导加到 1 s 即可（一个常量）。
+
+---
+
 ## 11. 剩余工作（2026-09-14）
 
 | 阶段 | 状态 | 是否被验证阻塞 |

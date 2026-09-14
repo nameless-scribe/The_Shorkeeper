@@ -52,8 +52,16 @@ export function CallStage() {
 
   const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
   const { today, progress, overBudget } = useCallTokenUsage();
-  const { status: inputStatus, error: inputError, level, start, stopAndTranscribe, cancel } =
-    useVoiceInput();
+  const {
+    status: inputStatus,
+    error: inputError,
+    level,
+    start,
+    stopAndTranscribe,
+    cancel,
+    arm: armMicrophone,
+    disarm: disarmMicrophone,
+  } = useVoiceInput();
   const {
     playing: streamPlaying,
     loading: streamLoading,
@@ -144,6 +152,13 @@ export function CallStage() {
     await submitUserText(text);
   }, [stopAndTranscribe, submitUserText]);
 
+  // 误触发（一声咳嗽、短促噪音）：VAD 不会再发 speech end，
+  // 不收尾的话录音与流式识别会一直挂着，界面卡在"录音中"。
+  const handleVadMisfire = useCallback(() => {
+    if (inputStatusRef.current !== 'recording') return;
+    cancel();
+  }, [cancel]);
+
   useCallVad({
     enabled: !starting && Boolean(callId),
     callMode,
@@ -152,8 +167,16 @@ export function CallStage() {
     callState,
     onSpeechStart: handleVadSpeechStart,
     onSpeechEnd: handleVadSpeechEnd,
+    onMisfire: handleVadMisfire,
     onError: (message) => setError(message),
   });
+
+  // 通话一建立就让麦克风常开：VAD 触发时不必再开麦、建流，开口前的几百毫秒也能补回来。
+  // 通话结束（挂断、窗口关闭）时关掉，麦克风占用指示随之消失。
+  useEffect(() => {
+    if (starting || !callId) return;
+    void armMicrophone();
+  }, [armMicrophone, callId, starting]);
 
   const endCall = useCallback(async () => {
     const activeCallId = callIdRef.current;
@@ -164,7 +187,8 @@ export function CallStage() {
     }
     stopStreamPlayback();
     cancel();
-  }, [cancel, stopStreamPlayback]);
+    disarmMicrophone();
+  }, [cancel, disarmMicrophone, stopStreamPlayback]);
 
   const endCallRef = useRef(endCall);
   endCallRef.current = endCall;
