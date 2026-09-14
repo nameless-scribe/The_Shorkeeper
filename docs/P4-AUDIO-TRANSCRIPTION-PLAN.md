@@ -477,3 +477,53 @@ P4.0 紧随其后：它不发任何真实网络请求、不改生产行为，却
 参数排序、空值丢弃、原文不带 `https://`、签名原文与实际 URL 逐字对应、AppID 在路径不在 query。
 
 **仍需真实调用确认**：最终签名能否通过服务端校验，以及 2.5 列的另外两件事。
+
+### 10.4 真实调用验证结果（2026-09-14）
+
+`pnpm asr:probe` 对一段 9.51 MB / 10 分 12 秒的真实多人会议录音发出请求，
+耗时 28.7 秒，`code: 0`。2.5 列的三件事全部验掉：
+
+| 待验项 | 结果 |
+|---|---|
+| 签名是否通过 | **通过**。HMAC-SHA1 + base64 的方案正确 |
+| 说话人分离支持几人 | **至少 5 人**（`speaker_id` 0–4）。极速版**没有**标准版"仅双人对话"的限制 |
+| 真实响应结构 | 见下 |
+
+第二条是本阶段最有价值的结论：此前担心极速版继承标准版的双人限制，
+那会让会议纪要这条路走不通。实测否定了这个担心。
+
+**真实响应结构**（脱敏版存于 `docs/asr-flash-response-shape.json`）：
+
+```
+{ request_id, code: 0, message: "", audio_duration: 612137,
+  flash_result: [ { text, channel_id: 0, sentence_list: [
+    { text, start_time, end_time, speaker_id, emotional_energy, speech_speed, lang_type } ] } ] }
+```
+
+与 P4.0 按百炼文档写的映射**完全对不上**，逐项差异：
+
+| P4.0 假设（百炼） | 实测（腾讯极速版） |
+|---|---|
+| `transcripts[].sentences[]` | `flash_result[].sentence_list[]` |
+| `begin_time` | `start_time` |
+| `speaker_id` 可能是字符串 | 数字，从 0 开始 |
+| 总时长需从最后一句推导 | 顶层 `audio_duration` 直接给（毫秒） |
+| 错误包在 `Response` 里 | `code` 在**顶层**，且 **HTTP 200 也可能带非零 code** |
+| — | 多出 `emotional_energy` / `speech_speed` / `lang_type` |
+
+**据此重写**：`asr-mapping.ts` 按实测结构重写并**移除全部兼容分支**
+（多形态兼容只会把结构变化掩盖成"转写出空结果"这种最难查的症状）；
+`asr-contract.ts` 换掉模型名与上限，删去轮询相关的状态机；
+`asr-endpoint.ts` 整体删除——端点推导、退避轮询、base64 data URI 三样
+极速版一样都用不到，URL 构造已由 `tencent-flash-signature.ts` 承担。
+
+两个保留项按 P4.0 的预期一行未动：`transcript-format.ts` 与
+`asr-contract.ts` 的格式化 / 校验 / 幂等逻辑。
+
+**排障过程中确认的两件运维事实**（文档未写，对后续用户配置有用）：
+
+- 服务未开通时 **HTTP 是 200**，错误只体现在顶层 `code: 4003`。
+  因此客户端**不能只看 HTTP 状态判断成败**。
+- 「录音文件识别」与「录音文件识别**极速版**」需要**分别开通**，
+  只开前者调极速版仍返回 4003。错误信息里会回显 AppID，
+  可据此确认 AppID 已被正确解析——签名与 AppID 正确时也会出现该错误。

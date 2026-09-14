@@ -1,39 +1,50 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ASR_FILE_MODEL,
   AUDIO_EXTENSIONS,
-  DIARIZATION_RECOMMENDED_MAX_MS,
+  DEFAULT_ASR_ENGINE,
   MAX_AUDIO_BYTES,
-  PROVIDER_MAX_AUDIO_BYTES,
+  MAX_AUDIO_DURATION_MS,
+  VOICE_FORMAT_BY_EXTENSION,
   asrIdempotencyKeys,
-  isAsrTaskPending,
-  shouldEnableDiarization,
   validateAudioSource,
 } from '../asr-contract';
 
 const MB = 1024 * 1024;
 
 describe('ASR contract', () => {
-  it('pins the selected model so a silent swap shows up in review', () => {
-    // 选型依据见 P4 计划 2.4：唯一同时满足"支持说话人分离 + 单价已查证"的模型。
-    expect(ASR_FILE_MODEL).toBe('paraformer-v2');
+  it('pins the default engine so a silent swap shows up in review', () => {
+    expect(DEFAULT_ASR_ENGINE).toBe('16k_zh');
   });
 
-  it('keeps our own size cap well below the provider limit', () => {
-    // base64 内联把请求体放大约 4/3，不能贴着供应商的 2GB 上限走。
-    expect(MAX_AUDIO_BYTES).toBeLessThan(PROVIDER_MAX_AUDIO_BYTES / 4);
+  it('keeps the limits aligned with the provider hard limits', () => {
+    // 极速版实测上限：100 MB / 2 小时。设得比供应商高只会让用户在上传完成后才收到失败。
+    expect(MAX_AUDIO_BYTES).toBe(100 * MB);
+    expect(MAX_AUDIO_DURATION_MS).toBe(2 * 60 * 60 * 1000);
   });
 
-  it('accepts the supported containers and names the alternatives when rejecting', () => {
-    expect(validateAudioSource({ extension: '.mp3', sizeBytes: MB })).toMatchObject({ ok: true, mime: 'audio/mpeg' });
-    expect(validateAudioSource({ extension: '.M4A', sizeBytes: MB })).toMatchObject({ ok: true, mime: 'audio/mp4' });
+  it('maps every allowed extension to a provider voice_format', () => {
+    expect(AUDIO_EXTENSIONS.length).toBeGreaterThan(0);
+    for (const extension of AUDIO_EXTENSIONS) {
+      const result = validateAudioSource({ extension, sizeBytes: MB });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.voiceFormat).toBe(VOICE_FORMAT_BY_EXTENSION[extension]);
+    }
+  });
 
+  it('normalizes case and maps ogg/opus to the same provider format', () => {
+    const m4a = validateAudioSource({ extension: '.M4A', sizeBytes: MB });
+    expect(m4a).toMatchObject({ ok: true, voiceFormat: 'm4a' });
+    // 供应商只认 ogg-opus 这一个取值，两种扩展名都要落到它
+    expect(validateAudioSource({ extension: '.ogg', sizeBytes: MB })).toMatchObject({ voiceFormat: 'ogg-opus' });
+    expect(validateAudioSource({ extension: '.opus', sizeBytes: MB })).toMatchObject({ voiceFormat: 'ogg-opus' });
+  });
+
+  it('names the alternatives when rejecting a format, without leaking vendor terms', () => {
     const rejected = validateAudioSource({ extension: '.mp4', sizeBytes: MB });
     expect(rejected.ok).toBe(false);
     if (!rejected.ok) {
       expect(rejected.reason).toContain('.mp3');
-      // 报错不能出现供应商术语
-      expect(rejected.reason).not.toMatch(/dashscope|paraformer|task_id/i);
+      expect(rejected.reason).not.toMatch(/tencent|flash_result|engine_type|appid/i);
     }
   });
 
@@ -53,56 +64,21 @@ describe('ASR contract', () => {
     }
   });
 
-  it('rejects audio beyond the 12 hour provider limit when duration is known', () => {
-    const result = validateAudioSource({ extension: '.mp3', sizeBytes: MB, durationMs: 13 * 60 * 60 * 1000 });
-    expect(result.ok).toBe(false);
+  it('rejects audio past the two hour limit when duration is known', () => {
+    expect(validateAudioSource({ extension: '.mp3', sizeBytes: MB, durationMs: MAX_AUDIO_DURATION_MS + 1 })).toMatchObject({
+      ok: false,
+    });
+    expect(validateAudioSource({ extension: '.mp3', sizeBytes: MB, durationMs: MAX_AUDIO_DURATION_MS })).toMatchObject({
+      ok: true,
+    });
   });
 
-  it('warns instead of blocking when diarization conditions are imperfect', () => {
-    const multiChannel = validateAudioSource({ extension: '.wav', sizeBytes: MB, channels: 2 }, { diarization: true });
-    expect(multiChannel.ok).toBe(true);
-    if (multiChannel.ok) expect(multiChannel.warnings.join()).toContain('单声道');
-
-    const long = validateAudioSource(
-      { extension: '.wav', sizeBytes: MB, channels: 1, durationMs: DIARIZATION_RECOMMENDED_MAX_MS + 1 },
-      { diarization: true },
-    );
-    expect(long.ok).toBe(true);
-    if (long.ok) expect(long.warnings.join()).toContain('2 小时');
-
-    const clean = validateAudioSource({ extension: '.wav', sizeBytes: MB, channels: 1 }, { diarization: true });
-    expect(clean.ok).toBe(true);
-    if (clean.ok) expect(clean.warnings).toEqual([]);
-  });
-
-  it('only enables diarization when the audio is known to be mono', () => {
-    expect(shouldEnableDiarization(true, 1)).toBe(true);
-    expect(shouldEnableDiarization(true, 2)).toBe(false);
-    // 声道未知时保守关闭：拿到一份不可用的分离结果比没有分离更糟
-    expect(shouldEnableDiarization(true, undefined)).toBe(false);
-    expect(shouldEnableDiarization(false, 1)).toBe(false);
-  });
-
-  it('separates cached transcripts by model and diarization setting', () => {
-    const plain = asrIdempotencyKeys.transcript('abc', ASR_FILE_MODEL, false);
-    const diarized = asrIdempotencyKeys.transcript('abc', ASR_FILE_MODEL, true);
+  it('separates cached transcripts by engine and diarization setting', () => {
+    const plain = asrIdempotencyKeys.transcript('abc', DEFAULT_ASR_ENGINE, false);
+    const diarized = asrIdempotencyKeys.transcript('abc', DEFAULT_ASR_ENGINE, true);
     expect(plain).not.toBe(diarized);
-    expect(asrIdempotencyKeys.transcript('abc', 'other-model', false)).not.toBe(plain);
+    expect(asrIdempotencyKeys.transcript('abc', '8k_zh', false)).not.toBe(plain);
     // 同一输入必须稳定，否则跨重启会重复计费
-    expect(asrIdempotencyKeys.transcript('abc', ASR_FILE_MODEL, false)).toBe(plain);
-  });
-
-  it('treats only pending and running as "keep polling"', () => {
-    expect(isAsrTaskPending('pending')).toBe(true);
-    expect(isAsrTaskPending('running')).toBe(true);
-    expect(isAsrTaskPending('succeeded')).toBe(false);
-    expect(isAsrTaskPending('failed')).toBe(false);
-  });
-
-  it('exposes every allowed extension with a MIME type', () => {
-    expect(AUDIO_EXTENSIONS.length).toBeGreaterThan(0);
-    for (const extension of AUDIO_EXTENSIONS) {
-      expect(validateAudioSource({ extension, sizeBytes: MB }).ok).toBe(true);
-    }
+    expect(asrIdempotencyKeys.transcript('abc', DEFAULT_ASR_ENGINE, false)).toBe(plain);
   });
 });

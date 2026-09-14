@@ -1,0 +1,38 @@
+{
+  "request_id": "<string:24>",
+  "code": 0,
+  "message": "<string:0>",
+  "audio_duration": 612137,
+  "flash_result": {
+    "__array": 1,
+    "__sample": [
+      {
+        "text": "<string:1731>",
+        "channel_id": 0,
+        "sentence_list": {
+          "__array": 95,
+          "__sample": [
+            {
+              "text": "<string:7>",
+              "start_time": 470,
+              "end_time": 4350,
+              "speaker_id": 0,
+              "emotional_energy": 0,
+              "speech_speed": 0,
+              "lang_type": ""
+            },
+            {
+              "text": "<string:26>",
+              "start_time": 5110,
+              "end_time": 10100,
+              "speaker_id": 1,
+              "emotional_energy": 0,
+              "speech_speed": 0,
+              "lang_type": ""
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
