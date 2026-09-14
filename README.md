@@ -196,7 +196,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | [DEVELOPMENT-CONTRACT.md](docs/DEVELOPMENT-CONTRACT.md) | 全仓库开发契约与完成标准 |
 | [P1-PERSONAL-MODEL-PLAN.md](docs/P1-PERSONAL-MODEL-PLAN.md) | P1 可追溯个人模型实施计划与阶段出口 |
 | [P3-LOCAL-PROACTIVITY-PLAN.md](docs/P3-LOCAL-PROACTIVITY-PLAN.md) | P3 本地主动服务实施契约、路由规则与验收记录 |
-| [P3-LOCAL-PROACTIVITY-PLAN.md](docs/P3-LOCAL-PROACTIVITY-PLAN.md) | P3 本地事件、主动收件箱、通知路由与降噪实施契约 |
+| [P4-AUDIO-TRANSCRIPTION-PLAN.md](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md) | P4 录音转写与会议纪要实施计划（未开工） |
 | [使用说明.md](docs/使用说明.md) | 技能、插件、工作区、待办 |
 | [DESIGN.md](docs/DESIGN.md) | 架构设计 |
 | [DATABASE.md](docs/DATABASE.md) | 数据库与 migration |
@@ -217,7 +217,8 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 - **P1**：可追溯个人模型、冲突裁决、来源回链与知识新鲜度工程已完成
 - **P2**：外部连接器方向已取消，不接入邮箱、外部日历、联系人或云盘
 - **P3**：纯本地主动服务工程已完成（持久事件账本、本地采集器、主动收件箱、统一路由与频率预算、四个纵向场景、`pnpm test:p3` / `pnpm test:p3:ui`）；收口后又做了一轮复审并修复 8 个问题（过期事件周期性翻转、重开事件不再路由、弹窗预算被显式提醒占用等，见 [P3 计划 §9.6](docs/P3-LOCAL-PROACTIVITY-PLAN.md)）；连续两周真实使用观察尚未开始
-- **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地
+- **P4**：录音转写与会议纪要**未开工**，实施契约见 [P4 计划](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md)
+- **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地；聊天框语音输入尚未接线（P4.1）
 
 ## License
 
