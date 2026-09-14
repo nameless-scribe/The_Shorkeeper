@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  classifyWorkspaceFile,
+  MAX_WORKSPACE_AUDIO_IMPORT_BYTES,
+  MAX_WORKSPACE_IMPORT_BYTES,
+  WORKSPACE_AUDIO_EXTENSIONS,
   WORKSPACE_IMPORT_EXTENSIONS,
   workspaceFileToolHint,
 } from '../allowed-extensions';
@@ -77,6 +81,26 @@ describe('workspace import extensions', () => {
     }));
     expect((await fs.readdir(workspaceDir)).some((name) => name.startsWith('.shorekeeper-import-')))
       .toBe(false);
+  });
+
+  it('keeps audio out of the document whitelist but classifies and hints it separately', () => {
+    // 录音白名单来自转写契约，不并入文档白名单：两者的上下文处理与上限都不同
+    expect(WORKSPACE_AUDIO_EXTENSIONS.has('.m4a')).toBe(true);
+    expect(WORKSPACE_IMPORT_EXTENSIONS.has('.m4a')).toBe(false);
+    expect(classifyWorkspaceFile('.M4A')).toBe('audio');
+    expect(classifyWorkspaceFile('.docx')).toBe('office');
+    expect(classifyWorkspaceFile('.md')).toBe('text');
+    expect(workspaceFileToolHint('.wav')).toBe('transcribe_audio');
+    expect(MAX_WORKSPACE_AUDIO_IMPORT_BYTES).toBeGreaterThan(MAX_WORKSPACE_IMPORT_BYTES);
+  });
+
+  it('imports audio above the 20MB document limit and tags it as audio', async () => {
+    const source = path.join(sourceDir, '周会.m4a');
+    await fs.writeFile(source, Buffer.alloc(MAX_WORKSPACE_IMPORT_BYTES + 1, 7));
+
+    const result = await importFileToWorkspace(source);
+    expect(result).toMatchObject({ relativePath: '周会.m4a', originalName: '周会.m4a', kind: 'audio' });
+    expect(result.size).toBe(MAX_WORKSPACE_IMPORT_BYTES + 1);
   });
 
   it('rejects a source that grows beyond the import limit while being read', async () => {

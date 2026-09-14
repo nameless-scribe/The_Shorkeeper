@@ -50,6 +50,13 @@ describe('enrichAttachmentsMessage', () => {
     tmpDirs.length = 0;
   });
 
+  it('leaves audio attachments untouched: no content is read before transcription', async () => {
+    const msg = await enrichAttachmentsMessage('整理一下', [
+      { relativePath: '周会.m4a', originalName: '周会.m4a', size: 1, kind: 'audio' },
+    ]);
+    expect(msg).toBe('整理一下');
+  });
+
   it('injects parsed xlsx block', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shore-pre-'));
     tmpDirs.push(root);

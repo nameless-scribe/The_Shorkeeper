@@ -4,16 +4,20 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getWorkspaceDir } from '../config/paths';
 import {
-  MAX_WORKSPACE_IMPORT_BYTES,
-  WORKSPACE_IMPORT_EXTENSIONS,
+  classifyWorkspaceFile,
+  isWorkspaceImportableExtension,
   workspaceFileToolHint,
   workspaceFileToolHintLabel,
+  workspaceImportLimitBytes,
+  type WorkspaceAttachmentKind,
 } from './allowed-extensions';
 
 export interface WorkspaceImportResult {
   relativePath: string;
   originalName: string;
   size: number;
+  /** 文本 / Office / 录音。决定上下文里怎么介绍它、以及导入大小上限 */
+  kind?: WorkspaceAttachmentKind;
 }
 
 export interface WorkspaceImportRecoveryResult {
@@ -123,18 +127,20 @@ async function writeCompleteImport(
 export async function importFileToWorkspace(sourcePath: string): Promise<WorkspaceImportResult> {
   const root = ensureWorkspace();
   const resolvedSource = await fsPromises.realpath(path.resolve(sourcePath));
-  const content = await readBoundedFile(resolvedSource, MAX_WORKSPACE_IMPORT_BYTES);
 
+  // 先按扩展名分类再读：录音的上限是 100MB，文档是 20MB，读之前就要知道用哪个
   const ext = path.extname(resolvedSource).toLowerCase();
-  if (ext && !WORKSPACE_IMPORT_EXTENSIONS.has(ext)) {
-    throw new Error(`不支持的文件类型 ${ext}，请使用文本、Word 或 Excel 文件`);
+  if (ext && !isWorkspaceImportableExtension(ext)) {
+    throw new Error(`不支持的文件类型 ${ext}，请使用文本、Word、Excel 或录音文件`);
   }
+  const kind = classifyWorkspaceFile(ext);
+  const content = await readBoundedFile(resolvedSource, workspaceImportLimitBytes(kind));
 
   const originalName = path.basename(resolvedSource);
   const safeBase = sanitizeFilename(originalName);
   const destName = await writeCompleteImport(root, safeBase, content);
 
-  return { relativePath: destName, originalName, size: content.byteLength };
+  return { relativePath: destName, originalName, size: content.byteLength, kind };
 }
 
 export function formatAttachmentsForMessage(
@@ -145,6 +151,12 @@ export function formatAttachmentsForMessage(
 
   const lines = attachments.map((a) => {
     const ext = path.extname(a.originalName).toLowerCase();
+    const kind = a.kind ?? classifyWorkspaceFile(ext);
+    if (kind === 'audio') {
+      // 录音不是可读内容：告诉模型它在哪、该用什么工具，而不是让它去 read_file 读二进制。
+      // 措辞避开技能触发词——附件本身不该替用户决定要不要出纪要。
+      return `- ${a.originalName} → 工作区: ${a.relativePath}（${a.size} 字节，这是录音文件，需要文字内容时用 transcribe_audio 生成文稿，不要用 read_file 读取）`;
+    }
     const tool = workspaceFileToolHintLabel(workspaceFileToolHint(ext));
     return `- ${a.originalName} → 工作区: ${a.relativePath}（${a.size} 字节，建议 ${tool}）`;
   });

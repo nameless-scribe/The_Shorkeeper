@@ -13,6 +13,9 @@ import type {
 export const MAX_AGENT_MESSAGE_CHARS = 100_000;
 export const MAX_AGENT_ATTACHMENTS = 100;
 export const MAX_WORKSPACE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+/** 录音附件单独上限，与转写服务硬上限一致 */
+export const MAX_WORKSPACE_AUDIO_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+const WORKSPACE_ATTACHMENT_KINDS = ['text', 'office', 'audio'] as const;
 
 export function requireRecord(value: unknown, label = '参数'): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -157,11 +160,14 @@ function parseAttachment(value: unknown, index: number): WorkspaceAttachment {
     `attachments[${index}].originalName`,
     { maxLength: 255 },
   );
+  const kind = input.kind === undefined
+    ? undefined
+    : requireEnum(input.kind, `attachments[${index}].kind`, WORKSPACE_ATTACHMENT_KINDS);
   const size = requireFiniteNumber(input.size, `attachments[${index}].size`, {
     min: 0,
-    max: MAX_WORKSPACE_ATTACHMENT_BYTES,
+    max: kind === 'audio' ? MAX_WORKSPACE_AUDIO_ATTACHMENT_BYTES : MAX_WORKSPACE_ATTACHMENT_BYTES,
   });
-  return { relativePath, originalName, size };
+  return kind === undefined ? { relativePath, originalName, size } : { relativePath, originalName, size, kind };
 }
 
 export function parseAgentSendPayload(value: unknown): AgentSendPayload {

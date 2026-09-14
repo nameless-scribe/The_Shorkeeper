@@ -9,7 +9,7 @@ import {
   recoverWorkspaceImportTemps,
   type WorkspaceImportResult,
 } from '../../src/workspace/import';
-import { WORKSPACE_PICK_DIALOG_FILTERS } from '../../src/workspace/allowed-extensions';
+import { classifyWorkspaceFile, WORKSPACE_PICK_DIALOG_FILTERS } from '../../src/workspace/allowed-extensions';
 import { requireString } from '../../src/shared/ipc-validation';
 
 export async function registerWorkspaceIpc() {
@@ -102,6 +102,7 @@ export async function registerWorkspaceIpc() {
         relativePath: relativePath.replace(/\\/g, '/'),
         originalName: path.basename(relativePath),
         size: stat.size,
+        kind: classifyWorkspaceFile(path.extname(relativePath)),
       };
     } catch {
       return null;

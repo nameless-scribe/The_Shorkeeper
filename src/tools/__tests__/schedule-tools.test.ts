@@ -28,6 +28,23 @@ describe('workspace import helpers', () => {
     expect(msg).toContain('report.docx');
   });
 
+  it('introduces audio uploads as recordings to transcribe, never as files to read', () => {
+    const msg = formatAttachmentsForMessage('帮我看看', [
+      { relativePath: '周会.m4a', originalName: '周会.m4a', size: 30_000_000, kind: 'audio' },
+    ]);
+    expect(msg).toContain('transcribe_audio');
+    expect(msg).toContain('录音文件');
+    expect(msg).toContain('不要用 read_file');
+    expect(msg).not.toContain('建议 read_file');
+  });
+
+  it('classifies audio by extension when the attachment carries no kind', () => {
+    const msg = formatAttachmentsForMessage('看看', [
+      { relativePath: 'a.wav', originalName: 'a.wav', size: 10 },
+    ]);
+    expect(msg).toContain('transcribe_audio');
+  });
+
   it('suggests read_xlsx for xlsx uploads', () => {
     const msg = formatAttachmentsForMessage('分析一下', [
       { relativePath: 'data.xlsx', originalName: 'data.xlsx', size: 8192 },

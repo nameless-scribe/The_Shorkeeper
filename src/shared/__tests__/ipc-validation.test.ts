@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_AGENT_ATTACHMENTS,
   MAX_AGENT_MESSAGE_CHARS,
+  MAX_WORKSPACE_ATTACHMENT_BYTES,
+  MAX_WORKSPACE_AUDIO_ATTACHMENT_BYTES,
   parseAgentSendPayload,
   parsePermissionResponse,
   parseWindowKind,
@@ -19,6 +21,32 @@ describe('IPC runtime validation', () => {
       message: '',
       attachments: [{ relativePath: 'inbox/a.txt', originalName: 'a.txt', size: 12 }],
     });
+  });
+
+  it('lets audio attachments exceed the document size cap but nothing else', () => {
+    const big = MAX_WORKSPACE_ATTACHMENT_BYTES + 1;
+    const audio = parseAgentSendPayload({
+      message: '',
+      attachments: [{ relativePath: 'a.m4a', originalName: 'a.m4a', size: big, kind: 'audio' }],
+    });
+    expect(audio.attachments?.[0]).toEqual({ relativePath: 'a.m4a', originalName: 'a.m4a', size: big, kind: 'audio' });
+
+    expect(() => parseAgentSendPayload({
+      message: '',
+      attachments: [{ relativePath: 'a.md', originalName: 'a.md', size: big, kind: 'text' }],
+    })).toThrow();
+    expect(() => parseAgentSendPayload({
+      message: '',
+      attachments: [{ relativePath: 'a.md', originalName: 'a.md', size: big }],
+    })).toThrow();
+    expect(() => parseAgentSendPayload({
+      message: '',
+      attachments: [{ relativePath: 'a.m4a', originalName: 'a.m4a', size: MAX_WORKSPACE_AUDIO_ATTACHMENT_BYTES + 1, kind: 'audio' }],
+    })).toThrow();
+    expect(() => parseAgentSendPayload({
+      message: '',
+      attachments: [{ relativePath: 'a.m4a', originalName: 'a.m4a', size: 1, kind: 'video' }],
+    })).toThrow();
   });
 
   it('rejects malformed or unbounded agent payloads', () => {

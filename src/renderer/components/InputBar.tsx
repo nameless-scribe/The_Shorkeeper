@@ -201,7 +201,7 @@ export function InputBar({ disabled, onSend, onModelChange, draft, voiceSettings
               key={`${file.relativePath}-${index}`}
               className="inline-flex items-center gap-1 rounded-lg border border-keeper-cyan/25 bg-keeper-cyan/10 px-2 py-1 text-[10px] text-keeper-ice"
             >
-              📎 {file.originalName}
+              {file.kind === 'audio' ? '🎙' : '📎'} {file.originalName}
               <button
                 type="button"
                 onClick={() => removeAttachment(index)}

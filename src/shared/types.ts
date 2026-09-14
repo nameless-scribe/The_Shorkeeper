@@ -25,10 +25,14 @@ export interface ChatMessage {
   content: string;
 }
 
+export type WorkspaceAttachmentKind = 'text' | 'office' | 'audio';
+
 export interface WorkspaceAttachment {
   relativePath: string;
   originalName: string;
   size: number;
+  /** 文本 / Office / 录音；缺省按扩展名推断。录音在上下文里只给路径，不读内容 */
+  kind?: WorkspaceAttachmentKind;
   /** 工具产物的完成证据：写入后读回计算的内容摘要 */
   sha256?: string;
 }

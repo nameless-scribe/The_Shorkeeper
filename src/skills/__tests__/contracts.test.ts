@@ -56,6 +56,10 @@ describe('product skill contracts', () => {
     expect(ids('总结这段录音里定了哪些事')).toContain('meeting-notes');
     // 只是聊到开会，不该把录音流程拉进来
     expect(ids('明天下午三点的会议室帮我订一下')).not.toContain('meeting-notes');
+    // 附件介绍行本身不能替用户决定要不要出纪要：只上传录音、没说要干嘛，不激活
+    expect(ids(
+      '[用户已上传以下文件到工作区]\n- 周会.m4a → 工作区: 周会.m4a（1 字节，这是录音文件，需要文字内容时用 transcribe_audio 生成文稿，不要用 read_file 读取）\n\n这个先放着',
+    )).not.toContain('meeting-notes');
     expect(ids('今天要做什么')).not.toContain('meeting-notes');
   });
 
