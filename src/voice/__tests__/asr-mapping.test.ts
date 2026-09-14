@@ -81,6 +81,8 @@ describe('flash ASR result mapping', () => {
     expect(result.speakerCount).toBe(2);
     // 顶层 audio_duration 优先于"最后一句结束时间"：结尾静音时两者能差好几秒
     expect(result.durationMs).toBe(12000);
+    // 成功响应也带 request_id，提工单时要用
+    expect(result.requestId).toBe('req-0123456789abcdef0123');
     expect(result.sentences[0]).toEqual({
       beginMs: 470,
       endMs: 4350,
@@ -145,6 +147,7 @@ describe('flash ASR result mapping', () => {
       sentences: [],
       durationMs: 12000,
       speakerCount: 0,
+      requestId: 'req-0123456789abcdef0123',
     });
   });
 

@@ -59,6 +59,8 @@ export interface TranscriptResult {
   durationMs: number;
   /** 去重后的说话人数；未开启分离时为 0 */
   speakerCount: number;
+  /** 供应商为本次请求分配的 ID；提工单时要用，成功与失败都记 */
+  requestId: string | null;
 }
 
 export interface AudioSourceInfo {

@@ -73,7 +73,14 @@ for (const adapter of adapters) {
 
       const done = completeAudioTranscript(
         record.id,
-        { transcriptPath: 'audio/周会.transcript.md', durationMs: 612137, sentenceCount: 95, speakerCount: 5, now: now + 26_000 },
+        {
+          transcriptPath: 'audio/周会.transcript.md',
+          durationMs: 612137,
+          sentenceCount: 95,
+          speakerCount: 5,
+          providerRequestId: 'req-success-1',
+          now: now + 26_000,
+        },
         database,
       );
       expect(done).toMatchObject({
@@ -82,6 +89,7 @@ for (const adapter of adapters) {
         durationMs: 612137,
         sentenceCount: 95,
         speakerCount: 5,
+        providerRequestId: 'req-success-1',
         completedAt: now + 26_000,
       });
     });

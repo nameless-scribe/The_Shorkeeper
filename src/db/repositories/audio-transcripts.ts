@@ -181,6 +181,8 @@ export interface CompleteAudioTranscriptInput {
   durationMs: number;
   sentenceCount: number;
   speakerCount: number;
+  /** 成功也记请求 ID：排查"识别不准"这类问题时，供应商只认它 */
+  providerRequestId?: string | null;
   now?: number;
 }
 
@@ -193,9 +195,18 @@ export function completeAudioTranscript(
   db.prepare(
     `UPDATE audio_transcripts
      SET status = 'succeeded', transcript_path = ?, duration_ms = ?, sentence_count = ?,
-         speaker_count = ?, error = NULL, completed_at = ?, updated_at = ?
+         speaker_count = ?, provider_request_id = ?, error = NULL, completed_at = ?, updated_at = ?
      WHERE id = ?`,
-  ).run(input.transcriptPath, input.durationMs, input.sentenceCount, input.speakerCount, now, now, id);
+  ).run(
+    input.transcriptPath,
+    input.durationMs,
+    input.sentenceCount,
+    input.speakerCount,
+    input.providerRequestId ?? null,
+    now,
+    now,
+    id,
+  );
   return getAudioTranscript(id, db);
 }
 

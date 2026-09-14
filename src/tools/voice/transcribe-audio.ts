@@ -173,6 +173,7 @@ export const transcribeAudioTool: ToolDefinition = {
         durationMs: result.durationMs,
         sentenceCount: result.sentences.length,
         speakerCount: result.speakerCount,
+        providerRequestId: result.requestId,
       });
 
       return withFileArtifact(

@@ -124,6 +124,7 @@ export function mapFlashResult(raw: unknown): TranscriptResult {
     sentences,
     durationMs: reported ?? lastEndMs,
     speakerCount: speakers.size,
+    requestId: asText(root?.request_id).trim() || null,
   };
 }
 

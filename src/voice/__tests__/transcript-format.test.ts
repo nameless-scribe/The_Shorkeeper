@@ -21,6 +21,7 @@ function result(sentences: TranscriptResult['sentences']): TranscriptResult {
     sentences,
     durationMs: sentences.length ? Math.max(...sentences.map((s) => s.endMs)) : 0,
     speakerCount: speakers.size,
+    requestId: null,
   };
 }
 
