@@ -1,0 +1,95 @@
+[
+  {
+    "id": "q01",
+    "question": "我想看看今天员工的报工情况",
+    "expect": {
+      "slots": { "指标": "报工记录", "时间范围": "今天", "粒度": "员工" },
+      "mustNotContain": ["SELECT", "JOIN", "GROUP BY"]
+    },
+    "notes": "用户原话第 1 条。按员工列出今天的报工，未报工的员工是否也要列出来，P7.2 跑出结果后再定"
+  },
+  {
+    "id": "q02",
+    "question": "统计一下这个月的报工数据",
+    "expect": {
+      "mustAsk": true,
+      "mustNotContain": ["SELECT", "JOIN", "GROUP BY"]
+    },
+    "notes": "用户原话第 2 条。“报工数据”没说要工时、次数还是按人 / 按项目分，期望先追问口径"
+  },
+  {
+    "id": "q03",
+    "question": "我想看看苏运来这个月的报工情况",
+    "expect": {
+      "slots": { "指标": "报工记录", "时间范围": "本月", "范围过滤": "员工 = 苏运来" },
+      "mustNotContain": ["SELECT", "JOIN", "WHERE"]
+    },
+    "notes": "用户原话第 3 条。人名要能在字典的取值表里定位到员工；同名时应追问"
+  },
+  {
+    "id": "q04",
+    "question": "我想看看这个月项目的进度",
+    "expect": {
+      "mustAsk": true,
+      "mustNotContain": ["SELECT", "JOIN", "GROUP BY"]
+    },
+    "notes": "用户原话第 4 条。“进度”怎么算（完成工时占比、阶段状态、还是计划 vs 实际）字典里没有现成指标，期望先追问"
+  },
+  {
+    "id": "q05",
+    "question": "统计一下还有哪些项目没有打尾款",
+    "expect": {
+      "slots": { "指标": "项目清单", "范围过滤": "尾款状态 = 未支付" },
+      "rowCountBetween": [0, 200],
+      "mustNotContain": ["SELECT", "JOIN", "WHERE"]
+    },
+    "notes": "用户原话第 5 条。尾款状态是枚举还是靠付款记录推算，P7.1 确认字典时定"
+  },
+  {
+    "id": "q06",
+    "question": "上个月的工时统计",
+    "expect": {
+      "mustAsk": true,
+      "mustNotContain": ["SELECT", "JOIN", "GROUP BY"]
+    },
+    "notes": "用户原话第 6 条。没说按人还是按项目，期望先追问粒度；如果用户回答“按人”，期望槽位为 指标=工时合计、时间范围=上个月、粒度=员工"
+  },
+  {
+    "id": "q07",
+    "question": "这个月有什么新的项目",
+    "expect": {
+      "slots": { "指标": "项目清单", "时间范围": "本月", "范围过滤": "创建时间在本月" },
+      "rowCountBetween": [0, 100],
+      "mustNotContain": ["SELECT", "JOIN", "WHERE"]
+    },
+    "notes": "用户原话第 7 条。“新的”按项目创建时间或立项时间判断"
+  },
+  {
+    "id": "q08",
+    "question": "我们现在都有什么产品",
+    "expect": {
+      "slots": { "指标": "产品清单" },
+      "rowCountBetween": [1, 500],
+      "mustNotContain": ["SELECT", "JOIN"]
+    },
+    "notes": "用户原话第 8 条。是否要排除停产 / 下架的产品，看字典里有无状态列"
+  },
+  {
+    "id": "q09",
+    "question": "我想看看员工今天都有什么任务",
+    "expect": {
+      "slots": { "指标": "任务清单", "时间范围": "今天", "粒度": "员工" },
+      "mustNotContain": ["SELECT", "JOIN", "GROUP BY"]
+    },
+    "notes": "用户原话第 9 条。按员工分组列任务"
+  },
+  {
+    "id": "q10",
+    "question": "我想看看员工今天的工作量",
+    "expect": {
+      "mustAsk": true,
+      "mustNotContain": ["SELECT", "JOIN", "GROUP BY"]
+    },
+    "notes": "用户原话第 10 条。“工作量”是工时、任务数还是报工件数没说清，期望先追问；也可能与 q01 是同一个意思，用户确认后合并或改成 slots"
+  }
+]

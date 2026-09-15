@@ -2,7 +2,7 @@ import type { WorkspaceAttachment } from '@/shared/types';
 import type { UiToolCall } from './ToolCallCard';
 
 const WORKSPACE_FILE_PATTERN =
-  /\.(md|markdown|txt|csv|json|xlsx|xls|docx|doc|pdf|yaml|yml|xml|html|htm|log|ini|py|ts|tsx|js|jsx)$/i;
+  /\.(md|markdown|txt|csv|json|xlsx|xls|docx|doc|pdf|yaml|yml|xml|html|htm|log|ini|py|ts|tsx|js|jsx|svg|png|jpg|jpeg|gif|webp)$/i;
 
 export function formatFileSize(bytes: number): string {
   if (bytes <= 0) return '—';
@@ -32,6 +32,13 @@ export function fileTypeVisual(name: string): { icon: string; accent: string } {
       return { icon: 'M', accent: 'bg-slate-600' };
     case 'csv':
       return { icon: 'C', accent: 'bg-teal-600' };
+    case 'svg':
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'webp':
+      return { icon: '图', accent: 'bg-violet-600' };
     default:
       return { icon: '📄', accent: 'bg-keeper-cyan/25' };
   }
@@ -72,7 +79,7 @@ function pathFromArgs(toolName: string, args: Record<string, unknown>): string |
     return typeof path === 'string' && path.trim() ? path.trim() : null;
   }
 
-  if (toolName === 'update_xlsx_cells') {
+  if (toolName === 'update_xlsx_cells' || toolName === 'update_docx_text') {
     const output = args.output_path;
     if (typeof output === 'string' && output.trim()) return output.trim();
     const source = args.source_path;
@@ -94,7 +101,7 @@ function pathFromArgs(toolName: string, args: Record<string, unknown>): string |
     return typeof out === 'string' && out.trim() ? out.trim() : null;
   }
 
-  const writeTools = new Set(['gen_markdown', 'gen_docx', 'gen_xlsx', 'gen_pdf']);
+  const writeTools = new Set(['gen_markdown', 'gen_docx', 'gen_xlsx', 'gen_pdf', 'gen_chart']);
   if (writeTools.has(toolName)) {
     const path = args.path;
     return typeof path === 'string' && path.trim() ? path.trim() : null;

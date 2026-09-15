@@ -276,6 +276,78 @@ export interface ApprovalRow {
   decided_at: number | null;
 }
 
+/** P7 数据源（密码为 protectSecret 密文） */
+export interface DataSourceRow {
+  id: string;
+  name: string;
+  kind: string;
+  host: string;
+  port: number;
+  database_name: string;
+  user: string;
+  password: string;
+  options_json: string;
+  last_ok_at: number | null;
+  last_error: string | null;
+  writable_account: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+/** P7 数据字典：骨架与人工层分开存 */
+export interface DataDictionaryRow {
+  id: string;
+  data_source_id: string;
+  object_key: string;
+  auto_json: string;
+  manual_json: string;
+  updated_at: number;
+}
+
+/** P7 指标定义 */
+export interface MetricRow {
+  id: string;
+  data_source_id: string;
+  name: string;
+  sql_fragment: string;
+  grain: string | null;
+  notes: string | null;
+  source: string;
+  updated_at: number;
+}
+
+/** P7 命名查询：存做法（方案与 SQL），不存结果 */
+export interface NamedQueryRow {
+  id: string;
+  data_source_id: string;
+  name: string;
+  question: string;
+  plan_json: string;
+  sql: string;
+  notes: string | null;
+  question_embedding: Uint8Array | null;
+  created_at: number;
+  last_run_at: number | null;
+  last_row_count: number | null;
+}
+
+/** P7 查询记录：只有统计与产物路径 */
+export interface QueryRunRow {
+  id: string;
+  run_id: string | null;
+  data_source_id: string;
+  named_query_id: string | null;
+  plan_json: string;
+  sql: string;
+  status: string;
+  row_count: number | null;
+  duration_ms: number | null;
+  artifact_path: string | null;
+  error: string | null;
+  started_at: number;
+  finished_at: number | null;
+}
+
 /** P6.2 ask_user 提问账本 */
 export interface UserQuestionRow {
   id: string;

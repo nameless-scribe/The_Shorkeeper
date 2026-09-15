@@ -200,7 +200,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | [P4-AUDIO-TRANSCRIPTION-PLAN.md](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md) | P4 录音转写与会议纪要实施计划与实施记录 |
 | [P5-DOCUMENT-CAPABILITY-PLAN.md](docs/P5-DOCUMENT-CAPABILITY-PLAN.md) | P5 办公文档读写实施计划与实施记录 |
 | [P6-INTENT-AND-INQUIRY-PLAN.md](docs/P6-INTENT-AND-INQUIRY-PLAN.md) | P6 意图理解与追问（`ask_user`）实施计划与实施记录 |
-| [P7-DATA-SOURCE-QUERY-PLAN.md](docs/P7-DATA-SOURCE-QUERY-PLAN.md) | P7 数据源查询实施计划（未开工） |
+| [P7-DATA-SOURCE-QUERY-PLAN.md](docs/P7-DATA-SOURCE-QUERY-PLAN.md) | P7 数据源查询实施计划与实施记录 |
 | [P8-VISION-PLAN.md](docs/P8-VISION-PLAN.md) | P8 图片理解与 OCR 实施计划（未开工） |
 | [P5-P7-ROADMAP.md](docs/P5-P7-ROADMAP.md) | P5–P8 开工路线与准备事项 |
 | [使用说明.md](docs/使用说明.md) | 技能、插件、工作区、待办 |
@@ -224,8 +224,9 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 - **P2**：外部连接器方向已取消，不接入邮箱、外部日历、联系人或云盘
 - **P3**：纯本地主动服务工程已完成（持久事件账本、本地采集器、主动收件箱、统一路由与频率预算、四个纵向场景、`pnpm test:p3` / `pnpm test:p3:ui`）；收口后又做了一轮复审并修复 8 个问题（过期事件周期性翻转、重开事件不再路由、弹窗预算被显式提醒占用等，见 [P3 计划 §9.6](docs/P3-LOCAL-PROACTIVITY-PLAN.md)）；连续两周真实使用观察尚未开始
 - **P4**：录音转写、会议纪要与聊天框语音输入已完成（`pnpm test:p4`），真实使用观察进行中，见 [P4 计划](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md)
-- **P5**：办公文档读写进行中。P5.0 已完成：PDF 附件可读（按版面重建表格、抽出图片、逐页标记，扫描件明确报错）、`gen_pdf` 改走 `printToPDF` 支持中文与 Markdown 排版（`pnpm test:p5`）；Word 生成 / 原位修改 / 图表见 [P5 计划](docs/P5-DOCUMENT-CAPABILITY-PLAN.md)
+- **P5**：办公文档读写进行中。P5.0–P5.2 已完成：PDF 附件可读（按版面重建表格、抽出图片、逐页标记，扫描件明确报错）、`gen_pdf` 改走 `printToPDF` 支持中文与 Markdown 排版、`gen_docx` 接 Markdown 与文档撰写技能（问清 → 大纲确认 → 生成）、`update_docx_text` 原位改 Word 文字（按段落精确替换、预览确认、版式与其余部件原样）（`pnpm test:p5`）；图表产物见 [P5 计划](docs/P5-DOCUMENT-CAPABILITY-PLAN.md)
 - **P6**：意图理解与追问工程已完成（【证据不足先问】规则、`ask_user` 工具与提问弹窗、`user_questions` 落库与中断恢复、会议纪要 / 每日管家改用弹窗提问，`pnpm test:p6`）；真实使用观察进行中，见 [P6 计划](docs/P6-INTENT-AND-INQUIRY-PLAN.md)
+- **P7**：数据源查询进行中。P7.0 已完成：只读 SQL 校验器、查询方案类型、方案编译器（先聚合再连维度、同比 / 环比、自检）、业务语言渲染、字典与指标结构、五张表迁移与仓储、评测集格式（`pnpm test:p7`）；MySQL 连接与设置页起见 [P7 计划](docs/P7-DATA-SOURCE-QUERY-PLAN.md)
 - **P8**：图片理解与 OCR **未开工**，契约见 [P8 计划](docs/P8-VISION-PLAN.md)
 - **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地
 

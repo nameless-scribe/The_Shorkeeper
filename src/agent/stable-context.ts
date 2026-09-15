@@ -16,7 +16,7 @@ const TOOL_SUMMARY: Record<string, string> = {
   update_xlsx_cells: '安全修改现有 Excel 的指定单元格',
   convert_to_markdown: '将 Word/PDF/文本文件转为 Markdown（PDF 仅文字层）',
   gen_markdown: '生成 Markdown 到工作区',
-  gen_docx: '生成 Word 到工作区',
+  gen_docx: '生成 Word 到工作区（正文 Markdown，支持标题、列表、表格）',
   gen_xlsx: '生成 Excel 到工作区',
   gen_pdf: '生成 PDF 到工作区（正文 Markdown，支持中文与表格）',
   bookkeeping: '记账（add/list/summary）',

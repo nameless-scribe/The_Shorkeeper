@@ -184,7 +184,7 @@ async function main() {
     cases.push(await runCase('Skill 路由正向与误触发', async () => {
       invalidateSkillsCache();
       const skills = discoverSkills().filter((skill) => skill.kind !== 'internal');
-      assert(skills.length === 7 && skills.every((skill) => skill.validationErrors.length === 0), '产品 Skill 配置未全部通过');
+      assert(skills.length === 8 && skills.every((skill) => skill.validationErrors.length === 0), '产品 Skill 配置未全部通过');
       const ordinaryReport = resolveActiveSkillsWithDiagnostics(
         '[用户已上传以下文件到工作区]\n- sales.xlsx → 工作区: sales.xlsx\n\n请分析销售报表' +
           '\n\n[工作区附件已解析]\n数据行:[["导入待办"]]',

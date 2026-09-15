@@ -295,7 +295,7 @@ interface ToolContext {
 **副作用契约的运行时约束**（`src/tools/contract.ts`、`src/tools/evidence.ts`、`src/agent/loop.ts`）：
 
 - `risk: 'high'` 的工具即使权限策略允许也会进入确认；每次确认都写入 `approvals` 表，含风险等级和结论来源。
-- 支持预览且需要确认的工具先以 `ctx.preview = true` 干跑，再把结构化 diff 放入权限弹窗；确认后携带 `previewRevision` 执行，目标已变化则拒绝写入。当前覆盖 `write_file`、`replace_text`、`update_xlsx_cells`。
+- 支持预览且需要确认的工具先以 `ctx.preview = true` 干跑，再把结构化 diff 放入权限弹窗；确认后携带 `previewRevision` 执行，目标已变化则拒绝写入。当前覆盖 `write_file`、`replace_text`、`update_xlsx_cells`、`update_docx_text`。
 - 预览成功不得携带文件产物；违反该约束或声明支持预览但未返回结构化预览时，主循环拒绝继续。
 - 非幂等的副作用工具在同一 run 内以完全相同参数再次调用时，不会重复执行，而是复用首次结果并在输出前标注“重复调用已合并”。
 - `evidence: 'artifact'` 的工具成功后会由主循环读回校验产物（存在、大小、SHA-256）；校验失败时结果降级为失败，避免“声称完成”。
@@ -308,7 +308,7 @@ interface ToolContext {
 |------|------|
 | 文件 | `read_file`, `write_file`, `replace_text`, `list_dir` |
 | 网络 | `web_search`（博查）, `fetch_url`, `get_weather`, `translate` |
-| 文档 | `convert_to_markdown`（Word / PDF 文字层 / 文本）, `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`（Markdown 正文，经 `printToPDF` 输出）, `read_xlsx`, `update_xlsx_cells`（工作区 Excel） |
+| 文档 | `convert_to_markdown`（Word / PDF 文字层 / 文本）, `gen_markdown`, `gen_docx`（Markdown 正文）, `update_docx_text`（原位改 Word 文字）, `gen_xlsx`, `gen_pdf`（Markdown 正文，经 `printToPDF` 输出）, `read_xlsx`, `update_xlsx_cells`（工作区 Excel） |
 | 记忆 / 知识 | `recall_memory`, `save_memory`, `search_worldbook`, `search_knowledge` |
 | 生活 | `bookkeeping`, `travel_plan` |
 | 日程 | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task` |

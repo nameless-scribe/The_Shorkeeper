@@ -5,7 +5,8 @@
 > 阶段编号沿用 P 系列。P7 是已取消的 P2（外部连接器）的收窄版：只连 MySQL、只读、
 > 把"我说想法 → 它组 SQL → 出 Excel 或图表"跑通，并且**越用越准**。依赖 P5 的产出工具与 P6 的追问机制。
 
-当前状态（2026-09-14）：**未开工**。本文是开工前的契约，不是验收记录。
+当前状态（2026-09-15）：**P7.0 已实现并通过自动化回归**（校验器、方案类型与校验、字典与指标结构、业务语言渲染、
+方案编译器、五张表的迁移与仓储、评测集格式）。评测集已填 10 / 20 个问题（`docs/p7-eval/questions.json`，4 个标 `mustAsk`），槽位要点由助理代填、待用户确认；P7.1 起未开工。实施记录见第 12 节。
 
 **用户已明确的范围（2026-09-14）**：第一版只连 **MySQL**；SQL Server 与其它数据库搁置，等真实需求。
 用户此前做过类似功能，**效果不好**——第 2 节先回答"这次为什么会不一样"。
@@ -400,10 +401,19 @@ P7.0 与 P7.1 可在 P5 / P6 进行中并行。
 
 ## 10. 待确认
 
-- **网络位置与 SSL**：库在内网还是公网，决定连接选项默认值。
-- **连接时区**：数据库存的是本地时间还是 UTC，决定 `time_zone` 与日期口径。
-- **表数量级与关注表**：决定 3.1 的按需取表是否第一版就要 RAG 检索。
-- **20 个真实问题**：P7.0 的输入，由用户提供。
+已答（2026-09-15）：
+
+- **网络位置与 SSL**：用户答"内网公网都有可能"。因此 SSL 不是全局默认而是每个数据源一个开关，默认关；
+  主机不是 `localhost` / 私网地址而 SSL 又关着时，设置页给一句提醒，不阻止连接。连接超时按公网取 10 秒。
+- **连接时区**：用户答"不太确定"。因此**不假设、不覆盖**：默认不执行 `SET time_zone`，读出来的是什么就是什么；
+  测试连接时探测 `@@global.time_zone`、`@@session.time_zone`、`@@system_time_zone`、`NOW()` 与 `UTC_TIMESTAMP()` 的差，
+  连同关注表里最新一条 datetime 值一起显示在设置页，让用户看着实际值决定要不要改成固定时区。日期过滤按服务器时区解释。
+- **20 个真实问题**：用户先给了 10 个（`docs/p7-eval/questions.json`），4 个 `mustAsk` 已确认是本意；用户暂时想不出更多，
+  余下 10 个从 P7.2 真实使用里的对话补，补的时候顺手记上一次答错在哪。
+
+未答（不阻塞 P7.1）：
+
+- **表数量级与关注表**：决定 3.1 的按需取表是否第一版就要 RAG 检索。P7.1 连上真实库看 `information_schema` 数量再定。
 - **上一次实现的失败点**：用户回忆一下具体是第 2 节的哪几条，本计划据此调整优先级。
 
 ---
@@ -446,11 +456,13 @@ interface QueryPlan {
 ### 11.3 连接层（P7.1）
 
 - `src/datasources/mysql.ts` 用 `mysql2/promise` 连接池（每数据源最多 3 连接）。每个连接建立时执行：
-  `SET SESSION TRANSACTION READ ONLY`、`SET SESSION max_execution_time = 30000`、`SET time_zone = ?`、`SET NAMES utf8mb4`。
+  `SET SESSION TRANSACTION READ ONLY`、`SET SESSION max_execution_time = 30000`、`SET NAMES utf8mb4`；
+  `SET time_zone = ?` 只在 `options_json.timeZone` 明确设了值时执行（§10：用户不确定库存的是什么时间，默认跟随服务器）。
 - `query(sql, params, { maxRows, signal })`：用 `connection.query` 的流式接口按行计数，超过 `maxRows` 即 `destroy()` 连接（不能优雅取消时以断连为准）；`signal` 触发同样断连。
 - `fetchSchema`：`information_schema.TABLES / COLUMNS / KEY_COLUMN_USAGE`，一并读 `TABLE_COMMENT` / `COLUMN_COMMENT`。
 - `fetchValues`：只对类型为 `enum` 或 `char/varchar(≤ 64)` 且表行数估计 ≤ 500 万的列执行 `SELECT col FROM t GROUP BY col LIMIT 201`，每列 2 秒超时；201 行即标高基数不存。只在用户点"刷新"时跑。
-- 密码存储 `protectSecret`，与转写凭证一致；`options_json` 含 `ssl`、`timeZone`、`sampleValues`、`focusTables`。
+- 密码存储 `protectSecret`，与转写凭证一致；`options_json` 含 `ssl`（默认 false，公网主机未开时提醒）、`timeZone`（缺省跟随服务器）、`sampleValues`、`focusTables`。
+- `ping` 顺带返回时区探测结果（global / session / system 时区、`NOW()` 与 `UTC_TIMESTAMP()` 之差），设置页原样展示。
 
 ### 11.4 命名查询的相似检索（P7.3）
 
@@ -481,4 +493,27 @@ interface QueryPlan {
 
 ## 12. 实施记录
 
-（开工后按"症状 → 证据 → 根因 → 修法"逐节追加。）
+（按"症状 → 证据 → 根因 → 修法"逐节追加，格式与 P4 第 10 节一致。）
+
+### 12.1 P7.0 契约、校验器、编译器与评测集骨架（2026-09-15）
+
+全部是纯函数与仓储，不连库、不加依赖（`mysql2` 留到 P7.1）。
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 校验器 | `src/datasources/sql-validator.ts` | 只读拒绝器：单语句、无注释、SELECT / WITH 开头（WITH 主体按括号深度找）、关键字黑名单按词边界、`INTO` 与加锁读一律拒绝、字符串字面量先抹掉再查；`LIMIT` 缺省 500 封顶 5000，自带的取较小；JOIN 后直接聚合给警告。`wrapRawSql` 给逃生口统一包一层 |
+| 方案 | `src/datasources/query-plan.ts` | §11.1 的 `QueryPlan` 类型与 `parseQueryPlan`：标识符、`表.列`、ISO 日期左闭右开、过滤值上限 200、指标不重复、`orderBy` 必须指向方案里的指标、`limit` 1–5000、`unresolved` 槽位枚举 |
+| 字典 | `src/datasources/dictionary.ts` | 骨架 / 人工层 / 指标的数据结构；`mergeSkeleton` 刷新时保留人工层、以表列 COMMENT 作业务名初始值、外键自动生成 N:1 连接；表清单（超过 60 张只列前 60 并注明需检索）、单表详情（枚举含义 / 取值表 / 样例三选一）、指标列表的格式化 |
+| 渲染 | `src/datasources/plan-render.ts` | 方案 → 业务语言：整月 / 整年 / 单日 / 起止日的时间描述、枚举值换成含义、字典缺业务名时用"某项数据"占位并列出 `missingNames`；`containsTechnicalTerms` 是 §3.11 的表现层断言 |
+| 编译器 | `src/datasources/plan-compiler.ts` | 先按事实表粒度聚合成 CTE 再 LEFT JOIN 维度（一对多连接拒绝作维度）；维度过滤放外层（N:1 下与放里面等价）；同比 / 环比编成第二段平移的 CTE 按分组键 `<=>` 连接，输出本期 / 上期 / 差值 / 增幅；全部反引号与 `?` 参数；指标片段与字典定义不一致即拒绝；两条自检（整体合计、日期覆盖）；编译结果再过一遍校验器；`rawSql` 走校验器 + 包装，无自检并标注"未经自动核对" |
+| 评测集 | `src/datasources/eval-set.ts`、`docs/p7-eval/` | `questions.json` 的格式校验（数量不足只告警）；README 写了怎么填 |
+| 持久化 | `0029_datasources.sql`、`src/db/repositories/datasources.ts` | 五张表与仓储：密码 `protectSecret`，列表接口只回传"是否已配置"；字典刷新骨架保留人工层并删掉消失的对象；指标按 `(源, 名)` upsert；命名查询存方案与 SQL，向量可选；查询记录只有统计与产物路径，结束后不可改，启动收口 `running → cancelled`；删数据源级联删字典 / 指标 / 命名查询，查询记录保留 |
+| 入口 | `package.json` | `pnpm test:p7`（9 个文件 86 用例，含双适配器仓储测试与迁移计数 28 → 29） |
+
+两个实现细节值得记：
+
+- 适配器的 `run()` 不返回影响行数，`SELECT changes()` 在 sql.js 上也拿不到；仓储改成删改前先 `COUNT`，两种适配器行为一致。
+- 同比 / 环比的第二段 CTE 用同一套构造函数生成再把别名 `f` 换成 `p`，替换按 `\bf\.` 匹配——列名恰好叫 `f` 的表会误伤，字典里出现这种表名时再处理。
+
+**待用户**：把 20 个真实问题填进 `docs/p7-eval/questions.json`（格式见 `docs/p7-eval/README.md`，至少 5 个笼统问题标 `mustAsk`）；
+回答 §10 的网络位置、SSL、时区三问，P7.1 连接层的默认值据此定。

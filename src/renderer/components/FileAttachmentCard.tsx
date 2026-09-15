@@ -1,6 +1,8 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import type { WorkspaceAttachment } from '@/shared/types';
-import { fileTypeVisual, formatFileSize } from './file-attachment-utils';
+import { fileExtension, fileTypeVisual, formatFileSize } from './file-attachment-utils';
+
+const INLINE_IMAGE_EXTENSIONS = new Set(['svg', 'png', 'jpg', 'jpeg', 'gif', 'webp']);
 
 interface FileAttachmentCardProps {
   file: WorkspaceAttachment;
@@ -11,7 +13,30 @@ export function FileAttachmentCard({ file, align = 'left' }: FileAttachmentCardP
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [displayFile, setDisplayFile] = useState(file);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const visual = fileTypeVisual(displayFile.originalName);
+  const isImage = INLINE_IMAGE_EXTENSIONS.has(fileExtension(displayFile.originalName));
+
+  // 图表 / 图片产物：只读内联预览，读不到就只显示卡片
+  useEffect(() => {
+    if (!isImage) {
+      setImageUrl(null);
+      return;
+    }
+    let cancelled = false;
+    const api = window.shorekeeper.workspace.readImageDataUrl;
+    if (typeof api !== 'function') return;
+    void api(file.relativePath)
+      .then((url) => {
+        if (!cancelled) setImageUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setImageUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file.relativePath, file.sha256, isImage]);
 
   useEffect(() => {
     setDisplayFile(file);
@@ -57,6 +82,16 @@ export function FileAttachmentCard({ file, align = 'left' }: FileAttachmentCardP
 
   return (
     <div className={`flex flex-col gap-1 ${align === 'right' ? 'items-end' : 'items-start'}`}>
+      {imageUrl && (
+        <button
+          type="button"
+          onClick={() => void openFile()}
+          title="点击用系统默认程序打开"
+          className="keeper-dialog-btn block max-w-[420px] overflow-hidden rounded-xl border border-keeper-silver/20 bg-white shadow-sm"
+        >
+          <img src={imageUrl} alt={displayFile.originalName} className="block h-auto w-full max-h-[300px] object-contain" />
+        </button>
+      )}
       <button
         type="button"
         onClick={() => void openFile()}

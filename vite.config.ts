@@ -15,6 +15,7 @@ const isExternal = (id: string) =>
   id === 'node-cron' ||
   id === 'ws' ||
   id === 'docx' ||
+  id === 'jszip' ||
   id === 'exceljs' ||
   id === 'mammoth' ||
   id === 'word-extractor' ||

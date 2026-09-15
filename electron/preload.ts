@@ -352,6 +352,8 @@ const shorekeeperApi = {
       ipcRenderer.invoke('workspace:showRelative', relativePath),
     getFileInfo: (relativePath: string): Promise<WorkspaceAttachment | null> =>
       ipcRenderer.invoke('workspace:getFileInfo', relativePath),
+    readImageDataUrl: (relativePath: string): Promise<string | null> =>
+      ipcRenderer.invoke('workspace:readImageDataUrl', relativePath),
   },
   window: {
     moveBy: (dx: number, dy: number) => ipcRenderer.send('window:moveBy', dx, dy),

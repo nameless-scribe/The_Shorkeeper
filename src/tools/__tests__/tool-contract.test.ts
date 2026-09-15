@@ -40,6 +40,7 @@ describe('tool side-effect contract', () => {
       .sort();
     expect(artifactTools).toEqual([
       'convert_to_markdown',
+      'gen_chart',
       'gen_docx',
       'gen_markdown',
       'gen_pdf',
@@ -47,6 +48,7 @@ describe('tool side-effect contract', () => {
       'replace_text',
       'transcribe_audio',
       'travel_plan',
+      'update_docx_text',
       'update_xlsx_cells',
       'write_file',
     ]);
@@ -57,7 +59,7 @@ describe('tool side-effect contract', () => {
       .filter((tool) => resolveToolContract(tool).supportsPreview)
       .map((tool) => tool.name)
       .sort();
-    expect(previewable).toEqual(['replace_text', 'update_xlsx_cells', 'write_file']);
+    expect(previewable).toEqual(['replace_text', 'update_docx_text', 'update_xlsx_cells', 'write_file']);
   });
 
   it('suppresses duplicate calls only for non-idempotent side-effect tools', () => {

@@ -89,6 +89,7 @@ pnpm db:seed
 | `0025_document_freshness.sql` | P1 本地文档来源、mtime/size、检查状态与手工/自动同步策略 |
 | `0027_audio_transcripts.sql` | P4 录音转写账本 `audio_transcripts`（幂等键、状态、产物路径、供应商请求 ID） |
 | `0028_user_questions.sql` | P6.2 `ask_user` 提问账本 `user_questions`：问题、选项、回答、状态与决定方式 |
+| `0029_datasources.sql` | P7 数据源查询：`data_sources`、`data_dictionary`、`metrics`、`named_queries`、`query_runs` |
 | `0026_proactive_events.sql` | P3 本地主动服务：`proactive_events`、`proactivity_decisions`、`proactivity_deliveries`、`proactivity_feedback`，以及 `scheduled_tasks` 的失败真源列（`last_error`、`last_error_at`、`failure_count`） |
 
 打包时 migration 以 `extraResources/db-migrations/` 形式随安装包分发；开发态直接读 `src/db/migrations/`。
@@ -128,6 +129,11 @@ pnpm db:seed
 | `artifacts` | 工具产物证据：工作区相对路径、大小、SHA-256，关联 run 与步骤 |
 | `approvals` | 权限确认记录：工具、参数摘要、风险等级、结论与决定方式（用户/超时/中止/窗口关闭/启动收口） |
 | `user_questions` | P6.2 `ask_user` 提问账本：问题、原因、选项 JSON、回答与选项 id；状态 `pending / answered / expired / cancelled / interrupted`，决定方式 `user / timeout / abort / window_closed / startup`；启动收口把 `pending` 改为 `interrupted`，下一轮对话带出问题原文 |
+| `data_sources` | P7 数据源（本版仅 MySQL）：主机、库名、账号、`protectSecret` 加密的密码、`options_json`（ssl / 时区 / 样例值开关 / 关注表）、最近连通与错误、`writable_account` 写权限探测结果 |
+| `data_dictionary` | P7 数据字典：按 `(data_source_id, object_key)` 唯一，`auto_json` 骨架整份替换、`manual_json` 人工层刷新时保留；样例值与取值表只在这里，不进日志与运行记录 |
+| `metrics` | P7 指标定义：`(data_source_id, name)` 唯一，SQL 片段、粒度、口径说明、来源 `user / query` |
+| `named_queries` | P7 命名查询：存做法（方案 JSON 与参数化 SQL）不存结果；可选问题向量用于相似检索 |
+| `query_runs` | P7 查询记录：状态 `running / succeeded / failed / cancelled`、行数、耗时、产物路径、限长错误；不存结果数据；启动收口把 `running` 改为 `cancelled` |
 | `goals` | 中长期目标：状态 `active / paused / done / dropped`、优先级、目标日期；待办和承诺通过 `goal_id` 分组 |
 | `commitments` | 承诺：`owner = user` 必挂一条待办（`task_id`），`owner = assistant` 指向提醒（`scheduled_task_id`）；状态 `proposed / open / done / missed / cancelled`，完成时记录 `evidence_run_id` |
 | `briefings` | 每日简报记录，`(brief_date, kind)` 唯一，保证早/晚简报每天只生成一次 |

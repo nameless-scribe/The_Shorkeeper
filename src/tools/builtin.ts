@@ -8,6 +8,8 @@ import { fetchUrlTool } from './web/fetch-url';
 import { weatherTool } from './web/weather';
 import { translateTool } from './web/translate';
 import { convertToMarkdownTool } from './doc/convert-markdown';
+import { updateDocxTextTool } from './doc/update-docx-text';
+import { genChartTool } from './doc/gen-chart';
 import {
   genDocxTool,
   genMarkdownTool,
@@ -60,8 +62,10 @@ export function createBuiltinRegistry(): ToolRegistry {
   registry.register(convertToMarkdownTool);
   registry.register(genMarkdownTool);
   registry.register(genDocxTool);
+  registry.register(updateDocxTextTool);
   registry.register(genXlsxTool);
   registry.register(genPdfTool);
+  registry.register(genChartTool);
   registry.register(bookkeepingTool);
   registry.register(travelPlanTool);
   registry.register(recallMemoryTool);

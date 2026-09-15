@@ -69,7 +69,7 @@
 
 ### 2.7 确认前预览（dry-run）
 
-- `write_file`、`replace_text` 与 `update_xlsx_cells` 声明 `supportsPreview: true`。需要确认时，主循环先以 `ctx.preview = true` 执行，预览阶段不得产生文件产物。
+- `write_file`、`replace_text`、`update_xlsx_cells` 与 `update_docx_text` 声明 `supportsPreview: true`。需要确认时，主循环先以 `ctx.preview = true` 执行，预览阶段不得产生文件产物。
 - 文本写入展示修改前/修改后内容；Excel 更新展示工作表、单元格地址与新旧值。预览通过现有权限弹窗呈现，用户确认后才真正写入。
 - 预览带目标文件 SHA-256/缺失状态版本。确认后执行时重新比对；文件在等待期间发生变化则拒绝写入，要求重新预览，避免把过期确认应用到新内容。
 - 全文件系统模式按用户已选择的权限策略直接执行，不额外弹出预览确认；默认确认模式使用完整的“预览 → 确认 → 版本复核 → 原子写入 → 产物校验”链路。

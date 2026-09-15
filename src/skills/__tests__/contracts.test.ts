@@ -12,6 +12,7 @@ describe('product skill contracts', () => {
 
     expect(productSkills.map((skill) => skill.id).sort()).toEqual([
       'daily-steward',
+      'doc-compose',
       'doc-to-markdown',
       'excel',
       'meeting-notes',
@@ -61,6 +62,30 @@ describe('product skill contracts', () => {
       '[用户已上传以下文件到工作区]\n- 周会.m4a → 工作区: 周会.m4a（1 字节，这是录音文件，需要文字内容时用 transcribe_audio 生成文稿，不要用 read_file 读取）\n\n这个先放着',
     )).not.toContain('meeting-notes');
     expect(ids('今天要做什么')).not.toContain('meeting-notes');
+  });
+
+  it('routes Word edits to workspace-doc-edit rather than doc-compose or a bare conversion', () => {
+    const skills = discoverSkills().filter((skill) => skill.kind !== 'internal');
+    const ids = (message: string) => resolveActiveSkills(message, skills).map((skill) => skill.id);
+
+    expect(ids('把 合同.docx 里第三段的日期改成 9 月 30 日')).toContain('workspace-doc-edit');
+    expect(ids('帮我改一下这份 word 里的联系人')).toContain('workspace-doc-edit');
+    expect(ids('把 合同.docx 里第三段的日期改成 9 月 30 日')).not.toContain('doc-compose');
+    expect(ids('把 报价.docx 转 markdown')).not.toContain('workspace-doc-edit');
+    expect(ids('把回答改成英文')).not.toContain('workspace-doc-edit');
+  });
+
+  it('activates doc-compose for writing requests without stealing conversions or edits', () => {
+    const skills = discoverSkills().filter((skill) => skill.kind !== 'internal');
+    const ids = (message: string) => resolveActiveSkills(message, skills).map((skill) => skill.id);
+
+    expect(ids('帮我把这些想法整理成一份方案')).toContain('doc-compose');
+    expect(ids('写一份下季度的推广计划，生成 Word')).toContain('doc-compose');
+    expect(ids('做成 PDF 发给客户')).toContain('doc-compose');
+    // 转换与原位编辑是别的技能的事
+    expect(ids('把 报价.docx 转 markdown')).not.toContain('doc-compose');
+    expect(ids('修改文档里的第三段')).not.toContain('doc-compose');
+    expect(ids('帮我把 周会.m4a 整理成会议纪要')).not.toContain('doc-compose');
   });
 
   it('keeps internal example skills out of prompt formatting and activation', () => {

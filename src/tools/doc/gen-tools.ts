@@ -54,18 +54,25 @@ export const genMarkdownTool: ToolDefinition = {
   },
 };
 
+/** 正文上限：与 gen_pdf 一致，超过这个量级的文档应该拆文件。 */
+export const MAX_DOCX_BODY_CHARS = 200_000;
+
 export const genDocxTool: ToolDefinition = {
   name: 'gen_docx',
-  description: '在工作区生成 Word (.docx) 文档',
+  description:
+    '在工作区生成 Word (.docx) 文档。正文按 Markdown 排版（# 标题、- 列表、| 表格 |、**粗体**、--- 分页），纯文本也可以',
   category: 'doc',
   requiresPermission: ['filesystem:write'],
   sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
-      path: { type: 'string', description: '输出路径，如 reports/report.docx' },
-      title: { type: 'string', description: '文档标题' },
-      body: { type: 'string', description: '正文（纯文本，段落以空行分隔）' },
+      path: { type: 'string', description: '输出路径，须以 .docx 结尾，如 reports/report.docx' },
+      title: { type: 'string', description: '文档标题，会作为首个一级标题' },
+      body: {
+        type: 'string',
+        description: '正文，Markdown 格式：#~###### 标题、-/1. 列表（两级）、GFM 表格、**粗体**、*斜体*、--- 分页；纯文本按空行分段',
+      },
     },
     required: ['path', 'title', 'body'],
   },
@@ -76,33 +83,24 @@ export const genDocxTool: ToolDefinition = {
       body?: string;
     };
     if (!filePath?.trim() || !title?.trim() || body == null) {
-      return { success: false, output: '', error: '缺少 path、title 或 body' };
+      return { success: false, output: '', error: '缺少 path、title 或 body', errorCategory: 'invalid_arguments' };
+    }
+    if (!filePath.trim().toLowerCase().endsWith('.docx')) {
+      return { success: false, output: '', error: 'path 须为 .docx 文件', errorCategory: 'invalid_arguments' };
+    }
+    if (body.length > MAX_DOCX_BODY_CHARS) {
+      return {
+        success: false,
+        output: '',
+        error: `正文过长（${body.length} 字符，上限 ${MAX_DOCX_BODY_CHARS}），请拆成多个文档生成`,
+        errorCategory: 'invalid_arguments',
+      };
     }
 
+    const document = parseMarkdown(body);
     return writeWorkspaceFile(ctx, filePath, async (absolute) => {
-      const { Document, Packer, Paragraph, HeadingLevel, TextRun } = await import('docx');
-      const paragraphs = body.split(/\n{2,}/).flatMap((block) => {
-        const lines = block.split('\n');
-        return lines.map(
-          (line) =>
-            new Paragraph({
-              children: [new TextRun(line)],
-            }),
-        );
-      });
-
-      const doc = new Document({
-        sections: [
-          {
-            children: [
-              new Paragraph({ text: title, heading: HeadingLevel.HEADING_1 }),
-              ...paragraphs,
-            ],
-          },
-        ],
-      });
-
-      const buffer = await Packer.toBuffer(doc);
+      const { renderDocxBuffer } = await import('../../documents/markdown-to-docx');
+      const buffer = await renderDocxBuffer({ title: title.trim(), document });
       await fs.writeFile(absolute, buffer);
     });
   },

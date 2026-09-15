@@ -11,6 +11,7 @@ import {
 } from '../../src/workspace/import';
 import { classifyWorkspaceFile, WORKSPACE_PICK_DIALOG_FILTERS } from '../../src/workspace/allowed-extensions';
 import { requireString } from '../../src/shared/ipc-validation';
+import { readWorkspaceImageDataUrl } from '../../src/workspace/image-preview';
 
 export async function registerWorkspaceIpc() {
   const recovery = await recoverWorkspaceImportTemps();
@@ -104,6 +105,17 @@ export async function registerWorkspaceIpc() {
         size: stat.size,
         kind: classifyWorkspaceFile(path.extname(relativePath)),
       };
+    } catch {
+      return null;
+    }
+  });
+
+  // P5.3：聊天里只读预览图表 / 图片产物。读不到、太大、不是图片都返回 null，卡片退回只显示文件名
+  ipcMain.handle('workspace:readImageDataUrl', async (_event, rawPath: unknown) => {
+    try {
+      const relativePath = requireString(rawPath, '工作区路径', { maxLength: 4_096 });
+      const root = ensureWorkspaceDir();
+      return await readWorkspaceImageDataUrl(root, relativePath);
     } catch {
       return null;
     }

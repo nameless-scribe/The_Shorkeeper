@@ -6,8 +6,9 @@
 > P5 补的是"看得懂、写得出办公文档"：PDF 可读、Word 可从零生成也可原位修改、图表可产出。
 > P6（意图与追问）与 P7（数据源查询）依赖本阶段的产出工具，见第 8 节。
 
-当前状态（2026-09-14）：**P5.0 已实现并通过自动化回归**（PDF 可读、`gen_pdf` 改走 `printToPDF`），
-真实使用记录尚未开始；P5.1 至 P5.4 未开工。实施记录见第 11 节。
+当前状态（2026-09-15）：**P5.0、P5.1、P5.2、P5.3 已实现并通过自动化回归**（PDF 可读、`gen_pdf` 改走 `printToPDF`、
+`gen_docx` 接 Markdown 与 `doc-compose` 技能、`update_docx_text` 原位改文字、`gen_chart` 出 SVG + PNG 并在聊天里内联预览）；P5.4 真实使用未开工。
+两条要真人在 Word 里核对的阶段出口（P5.1 生成的文件"无格式错乱"、P5.2 改后的文件在 Word 里打开正常）还没走。实施记录见第 11 节。
 
 ---
 
@@ -392,3 +393,75 @@ SVG 的验证留到 P5.3。第 10.2 节写的页边距"单位 cm"是错的，Ele
 
 **没做的**：真正读懂图纸要 OCR 或视觉模型，按第 7 节仍搁置；现在做到的是"图不糊、路径明确、
 不假装读到了文字"。
+
+### 11.4 P5.1 Word 从零生成（2026-09-15）
+
+按 10.3 的 AST 走，没有新的"症状"，记决定：
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| L1 | `src/documents/markdown-to-docx.ts` | AST → `docx` 库对象：标题黑色加粗六级字号、两级列表各自一个编号实例（有序列表因此各自从 1 起）、表格细边框与表头浅灰底、行内代码等宽、`---` 分页；正文微软雅黑，找不到由 Word 回退，不打包字体 |
+| L2 | `src/tools/doc/gen-tools.ts` | `gen_docx` 的 `body` 按 Markdown 解析，加 `.docx` 后缀校验与 20 万字上限（与 `gen_pdf` 一致）；纯文本调用方行为不变（单行换行仍是软换行） |
+| L3 | `skills/doc-compose/SKILL.md` | 问清（主题用途 / 读者 / 篇幅 / 必含要点，`ask_user` 一次一件）→ 大纲写在对话里、`ask_user` 确认 → 生成 → 只汇报路径、结构与"待补"项；`ask_user` 失败就停，不替用户决定 |
+| 测试 | `markdown-to-docx.test.ts`、`gen-docx.test.ts` | 解压看 `document.xml`（标题样式、编号、分页、字体），再用 mammoth 读回断言结构；契约测试加 doc-compose 的触发与不触发样例，验收脚本技能数 7 → 8 |
+
+- 不给调用方调样式的口子（§7 不做版式编辑），排版全部固定在 L1 里。
+- 表格只设表宽 100%（`WidthType.PERCENTAGE`），不设列宽、不按内容估宽：列宽由 Word 打开时自动分配。
+
+**待真实使用**：阶段出口"用 Word 打开无格式错乱"要真人走一遍 `doc-compose`。
+
+### 11.5 P5.2 Word 原位修改（2026-09-15）
+
+按 10.4 走，两处与 10.4 写的不同：
+
+- **切分单位是 `<w:t>` 不是 run**。10.4 说"按 run 切、命中的其余 run 清空"，实现时发现一个 run 可能同时含
+  命中前的文字和命中后的文字（`交付日期为 9 月 15 日，请知悉` 里"9 月 15"是加粗 run，前后各一个普通 run），
+  整 run 清空会把"，请知悉"一起删掉。改成以 `<w:t>` 为单位只切掉命中的那一段：第一个命中的 `<w:t>` 写入替换文本
+  （它所在 run 的 `<w:rPr>` 就是保留下来的样式），其余命中的 `<w:t>` 删掉命中的部分、保留剩余文字与节点。
+- **`find` 含换行或制表符直接拒绝**，而不是"永远匹配不到"：`<w:tab/>` / `<w:br/>` 仍算进段落文本并作为命中不能跨过的屏障，
+  但允许它们出现在 `find` 里只会让模型反复重试。
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| L1 | `src/documents/docx-text-edit.ts` | `applyDocxTextEdits(documentXml, edits)`：按 `<w:p>` 深度配对切顶层段落（文本框里的嵌套段落随外层一起跳过），`<w:pPr>` 之后才扫 `<w:t>`（制表位定义 `<w:tabs><w:tab/>` 不算制表符），实体解码 / 转义，edits 依次生效、任一项零命中整份不改；修订记录按 `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>` 的**完整标签名**判断（`<w:insideH>` 是表格边框，前缀匹配会误杀） |
+| L1 | `src/documents/docx-package.ts` | jszip 读写：只替换 `word/document.xml`，同名覆盖不改 `files` 键顺序，`DEFLATE` 写回 |
+| L2 | `src/tools/doc/update-docx-text.ts` | `update_docx_text`：`CONTENT_DEPENDENT_WRITE_CONTRACT`，预览 `text-diff`（before / after 是受影响段落，`changes[]` 逐段），修订号 `{source, output}` 与 `update_xlsx_cells` 同式，执行前再校验一次；覆盖源文件走 `preserveBackup` |
+| 技能 | `skills/workspace-doc-edit/SKILL.md` | 1.2.0：加"改 Word"一节（先 `convert_to_markdown` 看原文再精确替换、页眉批注改不了、有修订记录先接受），触发词加 `修改 word` / `改 docx` / `docx 里` / `改一下` 等，白名单加 `convert_to_markdown` 与 `update_docx_text` |
+| 依赖 | `package.json`、`vite.config.ts` | `jszip@3.10.1` 提升为直接依赖（docx / exceljs 已带，安装包不变大）并加 externals；`@types/pdf-parse` 删除（pdf-parse v2 自带类型，v1 的 `@types` 只会误导） |
+| 测试 | `docx-text-edit.test.ts` | 原始 XML 样本：跨 run 命中、first / all、表格单元格、依次生效、实体、域代码与文本框跳过、制表位不算屏障、`<w:tab/>` 屏障、修订记录拒绝且 `<w:insideH>` 不误判、零命中 / 跨段落 / 参数校验、空节点与自闭合段落 |
+| 测试 | `update-docx-text.test.ts` | `docx` 库现生成带页眉、多 run、多处同文本、表格、`PAGE` 域的样本：预览不落盘 → 确认写入；解压后除 `document.xml` 外**每个部件逐字节相等**，`document.xml` 只有目标段落变了、域段落与页眉原样；mammoth 读回加粗 / 斜体仍在；备份存在；`output_path` 另存时源文件不动；外部改动后修订号不一致拒绝；修订记录 / 零命中 / 非 zip 均不落盘 |
+
+**停线条件核对**（§8）：解压比对进了测试；预览与执行的修订号校验各一次；没有在 OOXML 里手写样式（改动的 `<w:t>` 只加 `xml:space="preserve"`）。
+
+**明确不做**：`<w:sdt>` 内容控件里的文字当普通段落处理，没有单独测；同一 `find` 在一段里重叠出现（如 `aa` 在 `aaa` 里）按不重叠从左扫描。
+
+**待真实使用**：给一份真实带样式的 Word 说"把第三段的日期改成 9 月 30 日"，在应用里看预览、确认、再用 Word 打开——自动化只到工具层。
+
+### 11.6 P5.3 `gen_chart` 图表产物（2026-09-15）
+
+按 10.5 走，三个待定项的结论：
+
+- **`@napi-rs/canvas` 能栅格化 SVG**。`loadImage(Buffer.from(svg))` 直接可用，中文经系统字体栈落到微软雅黑，
+  所以 `gen_chart` 同时出同名 `.png`（2 倍缩放 1600×960，白底）。栅格化失败或超过 10 秒只出 `.svg`，
+  返回文本里注明"PNG 未生成"，不算工具失败。
+- **工件卡片原来不认图片扩展名**：`file-attachment-utils.ts` 的路径正则与 `fileTypeVisual` 都没有 `svg/png`，
+  `gen_chart` 的产物根本不会变成卡片。补了扩展名，并加了 `update_docx_text` / `gen_chart` 的产物路径提取。
+- **预览没走 `sk-asset:` 协议**，改成 IPC `workspace:readImageDataUrl` 读成 data URL 交给 `<img>`（CSP `img-src` 已允许 `data:`）。
+  原因是协议路径要在主进程再做一次工作区越界校验，而 IPC 复用 `resolveWorkspacePath` 一行就够；
+  上限 4 MB，超过或不是图片返回 `null`，卡片退回只显示文件名。P8.1 附件缩略图若改走协议，这一层可以退役。
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| L1 | `src/documents/chart-svg.ts` | `renderChartSvg(spec)` 纯函数：800×480、6 色调色板、`<title>` / `<desc>`（来源）、1-2-5 刻度、负值过零线、类目超过 10 个旋转标签、长标签截断且全文进 `<title>` 提示、XML 转义；上限 50 类目 / 6 系列，饼图单系列，非法输入抛 `ChartSpecError` |
+| L1 | `src/documents/svg-raster.ts` | `rasterizeSvgToPng(svg, {scale, background})`：懒加载 `@napi-rs/canvas`，10 秒超时 |
+| L2 | `src/tools/doc/gen-chart.ts` | `gen_chart`：`WORKSPACE_WRITE_CONTRACT`，参数 `path/type/title/labels/series/source`，SVG 原子写入后再试 PNG，artifacts 含两者 |
+| 预览 | `src/workspace/image-preview.ts`、`electron/ipc/workspace.ts`、`electron/preload.ts`、`FileAttachmentCard.tsx` | 图片扩展名的卡片上方内联 `<img>`（最宽 420、最高 300），点击仍走系统默认程序打开 |
+| 注册 | `src/tools/builtin.ts`、`tool-contract.test.ts` | 工具数 +1 |
+| 测试 | `chart-svg.test.ts` | 柱 / 分组柱 / 多折线 / 饼各一，转义与截断，非法输入，常量系列不除零，刻度与数字格式 |
+| 测试 | `gen-chart.test.ts` | 工具层：参数校验不落盘；SVG + PNG 同时落盘且 PNG 签名与尺寸正确；中文饼图栅格化非空白；`readWorkspaceImageDataUrl` 的类型 / 大小 / 越界 |
+
+**停线条件核对**（§8）：SVG 不带脚本、不引外部资源；PNG 失败不影响 SVG 产物；预览只读且不越界。
+
+**明确不做**：散点图、双轴、堆叠柱，P7 导出用到再加；`gen_docx` / `gen_pdf` 嵌图表留到 P7 报表阶段一起做。
+
+**待真实使用**：在应用里对一份 xlsx 说"把各月销售额画成柱状图"，看聊天里是否直接显示图、点击能否打开。
