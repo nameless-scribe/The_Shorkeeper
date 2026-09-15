@@ -6,9 +6,11 @@ import { withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact
 import { resolveWorkspacePath } from '../file/workspace-path';
 import { loadMammoth, loadWordExtractor } from './doc-loaders';
 import { loadExcelJS } from './exceljs-loader';
+import { convertPdfToMarkdownDocument } from '../../rag/format-converters';
 
 const DOCX_EXT = new Set(['.docx']);
 const DOC_EXT = new Set(['.doc']);
+const PDF_EXT = new Set(['.pdf']);
 const PLAIN_TEXT_EXT = new Set([
   '.txt',
   '.md',
@@ -164,7 +166,7 @@ async function convertCsv(absolute: string, title: string): Promise<string> {
 export const convertToMarkdownTool: ToolDefinition = {
   name: 'convert_to_markdown',
   description:
-    '将工作区内的 Word（.doc/.docx）或文本类文件（txt/md/csv/html 等）转换为 Markdown 并保存',
+    '将工作区内的 Word（.doc/.docx）、PDF 或文本类文件（txt/md/csv/html 等）转换为 Markdown 并保存。PDF 会重建表格、把图片抽到同名 .assets 目录并在正文引用，每页前有 <!-- page N --> 标记；只读文字层，扫描件会报错',
   category: 'doc',
   requiresPermission: ['filesystem:read', 'filesystem:write'],
   sideEffects: WORKSPACE_WRITE_CONTRACT,
@@ -194,12 +196,12 @@ export const convertToMarkdownTool: ToolDefinition = {
 
     const sourcePath = source_path.trim().replace(/\\/g, '/');
     const ext = path.extname(sourcePath).toLowerCase();
-    const supported = DOCX_EXT.has(ext) || DOC_EXT.has(ext) || PLAIN_TEXT_EXT.has(ext);
+    const supported = DOCX_EXT.has(ext) || DOC_EXT.has(ext) || PDF_EXT.has(ext) || PLAIN_TEXT_EXT.has(ext);
     if (!supported) {
       return {
         success: false,
         output: '',
-        error: `不支持 ${ext || '该'} 格式；支持 .doc、.docx 及常见文本文件（txt/md/csv/html 等）`,
+        error: `不支持 ${ext || '该'} 格式；支持 .doc、.docx、.pdf 及常见文本文件（txt/md/csv/html 等）`,
       };
     }
 
@@ -212,11 +214,39 @@ export const convertToMarkdownTool: ToolDefinition = {
       const absolute = resolveWorkspacePath(ctx.workspaceRoot, sourcePath);
       const title = path.basename(sourcePath, ext);
       let markdown: string;
+      let summary = '';
+      let metadata: Record<string, unknown> | undefined;
 
       if (DOCX_EXT.has(ext)) {
         markdown = await convertDocx(absolute, title);
       } else if (DOC_EXT.has(ext)) {
         markdown = await convertDoc(absolute, title);
+      } else if (PDF_EXT.has(ext)) {
+        // 图片放在与 .md 同名的 .assets 目录里，Markdown 用相对路径引用
+        const assetsRelative = `${outPath.slice(0, -'.md'.length)}.assets`;
+        const converted = await convertPdfToMarkdownDocument(absolute, title, {
+          pageMarkers: true,
+          assets: {
+            dir: resolveWorkspacePath(ctx.workspaceRoot, assetsRelative),
+            relativePrefix: path.posix.basename(assetsRelative),
+          },
+          signal: ctx.signal,
+        });
+        markdown = converted.markdown;
+        const parts = [`${converted.total} 页`];
+        if (!converted.textLayer) parts.push('没有文字层（可能是扫描件），未支持 OCR，未识别文字');
+        if (converted.tables) parts.push(`识别 ${converted.tables} 个表格`);
+        if (converted.images.extracted) parts.push(`抽出 ${converted.images.extracted} 张图片到 ${assetsRelative}/`);
+        if (converted.images.failed) parts.push(`${converted.images.failed} 张图片未能抽出`);
+        summary = `，${parts.join('，')}`;
+        metadata = {
+          pages: converted.total,
+          textLayer: converted.textLayer,
+          tables: converted.tables,
+          imagesExtracted: converted.images.extracted,
+          imagesFailed: converted.images.failed,
+          assetsDir: converted.images.extracted ? assetsRelative : undefined,
+        };
       } else if (ext === '.csv') {
         markdown = await convertCsv(absolute, title);
       } else {
@@ -232,7 +262,8 @@ export const convertToMarkdownTool: ToolDefinition = {
       return withFileArtifact(
         {
           success: true,
-          output: `已转换 ${sourcePath} → ${outPath}（${markdown.length} 字符）`,
+          output: `已转换 ${sourcePath} → ${outPath}（${markdown.length} 字符${summary}）`,
+          ...(metadata ? { metadata } : {}),
         },
         artifact,
       );

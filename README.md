@@ -217,8 +217,9 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 - **P1**：可追溯个人模型、冲突裁决、来源回链与知识新鲜度工程已完成
 - **P2**：外部连接器方向已取消，不接入邮箱、外部日历、联系人或云盘
 - **P3**：纯本地主动服务工程已完成（持久事件账本、本地采集器、主动收件箱、统一路由与频率预算、四个纵向场景、`pnpm test:p3` / `pnpm test:p3:ui`）；收口后又做了一轮复审并修复 8 个问题（过期事件周期性翻转、重开事件不再路由、弹窗预算被显式提醒占用等，见 [P3 计划 §9.6](docs/P3-LOCAL-PROACTIVITY-PLAN.md)）；连续两周真实使用观察尚未开始
-- **P4**：录音转写与会议纪要**未开工**，实施契约见 [P4 计划](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md)
-- **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地；聊天框语音输入尚未接线（P4.1）
+- **P4**：录音转写、会议纪要与聊天框语音输入已完成（`pnpm test:p4`），真实使用观察进行中，见 [P4 计划](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md)
+- **P5**：办公文档读写进行中。P5.0 已完成：PDF 附件可读（按版面重建表格、抽出图片、逐页标记，扫描件明确报错）、`gen_pdf` 改走 `printToPDF` 支持中文与 Markdown 排版（`pnpm test:p5`）；Word 生成 / 原位修改 / 图表见 [P5 计划](docs/P5-DOCUMENT-CAPABILITY-PLAN.md)
+- **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地
 
 ## License
 

@@ -11,6 +11,9 @@ import { getWorkspaceFileRevision, stalePreviewResult } from '../file/preview';
 import { resolveWorkspacePath } from '../file/workspace-path';
 import { parseXlsxFile } from './parse-xlsx';
 import { loadExcelJS } from './exceljs-loader';
+import { parseMarkdown } from '../../documents/markdown-ast';
+import { renderPrintableHtmlDocument } from '../../documents/markdown-to-html';
+import { hasPdfRenderer, renderHtmlToPdf } from '../../documents/pdf-renderer';
 
 async function writeWorkspaceFile(
   ctx: { workspaceRoot: string },
@@ -383,18 +386,25 @@ export const genXlsxTool: ToolDefinition = {
   },
 };
 
+/** 正文上限：超过这个量级的文档应该拆文件，而不是塞进一个 data: URL。 */
+export const MAX_PDF_BODY_CHARS = 200_000;
+
 export const genPdfTool: ToolDefinition = {
   name: 'gen_pdf',
-  description: '在工作区生成简单 PDF 文档（纯文本）',
+  description:
+    '在工作区生成 PDF 文档。正文按 Markdown 排版（# 标题、- 列表、| 表格 |、**粗体**、--- 分页），支持中文与自动分页',
   category: 'doc',
   requiresPermission: ['filesystem:write'],
   sideEffects: WORKSPACE_WRITE_CONTRACT,
   parameters: {
     type: 'object',
     properties: {
-      path: { type: 'string', description: '输出路径，如 reports/report.pdf' },
-      title: { type: 'string', description: '文档标题' },
-      body: { type: 'string', description: '正文内容' },
+      path: { type: 'string', description: '输出路径，须以 .pdf 结尾，如 reports/report.pdf' },
+      title: { type: 'string', description: '文档标题，会作为首页大标题' },
+      body: {
+        type: 'string',
+        description: '正文，Markdown 格式：#~###### 标题、-/1. 列表（两级）、GFM 表格、**粗体**、*斜体*、--- 分页',
+      },
     },
     required: ['path', 'title', 'body'],
   },
@@ -405,28 +415,31 @@ export const genPdfTool: ToolDefinition = {
       body?: string;
     };
     if (!filePath?.trim() || !title?.trim() || body == null) {
-      return { success: false, output: '', error: '缺少 path、title 或 body' };
+      return { success: false, output: '', error: '缺少 path、title 或 body', errorCategory: 'invalid_arguments' };
+    }
+    if (!filePath.trim().toLowerCase().endsWith('.pdf')) {
+      return { success: false, output: '', error: 'path 须为 .pdf 文件', errorCategory: 'invalid_arguments' };
+    }
+    if (body.length > MAX_PDF_BODY_CHARS) {
+      return {
+        success: false,
+        output: '',
+        error: `正文过长（${body.length} 字符，上限 ${MAX_PDF_BODY_CHARS}），请拆成多个 PDF 生成`,
+        errorCategory: 'invalid_arguments',
+      };
+    }
+    if (!hasPdfRenderer()) {
+      return {
+        success: false,
+        output: '',
+        error: 'PDF 渲染器未就绪：当前运行环境无法生成 PDF，可改用 gen_docx 或 gen_markdown 输出',
+        errorCategory: 'internal_error',
+      };
     }
 
+    const html = renderPrintableHtmlDocument({ title: title.trim(), document: parseMarkdown(body) });
     return writeWorkspaceFile(ctx, filePath, async (absolute) => {
-      const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
-      const pdf = await PDFDocument.create();
-      const font = await pdf.embedFont(StandardFonts.Helvetica);
-      const page = pdf.addPage([595, 842]);
-      const { height } = page.getSize();
-      let y = height - 50;
-
-      page.drawText(title, { x: 50, y, size: 18, font, color: rgb(0.1, 0.1, 0.1) });
-      y -= 36;
-
-      const lines = body.split('\n');
-      for (const line of lines) {
-        if (y < 50) break;
-        page.drawText(line.slice(0, 90), { x: 50, y, size: 11, font, color: rgb(0.2, 0.2, 0.2) });
-        y -= 16;
-      }
-
-      const bytes = await pdf.save();
+      const bytes = await renderHtmlToPdf({ html, title: title.trim() }, ctx.signal);
       await fs.writeFile(absolute, bytes);
     });
   },

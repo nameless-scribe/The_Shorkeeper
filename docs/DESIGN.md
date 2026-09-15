@@ -307,7 +307,7 @@ interface ToolContext {
 |------|------|
 | 文件 | `read_file`, `write_file`, `replace_text`, `list_dir` |
 | 网络 | `web_search`（博查）, `fetch_url`, `get_weather`, `translate` |
-| 文档 | `convert_to_markdown`, `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`, `read_xlsx`, `update_xlsx_cells`（工作区 Excel） |
+| 文档 | `convert_to_markdown`（Word / PDF 文字层 / 文本）, `gen_markdown`, `gen_docx`, `gen_xlsx`, `gen_pdf`（Markdown 正文，经 `printToPDF` 输出）, `read_xlsx`, `update_xlsx_cells`（工作区 Excel） |
 | 记忆 / 知识 | `recall_memory`, `save_memory`, `search_worldbook`, `search_knowledge` |
 | 生活 | `bookkeeping`, `travel_plan` |
 | 日程 | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task` |
@@ -324,6 +324,8 @@ interface ToolContext {
 | `doc-loaders.ts` → `loadWordExtractor()` | word-extractor | 同上 |
 
 `docx`、`pdf-lib`、`pdf-parse` 为原生 ESM 命名导出，无需 loader。
+
+**PDF 读写（P5.0）**：读是逐页**版面分析**而不是抽纯文本——PDF 里没有"表格"，只有带坐标的字、矩形和图。`src/documents/pdf-layout.ts` 直接用 pdfjs-dist 取绘图指令：填充与描边的矩形、线段交给 pdf-parse 公开的 `LineStore` 重建网格（pdf-parse 自带的 `getTable` 只认描边，遇到用底色画格子的表一个都找不到）；文字按水平中点落进格子，压在格线上的整段文字在最近的空白处切开；图片按绘制位置归格子或自由区域，被导出器切成条块分别绘制的照片按"对齐且相接"在同一格子内拼回一张（`groupImagePaints`）。`pdf-markdown.ts` 按纵向位置输出段落、GFM 表格（格内换行 `<br>`，横跨整表的标题行作加粗段落）与 `![]()`。`pdf-images.ts` 从 `page.objs` 解像素、用 `@napi-rs/canvas` 落成 JPEG（最长边 3600，约 A4 300 dpi，扫描图纸的标注可读；1 位黑白保留 PNG），必须在 `page.cleanup()` 之前完成。入口 `src/rag/format-converters.ts` 的 `extractPdfDocument`：`convert_to_markdown` 走带页码注释、图片抽到 `<同名>.assets/` 的模式；知识库导入不插注释、不抽图。不支持内联图（`paintInlineImageXObject`）。去空白后不足 20 字视为无文字层：抽到了图片就照常输出并在正文开头写明未识别文字，一张图也没有才抛错，绝不返回空文档。写走 Electron `printToPDF`：`src/documents/markdown-ast.ts` 解析 Markdown 子集 → `markdown-to-html.ts` 渲染全转义 HTML → `src/documents/pdf-renderer.ts` 的注入点 → `electron/print/markdown-to-pdf.ts` 在隐藏窗口（沙箱、`javascript: false`、独立内存 session 且拦截一切非 `data:` 请求）打印，30 秒超时、用完即销毁，退出时 `shutdownPdfPrintRuntime()` 兜底。`src/` 不引用 Electron，注入方式与 `setPermissionConfirmer` 相同；未注入时 `gen_pdf` fail closed。
 
 工具可见性受 **设置 → 插件**（`PluginSettings`）与 **本轮激活技能的白名单** 双重过滤；`getAgentRegistry(activeSkills)` 先缓存 builtin+MCP+插件过滤后的 base registry，再按激活技能做白名单并集。核心伴侣工具（`CORE_TOOL_NAMES`：记忆、知识检索、定时任务、执行计划、用户待办等）不受技能白名单限制。
 

@@ -36,6 +36,13 @@ describe('workspace import extensions', () => {
     expect(WORKSPACE_IMPORT_EXTENSIONS.has('.xlsx')).toBe(true);
   });
 
+  it('accepts PDF as an office attachment that must go through convert_to_markdown', () => {
+    // P5.0：PDF 是二进制，不能让模型 read_file 直接读；分类为 office 并提示转换工具
+    expect(WORKSPACE_IMPORT_EXTENSIONS.has('.pdf')).toBe(true);
+    expect(classifyWorkspaceFile('.PDF')).toBe('office');
+    expect(workspaceFileToolHint('.pdf')).toBe('convert_to_markdown');
+  });
+
   it('imports xlsx into workspace', async () => {
     const source = path.join(sourceDir, 'sample.xlsx');
     await fs.writeFile(source, 'fake-xlsx', 'utf-8');

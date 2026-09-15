@@ -66,6 +66,7 @@ import { initAutoUpdater, shutdownAutoUpdaterRuntime } from './update/auto-updat
 import { configureAppIdentity } from './app-icon';
 import { showSplashWindow, closeSplashWindow } from './windows/splash';
 import { setPermissionConfirmer } from '../src/agent/permissions';
+import { installElectronPdfRenderer, shutdownPdfPrintRuntime } from './print/markdown-to-pdf';
 import { reconcileInterruptedRuns } from '../src/agent/run-recovery';
 import { failStaleRunningTranscripts } from '../src/db/repositories/audio-transcripts';
 import { shutdownPendingSessionWork } from '../src/agent/session-background';
@@ -133,6 +134,9 @@ async function settleRuntimeForShutdown(): Promise<void> {
   } catch (error) {
     console.error('[shutdown] 主动服务停止失败:', error instanceof Error ? error.message : error);
   }
+  // 正在打印的隐藏窗口随之销毁，对应的 gen_pdf 调用会以错误结束，不会留下半成品
+  const printing = shutdownPdfPrintRuntime();
+  if (printing) console.warn(`[shutdown] 中止 ${printing} 个进行中的 PDF 渲染`);
   const result = await coordinateRuntimeShutdown({
     beginSessionRunShutdown,
     cancelAllPendingPermissions,
@@ -241,6 +245,8 @@ app.whenReady().then(async () => {
     registerAsrIpc();
     registerPermissionIpc();
     setPermissionConfirmer(requestPermissionConfirm);
+    // gen_pdf 走隐藏窗口 printToPDF；src/ 不引用 Electron，实现由这里注入
+    installElectronPdfRenderer();
 
     await initMcpOnStartup().catch((err) => {
       console.error('[mcp] 启动加载失败:', err);

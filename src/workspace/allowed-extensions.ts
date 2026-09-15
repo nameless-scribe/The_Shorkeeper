@@ -24,8 +24,8 @@ export const WORKSPACE_TEXT_EXTENSIONS = [
   '.rtf',
 ] as const;
 
-/** 工作区上传：Office / 表格（需专用工具读取） */
-export const WORKSPACE_OFFICE_EXTENSIONS = ['.doc', '.docx', '.xls', '.xlsx'] as const;
+/** 工作区上传：Office / PDF / 表格（需专用工具读取；PDF 只读文字层，扫描件会明确报错） */
+export const WORKSPACE_OFFICE_EXTENSIONS = ['.doc', '.docx', '.pdf', '.xls', '.xlsx'] as const;
 
 /**
  * 工作区上传：录音。白名单直接取自转写契约——能上传的就是能转写的，
@@ -72,7 +72,7 @@ export interface WorkspaceDialogFilter {
 
 export const WORKSPACE_PICK_DIALOG_FILTERS: WorkspaceDialogFilter[] = [
   {
-    name: 'Office 与表格',
+    name: 'Office、PDF 与表格',
     extensions: WORKSPACE_OFFICE_EXTENSIONS.map(stripExtensionDot),
   },
   {
@@ -92,7 +92,7 @@ export function workspaceFileToolHint(ext: string): WorkspaceFileToolHint {
   const normalized = ext.toLowerCase();
   if (WORKSPACE_AUDIO_EXTENSIONS.has(normalized)) return 'transcribe_audio';
   if (normalized === '.xlsx' || normalized === '.xls') return 'read_xlsx';
-  if (normalized === '.doc' || normalized === '.docx') return 'convert_to_markdown';
+  if (normalized === '.doc' || normalized === '.docx' || normalized === '.pdf') return 'convert_to_markdown';
   return 'read_file';
 }
 
