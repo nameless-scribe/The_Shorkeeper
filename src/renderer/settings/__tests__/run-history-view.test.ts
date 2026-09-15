@@ -34,6 +34,7 @@ function run(phase: TaskRunInfo['phase'], patch: Partial<TaskRunInfo> = {}): Tas
 describe('run history view helpers', () => {
   it('groups active, successful and attention-needed phases', () => {
     expect(runMatchesFilter(run('waiting_approval'), 'active')).toBe(true);
+    expect(runMatchesFilter(run('waiting_user'), 'active')).toBe(true);
     expect(runMatchesFilter(run('finished'), 'finished')).toBe(true);
     expect(runMatchesFilter(run('interrupted'), 'attention')).toBe(true);
     expect(runMatchesFilter(run('error'), 'attention')).toBe(true);

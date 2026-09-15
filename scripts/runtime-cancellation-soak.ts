@@ -82,6 +82,7 @@ let databaseCloses = 0;
 const result = await coordinateRuntimeShutdown({
   beginSessionRunShutdown,
   cancelAllPendingPermissions: () => undefined,
+  cancelAllPendingQuestions: () => undefined,
   abortAllSessionRuns,
   shutdownVoiceRuntime: () => { voiceShutdowns += 1; },
   shutdownAutoUpdaterRuntime: () => { updaterShutdowns += 1; },

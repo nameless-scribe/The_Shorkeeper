@@ -5,6 +5,8 @@ vi.mock('../../db/app-settings', () => ({
 }));
 
 import {
+  EVIDENCE_FIRST_RULE,
+  EVIDENCE_FIRST_RULE_SENTENCES,
   formatToolGuideForPrompt,
   getStableSystemPrefix,
   invalidateStableContext,
@@ -24,6 +26,24 @@ describe('stable context', () => {
     expect(text).toContain('【上下文优先级】');
     expect(text).not.toContain('【技能');
     expect(text).not.toContain('create_scheduled_task');
+  });
+
+  it('carries the evidence-first rule after the context priority block, sentence by sentence (P6.0)', () => {
+    const text = getStableSystemPrefix();
+    expect(text.indexOf('【上下文优先级】')).toBeLessThan(text.indexOf('【证据不足先问】'));
+    expect(text).toContain(EVIDENCE_FIRST_RULE);
+    // 措辞固定：P6 计划 §9.1 的原文逐句存在，改一句就要同步计划
+    expect(EVIDENCE_FIRST_RULE_SENTENCES).toHaveLength(6);
+    for (const sentence of EVIDENCE_FIRST_RULE_SENTENCES) {
+      expect(text).toContain(sentence);
+    }
+    expect(text).toContain('先问一个问题再做');
+    expect(text).toContain('直接做，并在回复里写明你的假设');
+    expect(text).toContain('找得到的不问');
+    expect(text).toContain('一次只问一个问题');
+    expect(text).toContain('提问不能代替确认');
+    // P6.1 之前没有 ask_user，规则不能提到它
+    expect(text).not.toContain('ask_user');
   });
 
   it('caches prefix until invalidated', () => {

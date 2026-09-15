@@ -1,0 +1,91 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  PermissionRequestPayload,
+  UserQuestionRequestPayload,
+  UserQuestionResponse,
+} from '@/shared/types';
+import {
+  canRespond,
+  initialPromptQueue,
+  promptQueueReducer,
+  requestIdOf,
+  type PromptQueueAction,
+  type PromptQueueState,
+  type PromptRequest,
+} from './prompt-queue';
+
+export interface PromptRequests {
+  /** 当前弹出的权限请求；与 questionRequest 至多一个非空 */
+  permissionRequest: PermissionRequestPayload | null;
+  /** 当前弹出的提问 */
+  questionRequest: UserQuestionRequestPayload | null;
+  respondPermission: (approved: boolean) => Promise<void>;
+  /** 选项、自由文本或"稍后再答"三选一 */
+  respondQuestion: (response: Omit<UserQuestionResponse, 'requestId'>) => Promise<void>;
+}
+
+/**
+ * 权限确认与 ask_user 提问共用一条队列：一次只弹一个。
+ * 队列状态放在 ref 里由 reducer 推进，再把要展示的那条同步给 state。
+ * 不用 useReducer / setState updater：IPC 事件可能在同一 tick 内连来两条，
+ * 必须能同步读到最新状态；updater 形式还会被 StrictMode 双调用。
+ */
+export function usePromptRequests(): PromptRequests {
+  const [current, setCurrent] = useState<PromptRequest | null>(null);
+  const stateRef = useRef<PromptQueueState>(initialPromptQueue);
+
+  const dispatch = useCallback((action: PromptQueueAction) => {
+    const next = promptQueueReducer(stateRef.current, action);
+    if (next === stateRef.current) return;
+    stateRef.current = next;
+    setCurrent(next.current);
+  }, []);
+
+  useEffect(() => {
+    if (!window.shorekeeper) return;
+    const offPermission = window.shorekeeper.permission.onRequest((payload) => {
+      dispatch({ type: 'received', request: { kind: 'permission', payload } });
+    });
+    const offQuestion = window.shorekeeper.ask.onRequest((payload) => {
+      dispatch({ type: 'received', request: { kind: 'question', payload } });
+    });
+    return () => {
+      offPermission();
+      offQuestion();
+    };
+  }, [dispatch]);
+
+  const deliver = useCallback(async (kind: PromptRequest['kind'], send: (requestId: string) => Promise<unknown>) => {
+    const active = stateRef.current.current;
+    if (!active || active.kind !== kind || !canRespond(stateRef.current)) return;
+    const requestId = requestIdOf(active);
+    dispatch({ type: 'respond_started', requestId });
+    let delivered = false;
+    try {
+      await send(requestId);
+      delivered = true;
+    } finally {
+      // 送达才推进；没送达只解除 in-flight，这条请求留在原位让用户重试。
+      dispatch({ type: delivered ? 'respond_settled' : 'respond_failed', requestId });
+    }
+  }, [dispatch]);
+
+  const respondPermission = useCallback(
+    (approved: boolean) =>
+      deliver('permission', (requestId) => window.shorekeeper.permission.respond(requestId, approved)),
+    [deliver],
+  );
+
+  const respondQuestion = useCallback(
+    (response: Omit<UserQuestionResponse, 'requestId'>) =>
+      deliver('question', (requestId) => window.shorekeeper.ask.respond({ requestId, ...response })),
+    [deliver],
+  );
+
+  return {
+    permissionRequest: current?.kind === 'permission' ? current.payload : null,
+    questionRequest: current?.kind === 'question' ? current.payload : null,
+    respondPermission,
+    respondQuestion,
+  };
+}

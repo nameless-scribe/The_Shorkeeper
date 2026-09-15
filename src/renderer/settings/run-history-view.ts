@@ -11,6 +11,7 @@ export const RUN_PHASE_LABELS: Record<TaskRunPhase, string> = {
   running: '运行中',
   waiting_tool: '调用工具',
   waiting_approval: '等待确认',
+  waiting_user: '等待回答',
   finalizing: '收尾中',
   finished: '已完成',
   cancelled: '已取消',
@@ -32,7 +33,7 @@ export function runPhaseTone(
 ): 'cyan' | 'green' | 'amber' | 'muted' {
   if (phase === 'finished') return 'green';
   if (phase === 'error' || phase === 'interrupted') return 'amber';
-  if (phase === 'running' || phase === 'waiting_tool' || phase === 'waiting_approval') return 'cyan';
+  if (phase === 'running' || phase === 'waiting_tool' || phase === 'waiting_approval' || phase === 'waiting_user') return 'cyan';
   return 'muted';
 }
 

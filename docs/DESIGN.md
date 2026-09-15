@@ -205,7 +205,7 @@ interface AgentRunRequest {
 
 **上下文组装顺序**（`context-builder.ts`）：
 
-1. **稳定前缀**（`getStableSystemPrefix`）：人设 System Prompt + 【上下文优先级】（缓存于 `stable-context.ts`，利于 prompt cache）
+1. **稳定前缀**（`getStableSystemPrefix`）：人设 System Prompt + 【上下文优先级】+ 【证据不足先问】（P6.0，措辞固定、测试逐句断言；缓存于 `stable-context.ts`，利于 prompt cache）
 2. **本轮技能**（`formatSkillsForPrompt`）：仅注入 `resolveActiveSkills` 激活的技能，以 `<skill id="..." name="...">` 包裹
 3. **工具说明**（`formatToolGuideForPrompt`）：根据当前 registry 实际可用工具生成；若已激活 `task-execution` / `workspace-doc-edit` 等技能，则省略与之重复的全局规则
 4. **动态块**（随 query 变化）：
@@ -300,6 +300,7 @@ interface ToolContext {
 - 非幂等的副作用工具在同一 run 内以完全相同参数再次调用时，不会重复执行，而是复用首次结果并在输出前标注“重复调用已合并”。
 - `evidence: 'artifact'` 的工具成功后会由主循环读回校验产物（存在、大小、SHA-256）；校验失败时结果降级为失败，避免“声称完成”。
 - 预设契约：`READ_ONLY_CONTRACT`、`WORKSPACE_WRITE_CONTRACT`、`LOCAL_APPEND_CONTRACT`、`LOCAL_UPSERT_CONTRACT`；`tool-contract.test.ts` 强制所有内置工具显式声明并与权限标志一致。
+- **向用户提问（P6.1）**：`ask_user` 是核心工具（不受技能白名单限制），只读、无副作用；`src/agent/user-questions.ts` 是注入点，主进程 `electron/ipc/ask.ts` 镜像权限确认（pending 表、10 分钟超时、abort 与窗口关闭监听、`ask:request` / `ask:respond`），未注入时返回 abort。渲染层 `usePromptRequests` 把权限请求与提问放进同一条队列（`prompt-queue.ts`），一次只弹一个；`QuestionDialog` 选项即答、自由文本 Enter 提交、Esc 是"稍后再答"。等待期间运行阶段为 `waiting_user`，正在进行的计划项标为 `waiting_user`（面板显示 `?`）。语音通话运行通过 `excludeTools: ['ask_user']` 不注册它。回答未收到时工具返回失败，模型按【证据不足先问】停下。
 
 **内置工具（当前）**：
 
@@ -312,6 +313,7 @@ interface ToolContext {
 | 生活 | `bookkeeping`, `travel_plan` |
 | 日程 | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task` |
 | 计划 / 待办 | `update_agent_plan`, `import_tasks_from_xlsx`, `create_user_task`, `list_user_tasks`, `update_user_task` |
+| 追问 | `ask_user`（P6.1：证据不足时向用户提一个问题并等待，选项或自由文本；核心工具） |
 | 目标 / 承诺 | `manage_goals`（create/list/update/close）, `manage_commitments`（record/confirm/list/update/complete/cancel）；创建提醒自动记录助理承诺，待办状态变化自动同步承诺 |
 | 每日管家 | `build_daily_brief`, `build_evening_review`（每天各一次，`force` 重做）；由设置页创建的两条系统 `agent_prompt` 任务触发，安静时段推迟，成功后弹标题提醒；流程约束见 `skills/daily-steward/SKILL.md` |
 

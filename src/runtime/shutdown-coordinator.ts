@@ -1,6 +1,8 @@
 export interface ShutdownDependencies {
   beginSessionRunShutdown: () => void;
   cancelAllPendingPermissions: () => void;
+  /** P6.1：正在等回答的 ask_user 问题一并取消 */
+  cancelAllPendingQuestions: () => void;
   abortAllSessionRuns: () => unknown;
   shutdownVoiceRuntime: () => void;
   shutdownAutoUpdaterRuntime: () => void;
@@ -42,6 +44,7 @@ export async function coordinateRuntimeShutdown(
 
   runSync('session-run-begin', dependencies.beginSessionRunShutdown);
   runSync('permissions', dependencies.cancelAllPendingPermissions);
+  runSync('questions', dependencies.cancelAllPendingQuestions);
   runSync('session-run-abort', dependencies.abortAllSessionRuns);
   runSync('voice', dependencies.shutdownVoiceRuntime);
   runSync('auto-updater', dependencies.shutdownAutoUpdaterRuntime);

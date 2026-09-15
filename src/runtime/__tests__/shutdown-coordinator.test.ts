@@ -10,6 +10,7 @@ function dependencies(
   return {
     beginSessionRunShutdown: vi.fn(),
     cancelAllPendingPermissions: vi.fn(),
+    cancelAllPendingQuestions: vi.fn(),
     abortAllSessionRuns: vi.fn(),
     shutdownVoiceRuntime: vi.fn(),
     shutdownAutoUpdaterRuntime: vi.fn(),

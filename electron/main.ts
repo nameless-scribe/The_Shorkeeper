@@ -61,6 +61,8 @@ import { registerWebSearchIpc } from './ipc/web-search';
 import { registerVoiceIpc, shutdownVoiceRuntime } from './ipc/voice';
 import { registerAsrIpc } from './ipc/asr';
 import { registerPermissionIpc, requestPermissionConfirm } from './ipc/permission';
+import { cancelAllPendingQuestions, registerAskIpc, requestUserAnswerViaWindow } from './ipc/ask';
+import { setUserQuestionResponder } from '../src/agent/user-questions';
 import { registerUpdateIpc } from './ipc/update';
 import { initAutoUpdater, shutdownAutoUpdaterRuntime } from './update/auto-updater';
 import { configureAppIdentity } from './app-icon';
@@ -140,6 +142,7 @@ async function settleRuntimeForShutdown(): Promise<void> {
   const result = await coordinateRuntimeShutdown({
     beginSessionRunShutdown,
     cancelAllPendingPermissions,
+    cancelAllPendingQuestions,
     abortAllSessionRuns,
     shutdownVoiceRuntime,
     shutdownAutoUpdaterRuntime,
@@ -245,6 +248,9 @@ app.whenReady().then(async () => {
     registerAsrIpc();
     registerPermissionIpc();
     setPermissionConfirmer(requestPermissionConfirm);
+    // ask_user 弹窗（P6.1）：与权限确认同一注入方式
+    registerAskIpc();
+    setUserQuestionResponder(requestUserAnswerViaWindow);
     // gen_pdf 走隐藏窗口 printToPDF；src/ 不引用 Electron，实现由这里注入
     installElectronPdfRenderer();
 

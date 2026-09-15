@@ -5,7 +5,8 @@ export const SETTINGS_INPUT_CLASS =
 
 export const SETTINGS_TEXTAREA_CLASS = `${SETTINGS_INPUT_CLASS} resize-none`;
 
-export const SETTINGS_SELECT_CLASS = SETTINGS_INPUT_CLASS;
+/** 原生下拉的弹出列表跟随系统配色，只能靠 color-scheme 让它至少是深色；选项少的筛选请改用 SettingsSegmented */
+export const SETTINGS_SELECT_CLASS = `${SETTINGS_INPUT_CLASS} cursor-pointer [color-scheme:dark]`;
 
 export function SettingsPageShell({ children }: { children: ReactNode }) {
   return <div className="mx-auto max-w-2xl space-y-5 pb-2">{children}</div>;

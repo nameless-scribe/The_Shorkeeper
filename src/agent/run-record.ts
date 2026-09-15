@@ -109,6 +109,11 @@ export class RunRecorder {
     this.phase('waiting_approval');
   }
 
+  /** P6.1：正在等用户回答 ask_user */
+  waitingUser(): void {
+    this.phase('waiting_user');
+  }
+
   stepStart(callId: string, toolName: string, contract?: ToolSideEffectContract): void {
     if (!this.started || this.finished) return;
     this.stepContracts.set(callId, contract);

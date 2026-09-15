@@ -8,6 +8,7 @@ import {
   type InterruptedRunSummary,
 } from '../db/repositories/task-runs';
 import type { ArtifactInfo, TaskRunInfo, TaskRunStepInfo } from '../shared/types';
+import { findInterruptedQuestion } from '../db/repositories/user-questions';
 
 /**
  * 应用启动时调用一次：进程内此时没有任何活动 run，所有仍处于非终态的记录
@@ -18,7 +19,7 @@ export function reconcileInterruptedRuns(): InterruptedRunSummary | null {
     const summary = markInterruptedRuns();
     if (summary.runIds.length) {
       console.info(
-        `[run-recovery] 已将 ${summary.runIds.length} 个上次未收口的 run 标记为中断（步骤 ${summary.steps}，审批 ${summary.approvals}）`,
+        `[run-recovery] 已将 ${summary.runIds.length} 个上次未收口的 run 标记为中断（步骤 ${summary.steps}，审批 ${summary.approvals}，问题 ${summary.questions}）`,
       );
     }
     return summary;
@@ -38,6 +39,8 @@ export interface InterruptedRunNoticeInput {
   run: TaskRunInfo;
   steps: TaskRunStepInfo[];
   artifacts: ArtifactInfo[];
+  /** P6.2：中断时正在等用户回答的问题原文 */
+  pendingQuestion?: string | null;
 }
 
 /** 纯函数：把中断 run 的事实整理成给模型的说明，不做任何猜测性的“已完成”表述。 */
@@ -62,6 +65,10 @@ export function formatInterruptedRunNotice(input: InterruptedRunNoticeInput): st
   }
   if (artifacts.length) {
     lines.push(`已生成的文件：${artifacts.map((artifact) => artifact.relativePath).join('、')}。`);
+  }
+  if (input.pendingQuestion?.trim()) {
+    lines.push(`当时在等你回答：${input.pendingQuestion.trim()}`);
+    lines.push('用户若在这一轮直接回答了这个问题，就按回答继续，不要再问一遍。');
   }
   lines.push('请先向用户简要说明这一情况，再询问是否需要继续；不要把未确认的步骤说成已完成。');
   return lines.join('\n');
@@ -88,6 +95,7 @@ export function peekInterruptedRunNotice(sessionId: string): InterruptedRunNotic
         run,
         steps: listTaskRunSteps(run.id),
         artifacts: listRunArtifacts(run.id),
+        pendingQuestion: findInterruptedQuestion(run.id)?.question ?? null,
       }),
     };
   } catch (error) {

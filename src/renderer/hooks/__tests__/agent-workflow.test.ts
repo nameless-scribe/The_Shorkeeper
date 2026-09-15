@@ -9,6 +9,16 @@ describe('deriveAgentWorkflow', () => {
     expect(status.headline).toBe('就绪');
   });
 
+  it('reports a pending question ahead of everything else (P6.1)', () => {
+    const status = deriveAgentWorkflow([], true, null, {
+      requestId: 'q1', question: '改哪一份报价单？', options: [], allowFreeText: true,
+    });
+    expect(status.mode).toBe('question');
+    expect(status.headline).toBe('等待回答');
+    expect(status.detail).toBe('改哪一份报价单？');
+    expect(status.steps.find((s) => s.id === 'tool')?.state).toBe('active');
+  });
+
   it('shows thinking phase for streaming assistant without content', () => {
     const messages: UiMessage[] = [
       {

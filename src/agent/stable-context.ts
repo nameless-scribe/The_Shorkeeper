@@ -37,6 +37,7 @@ const TOOL_SUMMARY: Record<string, string> = {
   manage_commitments: '记录、确认、完成用户承诺（自动关联待办）',
   build_daily_brief: '聚合早间简报数据（每天一次）',
   build_evening_review: '聚合晚间复盘数据并标记错过的承诺（每天一次）',
+  ask_user: '证据不足时向用户提一个问题并等待回答（暂停运行）',
 };
 
 const SCHEDULE_TOOL_HINT =
@@ -61,6 +62,9 @@ export function formatToolGuideForPrompt(
   const sections = [`【当前可用工具】\n${lines.join('\n')}`];
   if (tools.some((t) => t.name === 'create_scheduled_task')) {
     sections.push(`【定时提醒】${SCHEDULE_TOOL_HINT}`);
+  }
+  if (tools.some((t) => t.name === 'ask_user')) {
+    sections.push(ASK_USER_TOOL_HINT);
   }
   if (
     tools.some((t) => t.name === 'update_agent_plan') &&
@@ -90,6 +94,25 @@ export function formatToolGuideForPrompt(
   return sections.join('\n\n');
 }
 
+/**
+ * P6.0【证据不足先问】：措辞固定，测试逐句断言；改动措辞须同步 P6 计划 §9.1。
+ * ask_user 的用法提示在工具说明里（ASK_USER_TOOL_HINT），只在该工具可用时出现。
+ */
+export const EVIDENCE_FIRST_RULE_SENTENCES = [
+  '动手前先判断信息够不够。',
+  '歧义会改变产物或副作用时（目标文件不唯一、时间按哪个日期、收件人是谁、待办归谁、口径含不含某项），先问一个问题再做；歧义不影响结果时，直接做，并在回复里写明你的假设。',
+  '问之前先用 recall_memory 与当前上下文里的目标、承诺、资料找答案，找得到的不问。',
+  '一次只问一个问题，给 2–4 个选项并说明为什么需要。',
+  '用户回答里的稳定偏好，用 save_memory 记为候选。',
+  '高风险动作永远走权限确认，提问不能代替确认。',
+] as const;
+
+export const EVIDENCE_FIRST_RULE = `【证据不足先问】${EVIDENCE_FIRST_RULE_SENTENCES.join('')}`;
+
+/** P6.1：工具可用时才出现在工具说明里；稳定前缀本身不提工具名。 */
+export const ASK_USER_TOOL_HINT =
+  '【提问】有 ask_user 工具时用它提问，不要在正文里问；它会暂停运行等用户回答。回答未收到（超时、取消）时工具返回失败，此时停下并说明这一步需要用户的回答，不得自行假设继续。';
+
 function loadPersonaPrompt(): string {
   const prompt = getSetting(PERSONA_SETTING_KEYS.systemPrompt);
 
@@ -112,7 +135,7 @@ export function invalidateStableContext(): void {
 }
 
 /**
- * 稳定 system 前缀：人设 → 上下文优先级。
+ * 稳定 system 前缀：人设 → 上下文优先级 → 证据不足先问。
  * 工具说明与技能在 context-builder 中按本轮对话组装。
  */
 export function getStableSystemPrefix(): string {
@@ -125,6 +148,7 @@ export function getStableSystemPrefix(): string {
     loadPersonaPrompt(),
     '【上下文优先级】Worldbook 提供行为与背景规则；长期记忆记录用户偏好与事实；' +
       'RAG 引用块来自用户导入文档的事实。若内容冲突，以 RAG 引用为准。',
+    EVIDENCE_FIRST_RULE,
   ];
 
   const text = sections.join('\n\n');

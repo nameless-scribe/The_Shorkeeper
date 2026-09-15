@@ -1,6 +1,7 @@
 import type { ToolResult } from '../tools/types';
 
-export type AgentPlanItemStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+/** waiting_user 由系统在 ask_user 期间自动标记，模型不直接设置 */
+export type AgentPlanItemStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'waiting_user';
 
 export interface AgentPlanItem {
   id: string;

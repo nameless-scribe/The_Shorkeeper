@@ -87,6 +87,8 @@ pnpm db:seed
 | `0023_personal_memory_model.sql` | P1 个人事实类型/状态/敏感与时效字段、仅 active key 唯一、候选冲突元数据、`memory_sources` 来源链 |
 | `0024_context_sources.sql` | P1 每次 run 实际注入的记忆、文档、目标与承诺来源账本 |
 | `0025_document_freshness.sql` | P1 本地文档来源、mtime/size、检查状态与手工/自动同步策略 |
+| `0027_audio_transcripts.sql` | P4 录音转写账本 `audio_transcripts`（幂等键、状态、产物路径、供应商请求 ID） |
+| `0028_user_questions.sql` | P6.2 `ask_user` 提问账本 `user_questions`：问题、选项、回答、状态与决定方式 |
 | `0026_proactive_events.sql` | P3 本地主动服务：`proactive_events`、`proactivity_decisions`、`proactivity_deliveries`、`proactivity_feedback`，以及 `scheduled_tasks` 的失败真源列（`last_error`、`last_error_at`、`failure_count`） |
 
 打包时 migration 以 `extraResources/db-migrations/` 形式随安装包分发；开发态直接读 `src/db/migrations/`。
@@ -125,6 +127,7 @@ pnpm db:seed
 | `task_run_steps` | run 内每次工具调用：顺序、工具名、风险等级、幂等声明、状态与错误分类 |
 | `artifacts` | 工具产物证据：工作区相对路径、大小、SHA-256，关联 run 与步骤 |
 | `approvals` | 权限确认记录：工具、参数摘要、风险等级、结论与决定方式（用户/超时/中止/窗口关闭/启动收口） |
+| `user_questions` | P6.2 `ask_user` 提问账本：问题、原因、选项 JSON、回答与选项 id；状态 `pending / answered / expired / cancelled / interrupted`，决定方式 `user / timeout / abort / window_closed / startup`；启动收口把 `pending` 改为 `interrupted`，下一轮对话带出问题原文 |
 | `goals` | 中长期目标：状态 `active / paused / done / dropped`、优先级、目标日期；待办和承诺通过 `goal_id` 分组 |
 | `commitments` | 承诺：`owner = user` 必挂一条待办（`task_id`），`owner = assistant` 指向提醒（`scheduled_task_id`）；状态 `proposed / open / done / missed / cancelled`，完成时记录 `evidence_run_id` |
 | `briefings` | 每日简报记录，`(brief_date, kind)` 唯一，保证早/晚简报每天只生成一次 |

@@ -1,6 +1,7 @@
 import type { LlmMessage, OpenAIToolCall, PermissionPolicy } from './types';
 import { createCallId, ev } from './events';
-import { getRunPlan, clearRunPlan } from './plan-state';
+import { getRunPlan, clearRunPlan, markRunPlanWaitingUser } from './plan-state';
+import { ASK_USER_TOOL_NAME } from '../tools/interaction/ask-user';
 import {
   checkPermission,
   confirmPermission,
@@ -56,6 +57,9 @@ export interface AgentLoopOptions {
     status: 'succeeded' | 'failed' | 'cancelled',
     errorMessage?: string,
   ) => void;
+  /** P6.1：ask_user 开始等待用户回答 / 结束等待（运行阶段 waiting_user） */
+  onQuestionStart?: () => void;
+  onQuestionEnd?: (status: 'succeeded' | 'failed' | 'cancelled', errorMessage?: string) => void;
   modelTimeoutMs?: number;
   toolTimeoutMs?: number;
   modelRuntime?: ModelRuntimeConfig;
@@ -477,6 +481,12 @@ export async function* runAgentLoop(
       } else if (priorSideEffect) {
         result = markDuplicateSideEffect(priorSideEffect);
       } else {
+        // ask_user：等待期间运行阶段切到 waiting_user，正在进行的计划项标为"等用户"
+        const askingUser = toolName === ASK_USER_TOOL_NAME && registeredTool !== undefined;
+        if (askingUser) {
+          options.onQuestionStart?.();
+          if (markRunPlanWaitingUser(runId, true)) yield ev.planUpdated(runId, getRunPlan(runId));
+        }
         let authorized: AuthorizedToolCall | ToolResult;
         try {
           authorized = await authorizeToolCall(
@@ -524,6 +534,13 @@ export async function* runAgentLoop(
           } finally {
             toolTimeout.dispose();
           }
+        }
+        if (askingUser) {
+          options.onQuestionEnd?.(
+            result.success ? 'succeeded' : result.errorCategory === 'cancelled' ? 'cancelled' : 'failed',
+            result.success ? undefined : result.error,
+          );
+          if (markRunPlanWaitingUser(runId, false)) yield ev.planUpdated(runId, getRunPlan(runId));
         }
       }
 

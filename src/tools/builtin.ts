@@ -31,6 +31,7 @@ import {
 } from './schedule/schedule-tools';
 import { transcribeAudioTool } from './voice/transcribe-audio';
 import { updateAgentPlanTool } from './plan/plan-tools';
+import { askUserTool } from './interaction/ask-user';
 import {
   createUserTaskTool,
   importTasksFromXlsxTool,
@@ -46,6 +47,7 @@ let defaultRegistry: ToolRegistry | null = null;
 export function createBuiltinRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(readFileTool);
+  registry.register(askUserTool);
   registry.register(writeFileTool);
   registry.register(replaceTextTool);
   registry.register(listDirTool);

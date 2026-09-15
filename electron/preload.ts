@@ -84,6 +84,8 @@ import type {
   TaskRunInfo,
   DailyStewardSettingsInfo,
   ContextSourceDetailInfo,
+  UserQuestionRequestPayload,
+  UserQuestionResponse,
 } from '../src/shared/types';
 import type { RunTelemetrySnapshot } from '../src/agent/run-observability';
 
@@ -483,6 +485,17 @@ const shorekeeperApi = {
         ipcRenderer.invoke('voice:call:end', payload),
       isActive: (sessionId?: string): Promise<{ active: boolean }> =>
         ipcRenderer.invoke('voice:call:isActive', sessionId),
+    },
+  },
+  ask: {
+    respond: (response: UserQuestionResponse) => ipcRenderer.invoke('ask:respond', response),
+    onRequest: (callback: (payload: UserQuestionRequestPayload) => void) => {
+      const listener = (_: Electron.IpcRendererEvent, data: UserQuestionRequestPayload) =>
+        callback(data);
+      ipcRenderer.on('ask:request', listener);
+      return () => {
+        ipcRenderer.removeListener('ask:request', listener);
+      };
     },
   },
   permission: {

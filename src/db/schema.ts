@@ -276,6 +276,23 @@ export interface ApprovalRow {
   decided_at: number | null;
 }
 
+/** P6.2 ask_user 提问账本 */
+export interface UserQuestionRow {
+  id: string;
+  run_id: string | null;
+  session_id: string | null;
+  question: string;
+  why: string | null;
+  options_json: string;
+  allow_free_text: number;
+  answer: string | null;
+  option_id: string | null;
+  status: string;
+  decided_by: string | null;
+  asked_at: number;
+  answered_at: number | null;
+}
+
 /** P4 录音转写账本；正文不入库，只存产物路径。 */
 export interface AudioTranscriptRow {
   id: string;

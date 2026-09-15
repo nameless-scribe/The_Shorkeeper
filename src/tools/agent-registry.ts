@@ -30,6 +30,7 @@ const CORE_TOOL_NAMES = new Set([
   'save_memory',
   'search_worldbook',
   'search_knowledge',
+  'ask_user',
 ]);
 
 function buildBaseCacheKey(mcpTools: { name: string }[], pluginsKey: string): string {

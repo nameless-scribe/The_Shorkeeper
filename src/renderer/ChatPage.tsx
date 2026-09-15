@@ -16,7 +16,8 @@ import { SessionHistoryPanel } from './components/SessionHistoryPanel';
 import { ProactiveInboxPanel } from './components/ProactiveInboxPanel';
 import type { SettingsTab } from './settings/SettingsSidebar';
 import { PermissionDialog } from './components/PermissionDialog';
-import { usePermissionRequests } from './hooks/usePermissionRequests';
+import { QuestionDialog } from './components/QuestionDialog';
+import { usePromptRequests } from './hooks/usePromptRequests';
 
 export function ChatPage() {
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -88,7 +89,7 @@ export function ChatPage() {
     return session.id;
   }, [sessionId]);
 
-  const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
+  const { permissionRequest, questionRequest, respondPermission, respondQuestion } = usePromptRequests();
   const { playText, stop: stopSpeech, remapPlayingId, playingId, loadingId, error: voiceError } =
     useVoicePlayback();
   const playTextRef = useRef(playText);
@@ -137,8 +138,8 @@ export function ChatPage() {
   });
 
   const workflow = useMemo(
-    () => deriveAgentWorkflow(messages, isRunning, permissionRequest),
-    [messages, isRunning, permissionRequest],
+    () => deriveAgentWorkflow(messages, isRunning, permissionRequest, questionRequest),
+    [messages, isRunning, permissionRequest, questionRequest],
   );
 
   const handleNewChat = useCallback(async () => {
@@ -269,6 +270,7 @@ export function ChatPage() {
         </div>
       </div>
       <PermissionDialog request={permissionRequest} onRespond={respondPermission} />
+      <QuestionDialog request={questionRequest} onRespond={respondQuestion} />
     </div>
   );
 }

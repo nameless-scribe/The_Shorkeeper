@@ -18,6 +18,7 @@ import {
   recordRunArtifacts,
   startTaskRunStep,
 } from '../../db/repositories/task-runs';
+import { createUserQuestion } from '../../db/repositories/user-questions';
 import {
   acknowledgeInterruptedRuns,
   formatInterruptedRunNotice,
@@ -72,11 +73,14 @@ describe('run recovery', () => {
     });
     endTaskRunStep('left', 'c1', { status: 'succeeded' });
     startTaskRunStep({ runId: 'left', callId: 'c2', toolName: 'gen_pdf' });
+    // P6.2：退出时正在等用户回答的问题要随中断说明一起带到下一轮
+    createUserQuestion({ runId: 'left', sessionId: 'session-a', question: '导出成 PDF 还是 Word？' });
     createTaskRun({ id: 'ok', sessionId: 'session-a' });
     finishTaskRun('ok', { phase: 'finished', terminalReason: 'finished' });
 
     const summary = reconcileInterruptedRuns();
     expect(summary?.runIds).toEqual(['left']);
+    expect(summary?.questions).toBe(1);
     expect(getTaskRun('left')?.phase).toBe('interrupted');
     expect(getTaskRun('ok')?.phase).toBe('finished');
 
@@ -85,6 +89,8 @@ describe('run recovery', () => {
     expect(first?.notice).toContain('write_file');
     expect(first?.notice).toContain('gen_pdf（interrupted）');
     expect(first?.notice).toContain('notes.md');
+    expect(first?.notice).toContain('当时在等你回答：导出成 PDF 还是 Word？');
+    expect(first?.notice).toContain('不要再问一遍');
     // A failed follow-up run does not acknowledge, so the notice survives for the next attempt.
     expect(peekInterruptedRunNotice('session-a')?.runId).toBe('left');
     expect(peekInterruptedRunNotice('session-b')).toBeNull();

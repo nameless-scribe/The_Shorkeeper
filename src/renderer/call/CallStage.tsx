@@ -4,11 +4,12 @@ import { DAILY_TOKEN_BUDGET } from '@/shared/token-budget';
 import { AppBackground } from '../components/AppBackground';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { PermissionDialog } from '../components/PermissionDialog';
+import { QuestionDialog } from '../components/QuestionDialog';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { useCallVad } from '../hooks/useCallVad';
 import { useCallStreamPlayback } from '../hooks/useCallStreamPlayback';
 import { useCallTokenUsage } from '../hooks/useCallTokenUsage';
-import { usePermissionRequests } from '../hooks/usePermissionRequests';
+import { usePromptRequests } from '../hooks/usePromptRequests';
 import { useWindowDrag } from '../hooks/useWindowDrag';
 import {
   applyTranscriptEvent,
@@ -50,7 +51,7 @@ export function CallStage() {
   const [callSilenceMs, setCallSilenceMs] = useState(800);
   const [transcriptLines, setTranscriptLines] = useState<TranscriptLine[]>([]);
 
-  const { request: permissionRequest, respond: respondPermission } = usePermissionRequests();
+  const { permissionRequest, questionRequest, respondPermission, respondQuestion } = usePromptRequests();
   const { today, progress, overBudget } = useCallTokenUsage();
   const {
     status: inputStatus,
@@ -540,6 +541,7 @@ export function CallStage() {
       </div>
 
       <PermissionDialog request={permissionRequest} onRespond={respondPermission} />
+      <QuestionDialog request={questionRequest} onRespond={respondQuestion} />
     </div>
   );
 }

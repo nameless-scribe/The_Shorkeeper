@@ -9,6 +9,7 @@ const STATUS_ICON: Record<AgentPlanItem['status'], string> = {
   in_progress: '●',
   completed: '✓',
   cancelled: '—',
+  waiting_user: '?',
 };
 
 export function AgentPlanPanel({ items }: AgentPlanPanelProps) {
@@ -28,7 +29,7 @@ export function AgentPlanPanel({ items }: AgentPlanPanelProps) {
                 ? 'text-keeper-ice/50 line-through'
                 : item.status === 'cancelled'
                   ? 'text-keeper-ice/35 line-through'
-                  : item.status === 'in_progress'
+                  : item.status === 'in_progress' || item.status === 'waiting_user'
                     ? 'text-keeper-cyan'
                     : 'text-keeper-ice/75'
             }`}

@@ -24,6 +24,7 @@ const TRANSCRIPT_BADGE_TONE = {
   muted: 'muted',
 } as const;
 import { toolDisplayName } from '../components/tool-labels';
+import { SettingsSegmented } from './components/SettingsSegmented';
 import {
   SettingsActionLink,
   SettingsBadge,
@@ -35,7 +36,6 @@ import {
   SettingsPageShell,
   SettingsPanel,
   SettingsSection,
-  SETTINGS_SELECT_CLASS,
 } from './components/settings-ui';
 import {
   formatRunDuration,
@@ -321,16 +321,16 @@ export function RunHistoryPage() {
         icon="🔎"
         footer={<SettingsActionLink onClick={() => void loadRuns()}>刷新记录</SettingsActionLink>}
       >
-        <select
+        <SettingsSegmented<RunFilter>
           value={filter}
-          onChange={(event) => setFilter(event.target.value as RunFilter)}
-          className={SETTINGS_SELECT_CLASS}
-        >
-          <option value="all">全部状态</option>
-          <option value="active">正在运行</option>
-          <option value="finished">已完成</option>
-          <option value="attention">失败或中断</option>
-        </select>
+          options={[
+            { value: 'all', label: '全部' },
+            { value: 'active', label: '进行中' },
+            { value: 'finished', label: '已完成' },
+            { value: 'attention', label: '失败或中断' },
+          ]}
+          onChange={setFilter}
+        />
       </SettingsPanel>
 
       <SettingsSection title="运行列表" hint={`${filtered.length} 条`}>

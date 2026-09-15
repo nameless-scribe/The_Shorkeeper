@@ -44,6 +44,8 @@ export type TaskRunPhase =
   | 'running'
   | 'waiting_tool'
   | 'waiting_approval'
+  /** P6.1：正在等用户回答 ask_user 的问题 */
+  | 'waiting_user'
   | 'finalizing'
   | 'finished'
   | 'cancelled'
@@ -903,6 +905,30 @@ export interface PermissionRequestPayload {
   risk?: 'read' | 'low' | 'medium' | 'high';
   /** 支持 dry-run 的工具会先生成结构化预览，再等待用户确认。 */
   preview?: ToolPreviewInfo;
+}
+
+/** ask_user 的一个选项（P6.1） */
+export interface UserQuestionOption {
+  id: string;
+  label: string;
+  hint?: string;
+}
+
+/** 主进程推给渲染层的提问请求（`ask:request`） */
+export interface UserQuestionRequestPayload {
+  requestId: string;
+  question: string;
+  options: UserQuestionOption[];
+  allowFreeText: boolean;
+  why?: string;
+}
+
+/** 渲染层的回答（`ask:respond`）：选项、自由文本、或"稍后再答" */
+export interface UserQuestionResponse {
+  requestId: string;
+  optionId?: string;
+  answer?: string;
+  dismissed?: boolean;
 }
 
 export interface PersonaSettingsInfo {

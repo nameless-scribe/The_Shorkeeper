@@ -8,6 +8,7 @@ import type {
   ModelProtocol,
   ModelSettingsPatch,
   WorkspaceAttachment,
+  UserQuestionResponse,
 } from './types';
 
 export const MAX_AGENT_MESSAGE_CHARS = 100_000;
@@ -204,6 +205,27 @@ export function parseWindowKind(value: unknown): WindowKind {
     throw new TypeError('无效的窗口类型');
   }
   return value as WindowKind;
+}
+
+export function parseUserQuestionResponse(value: unknown): UserQuestionResponse {
+  const input = requireRecord(value, 'ask:respond payload');
+  const requestId = requireString(input.requestId, '提问请求 ID', { maxLength: 200 });
+  const dismissed = input.dismissed === undefined ? undefined : requireBoolean(input.dismissed, '稍后再答');
+  const optionId = input.optionId === undefined
+    ? undefined
+    : requireString(input.optionId, '选项 ID', { maxLength: 40 });
+  const answer = input.answer === undefined
+    ? undefined
+    : requireString(input.answer, '回答', { allowEmpty: true, maxLength: 4_000 });
+  if (!dismissed && !optionId && !answer?.trim()) {
+    throw new Error('回答不能为空：请选择一个选项、输入文字，或选择稍后再答');
+  }
+  return {
+    requestId,
+    ...(dismissed ? { dismissed: true } : {}),
+    ...(optionId ? { optionId } : {}),
+    ...(answer !== undefined ? { answer } : {}),
+  };
 }
 
 export function parsePermissionResponse(value: unknown): {

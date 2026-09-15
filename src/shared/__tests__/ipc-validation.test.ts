@@ -6,6 +6,7 @@ import {
   MAX_WORKSPACE_AUDIO_ATTACHMENT_BYTES,
   parseAgentSendPayload,
   parsePermissionResponse,
+  parseUserQuestionResponse,
   parseWindowKind,
   requireFiniteNumber,
 } from '../ipc-validation';
@@ -71,6 +72,16 @@ describe('IPC runtime validation', () => {
       .toEqual({ requestId: 'r1', approved: false });
     expect(() => parsePermissionResponse({ requestId: 'r1', approved: 1 }))
       .toThrow('必须是布尔值');
+  });
+
+  it('accepts option, free-text and dismissed question responses but never an empty one', () => {
+    expect(parseUserQuestionResponse({ requestId: 'q1', optionId: 'a' })).toEqual({ requestId: 'q1', optionId: 'a' });
+    expect(parseUserQuestionResponse({ requestId: 'q1', answer: ' 明天 ' })).toEqual({ requestId: 'q1', answer: ' 明天 ' });
+    expect(parseUserQuestionResponse({ requestId: 'q1', dismissed: true })).toEqual({ requestId: 'q1', dismissed: true });
+    expect(() => parseUserQuestionResponse({ requestId: 'q1', answer: '   ' })).toThrow('回答不能为空');
+    expect(() => parseUserQuestionResponse({ requestId: 'q1' })).toThrow('回答不能为空');
+    expect(() => parseUserQuestionResponse({ requestId: 'q1', optionId: 'x'.repeat(41) })).toThrow();
+    expect(() => parseUserQuestionResponse({ optionId: 'a' })).toThrow();
   });
 
   it('rejects non-finite numbers and values outside the declared range', () => {

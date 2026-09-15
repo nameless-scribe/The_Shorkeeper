@@ -1,3 +1,4 @@
+import { ToolRegistry } from '../tools/registry';
 import { createRunId, ev } from './events';
 import { runAgentLoop } from './loop';
 import type { AgUiEvent } from './types';
@@ -56,6 +57,19 @@ export interface RunOrchestratorOptions {
   kind?: TaskRunKind;
   /** 触发来源引用（如定时任务 id） */
   triggerRef?: string | null;
+  /** 本次运行不注册的工具（如语音通话里不弹 ask_user 窗口） */
+  excludeTools?: string[];
+}
+
+/** 排除若干工具后的注册表副本；不改动缓存的 base registry。 */
+function excludeToolsFromRegistry(registry: ToolRegistry, excluded?: string[]): ToolRegistry {
+  if (!excluded?.length) return registry;
+  const skip = new Set(excluded);
+  const filtered = new ToolRegistry();
+  for (const tool of registry.list()) {
+    if (!skip.has(tool.name)) filtered.register(tool);
+  }
+  return filtered;
 }
 
 export async function* runOrchestrator(
@@ -209,7 +223,7 @@ export async function* runOrchestrator(
     const activeSkills = registryResolution.activeSkills;
     telemetry.setActiveSkills(activeSkills.map((skill) => skill.id));
     telemetry.setSkillDiagnostics(skillResolution.decisions, registryResolution.skillWarnings);
-    const registry = registryResolution.registry;
+    const registry = excludeToolsFromRegistry(registryResolution.registry, options?.excludeTools);
     const maxInputTokens = performanceSettings.contextMaxInputTokens ??
       DEFAULT_CONTEXT_MAX_INPUT_TOKENS;
     const toolTokens = estimateTokens(JSON.stringify(registry.toOpenAITools()));
@@ -278,6 +292,8 @@ export async function* runOrchestrator(
         recorder.phase('waiting_tool');
         telemetry.recordPermissionEnd(activityId, status, errorMessage);
       },
+      onQuestionStart: () => recorder.waitingUser(),
+      onQuestionEnd: () => recorder.phase('waiting_tool'),
     })) {
       if (event.type === 'text_delta') {
         assistantText += event.delta;

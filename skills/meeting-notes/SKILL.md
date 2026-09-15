@@ -4,12 +4,12 @@ description: 把工作区里的会议录音转写成逐字稿并整理成纪要�
 metadata:
   shorekeeper:
     displayName: 会议纪要
-    version: 1.0.0
+    version: 1.1.0
     trigger: auto
     kind: workflow
     matchKeywords: [会议纪要, 会议记录, 整理录音, 总结录音, 总结这段录音, 录音整理, 转写录音, 逐字稿]
     priority: 18
-    allowedTools: [list_dir, read_file, transcribe_audio, gen_markdown, list_user_tasks, create_user_task, manage_commitments]
+    allowedTools: [list_dir, read_file, transcribe_audio, gen_markdown, list_user_tasks, create_user_task, manage_commitments, ask_user]
     requiredTools: [transcribe_audio, read_file]
 ---
 
@@ -33,14 +33,15 @@ metadata:
 
 规则：
 - 只写逐字稿里有的内容，不补充会上没说的信息；识别有歧义的地方用「？」标出并说明。
-- 相对日期（"下周三"、"这周内"、"下个月十五号"）要换算成具体日期。基准是录音日期：文件名或用户说了就用那个，否则问用户，不要按今天猜。
-- 说话人只有"说话人 1、2"这样的标签。纪要里先沿用标签，在确认环节问用户哪位是本人、其他人叫什么；用户不说就保留标签。
+- 相对日期（"下周三"、"这周内"、"下个月十五号"）要换算成具体日期。基准是录音日期：文件名或用户说了就用那个，否则用 `ask_user` 问录音是哪天，不要按今天猜。
+- 说话人只有"说话人 1、2"这样的标签。纪要里先沿用标签，在确认环节用 `ask_user` 问哪位是本人（选项就是各个说话人标签）；其他人叫什么可以在同一轮自由回答；用户不说就保留标签。
 
 三、确认
-纪要给出后，明确问用户三件事，等回答后再动手：
-1. 纪要内容是否有误、要不要改。
-2. 说话人对应关系：哪位是用户本人。这决定了每条待办归谁。
-3. 哪些待办要记进系统。逐条列出建议的处理方式让用户点头。
+纪要给出后，用 `ask_user` 逐个确认，一次只问一件事，等回答后再问下一件、再动手：
+1. 纪要内容是否有误、要不要改（选项：没问题 / 要改；要改的话让用户直接写在"其他"里）。
+2. 说话人对应关系：哪位是用户本人（选项：各个说话人标签）。这决定了每条待办归谁。
+3. 哪些待办要记进系统：逐条问，选项为 记为我的待办 / 记为我答应别人的承诺 / 不记；不要把整张表一次性丢给用户点头。
+`ask_user` 返回失败（用户稍后再答、超时）时停下，告诉用户纪要已在对话里、待办没有写入；不要自行决定。
 
 四、确认后写入
 - 用户自己负责的事项 → `create_user_task`：`title` 用事项本身，`due_at` 用换算后的日期，`module` 用会议名或项目名，`notes` 写"来源：<逐字稿路径> [mm:ss] 原话"。

@@ -14,6 +14,7 @@ import type {
 } from '../../shared/types';
 import type { ApprovalRow, ArtifactRow, TaskRunRow, TaskRunStepRow } from '../schema';
 import { notifyLocalStateChanged } from '../../proactivity/signals';
+import { markInterruptedUserQuestions } from './user-questions';
 
 export const TASK_RUN_TERMINAL_PHASES: ReadonlySet<TaskRunPhase> = new Set([
   'finished',
@@ -27,6 +28,7 @@ const RUN_PHASES: ReadonlySet<string> = new Set<TaskRunPhase>([
   'running',
   'waiting_tool',
   'waiting_approval',
+  'waiting_user',
   'finalizing',
   'finished',
   'cancelled',
@@ -349,6 +351,8 @@ export interface InterruptedRunSummary {
   runIds: string[];
   steps: number;
   approvals: number;
+  /** P6.2：收口的待回答问题数 */
+  questions: number;
 }
 
 /**
@@ -367,7 +371,10 @@ export function markInterruptedRuns(
       )
       .all() as Array<{ id: string }>;
     const runIds = rows.map((row) => String(row.id));
-    if (!runIds.length) return { runIds, steps: 0, approvals: 0 };
+    if (!runIds.length) {
+      // 没有未收口的 run 也可能有孤儿问题（极端情况下的写入顺序），一并处理
+      return { runIds, steps: 0, approvals: 0, questions: markInterruptedUserQuestions(now, db) };
+    }
 
     const placeholders = runIds.map(() => '?').join(', ');
     db.prepare(
@@ -394,12 +401,15 @@ export function markInterruptedRuns(
       `UPDATE approvals SET status = 'interrupted', decided_by = 'startup', decided_at = ?
        WHERE status = 'pending'`,
     ).run(now);
+    // P6.2：等回答的问题同样收口，问题本身在下一轮对话里带出来
+    const questions = markInterruptedUserQuestions(now, db);
 
     notifyLocalStateChanged('run');
     return {
       runIds,
       steps: Number(runningSteps?.count ?? 0),
       approvals: Number(pendingApprovals?.count ?? 0),
+      questions,
     };
   });
 }

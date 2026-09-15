@@ -5,7 +5,9 @@
 > 阶段编号沿用 P 系列。P6 回答的是用户的这句话："让它有自己的思想，懂得思考，理解我的想法，
 > 证据不足时能向我发问收集信息。" 本文把这句话拆成可验收的机制，而不是换一个"更会想"的模型。
 
-当前状态（2026-09-14）：**未开工**。本文是开工前的契约，不是验收记录。
+当前状态（2026-09-15）：**P6.0 至 P6.3 已实现并通过自动化回归**（提示词规则；`ask_user` 工具、主进程通道、提问弹窗、
+运行阶段与计划项标记；`user_questions` 落库与中断恢复；会议纪要与每日管家改用 `ask_user`）。P6.4 的自动化回归已跑，
+真实使用观察与 P6.0 的 5 条固定样本待用户执行。实施记录见第 10 节。
 
 ---
 
@@ -231,6 +233,8 @@ P6.1 是主体；P6.2 补落库；P6.3 让已有功能立刻受益。
 ```
 
 P6.1 之后在句首补一句："有 `ask_user` 工具时用它提问，不要在正文里问。"
+（实际落地：这句放在**工具说明**的【提问】块里，只在 `ask_user` 可用时出现——稳定前缀不提工具名，
+语音通话运行不注册该工具时也就不会出现这句。见 §10.2。）
 
 ### 9.2 `ask_user` 工具（P6.1）
 
@@ -262,4 +266,94 @@ P6.1 之后在句首补一句："有 `ask_user` 工具时用它提问，不要�
 
 ## 10. 实施记录
 
-（开工后按"症状 → 证据 → 根因 → 修法"逐节追加。）
+（按"症状 → 证据 → 根因 → 修法"逐节追加。）
+
+### 10.1 P6.0 提示词规则（2026-09-15）
+
+只改提示词，不加工具。
+
+| 文件 | 说明 |
+|---|---|
+| `src/agent/stable-context.ts` | 导出 `EVIDENCE_FIRST_RULE_SENTENCES`（6 句，§9.1 原文）与 `EVIDENCE_FIRST_RULE`；块加在稳定前缀里【上下文优先级】之后 |
+| `src/agent/__tests__/stable-context.test.ts` | 断言块的位置、6 句逐句存在、且 P6.1 之前不出现 `ask_user` |
+| `src/agent/__tests__/context-builder-skills.test.ts` | 断言规则排在人设之后、技能与工具说明之前，每轮都在 |
+| `package.json` | `pnpm test:p6`，后续阶段逐个加测试文件 |
+
+一个放置决定：规则放在**稳定前缀**而不是工具说明里。工具说明按本轮可用工具组装，技能白名单可能把
+`recall_memory` / `save_memory` 之外的工具都过滤掉，但"先判断信息够不够"这条与工具无关，任何一轮都该在；
+稳定前缀又是 prompt cache 的命中区，多这一段不增加每轮成本。测试里那条"稳定前缀不含 create_scheduled_task"
+仍然成立——规则只提到两个核心记忆工具，它们不受技能白名单限制。
+
+验收：`pnpm typecheck`、`pnpm test:p6`、全量测试通过。**阶段出口的人工部分待用户执行**：
+下面 5 条固定样本，在应用里各问一次，记录"问了 / 没问 / 假设写明了没有"：
+
+| # | 样本 | 期望 |
+|---|---|---|
+| 1 | 工作区里有 `报价单-v1.xlsx` 与 `报价单-v2.xlsx`，说"把报价单的税率改成 13%" | 问改哪一份，给两个选项 |
+| 2 | "把这段话整理成一份方案文档"（只给了一段话，没说格式） | 直接做，回复里写明"按 Word 生成、标题取第一句" 之类的假设，不问 |
+| 3 | "上个月的会议纪要发给我"（工作区只有一份纪要） | 不问，直接给 |
+| 4 | 之前已说过"待办默认归我自己"，再说"记一条待办：周五交报告" | 不问归谁，直接记 |
+| 5 | "把这几个文件删掉"（指代不清） | 先问是哪几个；且删除仍走权限确认，不能用提问代替 |
+
+两周内在真实使用里数"该问没问 / 不该问却问"的次数（§7 的度量），偏高再动措辞或考虑 §3.6 的模型路由。
+
+### 10.2 P6.1 `ask_user` 工具与弹窗（2026-09-15）
+
+按 §9.2、§9.3 落地，主进程一侧逐行镜像 `permission.ts`。
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 注入点 | `src/agent/user-questions.ts` | `setUserQuestionResponder` / `requestUserAnswer`；默认实现返回 `abort`，取消信号已触发时不打扰用户 |
+| 工具 | `src/tools/interaction/ask-user.ts` | 参数校验为纯函数 `parseAskUserArgs`；成功返回"用户回答：…（选项 id）"；超时 / 取消 / 窗口关闭返回失败"这一步需要你的回答（未收到）"。加入 `CORE_TOOL_NAMES` |
+| 主进程 | `electron/ipc/ask.ts` | pending 表、10 分钟超时、abort、窗口关闭、`ask:request` 推送、`ask:respond` 校验选项 id 与自由文本；`cancelAllPendingQuestions` 接入关机协调器与 `agent:abort` |
+| 共享 | `src/shared/types.ts`、`ipc-validation.ts`、`preload.ts` | `UserQuestionRequestPayload` / `UserQuestionResponse`、`parseUserQuestionResponse`（选项、文本、稍后再答三选一，空回答拒收）、`window.shorekeeper.ask` |
+| 渲染层 | `hooks/prompt-queue.ts`、`usePromptRequests.ts`、`components/QuestionDialog.tsx` | 权限与提问同一条队列，一次只弹一个；对话页与通话页都挂载；工作流条显示"等待回答" |
+| 运行记录 | `run-record.ts`、`task-runs.ts`、`run-history-view.ts` | 阶段 `waiting_user`，标签"等待回答"，与 `waiting_approval` 同为 cyan、同属"进行中"筛选 |
+| 计划项 | `plan-state.ts`、`loop.ts`、`AgentPlanPanel.tsx` | `markRunPlanWaitingUser`：提问期间 `in_progress → waiting_user`，回答后改回，两次都广播 `plan_updated`；图标 `?` |
+| 提示词 | `stable-context.ts` | 【提问】块只在工具可用时进工具说明 |
+| 语音 | `orchestrator.ts`、`call-session.ts` | 新增 `excludeTools` 运行选项，通话运行不注册 `ask_user` |
+
+两处与计划原文不同，都写在代码注释里：
+
+- **契约 `idempotent: true` 而不是 §9.2 写的 `false`**。`tool-contract.test.ts` 要求只读工具必须幂等，
+  而"同一问题再问一次"确实不多做任何事，幂等成立；`risk: 'read'` 也意味着它不经过权限确认、不被当成副作用合并。
+- **`usePermissionRequests` 直接改名为 `usePromptRequests`**，没有保留旧文件做转发：它只有两个调用点，
+  留一层壳只会让"一次只弹一个"这条约束有第二个入口。
+
+自动化：`ask-user.test.ts`（校验、四种结果、无界面 fail closed、已取消不打扰）、`loop-question-phase.test.ts`
+（阶段钩子顺序、计划项标记与广播、取消时的停下）、`prompt-queue.test.ts`（两种请求混排、StrictMode 双调用回归）、
+`agent-workflow` / `ipc-validation` / `run-record` / `run-history-view` / `shutdown-coordinator` 各补一例；
+P0 UI 冒烟新增"弹出问题 → 点选项 → `ask:respond` 收到 optionId"一步并截图。
+
+**待用户真机验收**：在应用里制造一次歧义（工作区放两份同名不同版本的文件再让它改），确认弹窗出现、选项可点、
+Esc 后助理说明"这一步需要你的回答"而不是自己猜；运行记录页该次运行阶段显示过"等待回答"。
+
+### 10.3 P6.2 落库与中断恢复（2026-09-15）
+
+| 文件 | 说明 |
+|---|---|
+| `src/db/migrations/0028_user_questions.sql`、`schema.ts` | `user_questions` 表：问题、原因、选项 JSON、回答与选项 id、状态、决定方式、时间；两个索引（run、status） |
+| `src/db/repositories/user-questions.ts` | `createUserQuestion` / `answerUserQuestion`（只收口 pending，重复结论不覆盖）/ `listUserQuestions` / `markInterruptedUserQuestions` / `findInterruptedQuestion`；问题 300 字、原因 120 字、回答 4000 字限长 |
+| `src/agent/user-questions.ts` | `requestUserAnswer` 有数据库时先记 pending，结果落回；响应器抛错也收口。账本失败只告警，不阻断提问（与 `confirmPermission` 同一态度） |
+| `src/db/repositories/task-runs.ts` | `markInterruptedRuns` 同一事务内把 pending 问题改为 `interrupted / startup`，摘要多一个 `questions` 计数 |
+| `src/agent/run-recovery.ts` | 【上次运行中断】附"当时在等你回答：<问题>"，并提示"用户若在这一轮直接回答了，就按回答继续，不要再问一遍" |
+
+没做"原运行从断点恢复"（§3.4）：运行内存态已经没了，假装恢复只会制造不一致；用户在下一轮直接回答，模型以新运行继续。
+
+自动化：`user-questions.test.ts`（双适配器：创建 / 收口 / 不覆盖 / 限长 / 启动收口与取最后一条）、
+`run-recovery.test.ts` 补"中断说明含问题"，`native-migration.test.ts` 迁移数 27 → 28。
+
+### 10.4 P6.3 已有技能接线（2026-09-15）
+
+- `meeting-notes` 1.1.0：录音日期、说话人对应、三步确认全部改为 `ask_user` 逐个问；待办逐条问，选项为
+  "记为我的待办 / 记为我答应别人的承诺 / 不记"，不再把整张表一次性丢给用户点头。
+- `daily-steward` 1.1.0：天气城市、待确认承诺（加入待办 / 忽略 / 稍后）、结尾调整、晚间待办处置（顺延 / 取消 / 继续）、
+  missed 承诺（改期 / 取消 / 已经做了）全部改为 `ask_user`；顺延时二次问新日期。
+- 两个技能都写明：`ask_user` 返回失败时该项保持原状并如实说明，不替用户决定。
+- `doc-compose` 尚不存在（P5.1 的产物），届时直接按 `ask_user` 写，不需要再改一次。
+- `ask_user` 是核心工具，不受技能白名单限制；写进 `allowedTools` 只是让意图可见，契约测试仍校验它存在。
+
+### 10.5 P6.4 自动化回归（2026-09-15）
+
+`pnpm typecheck`、`pnpm test:p6`（14 个文件 83 用例）、全量、`pnpm build`、`pnpm test:ui:strict`（P0 冒烟含提问弹窗一步，
+三个冒烟 `rendererConsoleClean`）、`pnpm test:electron` 均通过。真实使用观察（两周、20 条"该问没问 / 不该问却问"）由用户进行。

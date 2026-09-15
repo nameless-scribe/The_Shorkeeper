@@ -11,6 +11,7 @@ import {
 } from '../../src/agent/session-run-lock';
 import { resolveAgentSession } from '../../src/agent/resolve-session';
 import { cancelAllPendingPermissions } from './permission';
+import { cancelAllPendingQuestions } from './ask';
 import { formatAttachmentsForMessage } from '../../src/workspace/import';
 import { enrichAttachmentsMessage } from '../../src/workspace/attachment-preparse';
 import { runOrchestrator } from '../../src/agent/orchestrator';
@@ -114,6 +115,7 @@ export function registerAgentIpc() {
 
   ipcMain.handle('agent:abort', () => {
     cancelAllPendingPermissions();
+    cancelAllPendingQuestions();
     const cancelled = abortAllSessionRuns();
     for (const { sessionId, runId } of cancelled) {
       broadcastAgentEvent(

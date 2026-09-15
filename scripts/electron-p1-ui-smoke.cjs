@@ -113,6 +113,7 @@ function registerMocks() {
     'plugins:get': () => ({ webSearch: false, fetchUrl: true, docGen: true, bookkeeping: true, lifeTools: true, filesystemMode: 'confirm', mcpEnabledCount: 0 }),
     'web-search:getSettings': () => ({ apiKeyMasked: '', apiKeyConfigured: false, provider: 'bocha', source: 'none' }),
     'skills:list': () => [],
+    'transcripts:list': () => [],
     'update:getVersion': () => '1.3.0',
     'performance:get': () => performance,
     'proactivity:unreadCount': () => 0,

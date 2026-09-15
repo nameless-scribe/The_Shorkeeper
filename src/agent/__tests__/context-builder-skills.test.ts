@@ -68,6 +68,10 @@ describe('context-builder skills', () => {
     expect(skillIdx).toBeGreaterThan(personaIdx);
     expect(toolIdx).toBeGreaterThan(skillIdx);
     expect(parts.stable).toContain('【技能：Excel】');
+    // P6.0：证据不足先问属于稳定前缀，排在技能与工具说明之前，每轮都在
+    const ruleIdx = parts.stable.indexOf('【证据不足先问】');
+    expect(ruleIdx).toBeGreaterThan(personaIdx);
+    expect(ruleIdx).toBeLessThan(skillIdx);
   });
 
   it('omits skills block when none active', async () => {

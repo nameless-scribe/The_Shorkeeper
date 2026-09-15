@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { UserTaskInfo, UserTaskStatus } from '@/shared/types';
+import { SettingsSegmented } from './components/SettingsSegmented';
 import {
   SettingsActionLink,
   SettingsBadge,
@@ -9,7 +10,6 @@ import {
   SettingsListCard,
   SettingsPageShell,
   SettingsPanel,
-  SETTINGS_SELECT_CLASS,
 } from './components/settings-ui';
 
 const STATUS_LABEL: Record<UserTaskStatus, string> = {
@@ -58,17 +58,17 @@ export function UserTodosPage() {
       </SettingsIntro>
 
       <SettingsPanel title="筛选" icon="🔍">
-        <select
+        <SettingsSegmented<UserTaskStatus | 'all'>
           value={filter}
-          onChange={(e) => setFilter(e.target.value as UserTaskStatus | 'all')}
-          className={SETTINGS_SELECT_CLASS}
-        >
-          <option value="all">全部</option>
-          <option value="pending">待开始</option>
-          <option value="in_progress">进行中</option>
-          <option value="done">已完成</option>
-          <option value="cancelled">已取消</option>
-        </select>
+          options={[
+            { value: 'all', label: '全部' },
+            { value: 'pending', label: '待开始' },
+            { value: 'in_progress', label: '进行中' },
+            { value: 'done', label: '已完成' },
+            { value: 'cancelled', label: '已取消' },
+          ]}
+          onChange={setFilter}
+        />
       </SettingsPanel>
 
       <SettingsPanel title="待办列表" subtitle={`${tasks.length} 项`} icon="✅">

@@ -176,6 +176,7 @@ pnpm test                     # Vitest
 pnpm typecheck                # TypeScript
 pnpm build                    # 生产构建（不打安装包）
 pnpm test:ui:strict           # 开发版 React 下跑 UI smoke（查 StrictMode 类问题，见下）
+pnpm test:settings:scan       # 起真实应用（临时数据目录）逐页点设置页按钮：遮挡、console 错误、异常
 pnpm build:dev-react          # 仅产出开发版 React 的 dist/（供上一条使用）
 pnpm dist                     # Windows 安装包 → release/
 pnpm db:init                  # 初始化 DB + migration
@@ -196,7 +197,12 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | [DEVELOPMENT-CONTRACT.md](docs/DEVELOPMENT-CONTRACT.md) | 全仓库开发契约与完成标准 |
 | [P1-PERSONAL-MODEL-PLAN.md](docs/P1-PERSONAL-MODEL-PLAN.md) | P1 可追溯个人模型实施计划与阶段出口 |
 | [P3-LOCAL-PROACTIVITY-PLAN.md](docs/P3-LOCAL-PROACTIVITY-PLAN.md) | P3 本地主动服务实施契约、路由规则与验收记录 |
-| [P4-AUDIO-TRANSCRIPTION-PLAN.md](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md) | P4 录音转写与会议纪要实施计划（未开工） |
+| [P4-AUDIO-TRANSCRIPTION-PLAN.md](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md) | P4 录音转写与会议纪要实施计划与实施记录 |
+| [P5-DOCUMENT-CAPABILITY-PLAN.md](docs/P5-DOCUMENT-CAPABILITY-PLAN.md) | P5 办公文档读写实施计划与实施记录 |
+| [P6-INTENT-AND-INQUIRY-PLAN.md](docs/P6-INTENT-AND-INQUIRY-PLAN.md) | P6 意图理解与追问（`ask_user`）实施计划与实施记录 |
+| [P7-DATA-SOURCE-QUERY-PLAN.md](docs/P7-DATA-SOURCE-QUERY-PLAN.md) | P7 数据源查询实施计划（未开工） |
+| [P8-VISION-PLAN.md](docs/P8-VISION-PLAN.md) | P8 图片理解与 OCR 实施计划（未开工） |
+| [P5-P7-ROADMAP.md](docs/P5-P7-ROADMAP.md) | P5–P8 开工路线与准备事项 |
 | [使用说明.md](docs/使用说明.md) | 技能、插件、工作区、待办 |
 | [DESIGN.md](docs/DESIGN.md) | 架构设计 |
 | [DATABASE.md](docs/DATABASE.md) | 数据库与 migration |
@@ -219,6 +225,8 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 - **P3**：纯本地主动服务工程已完成（持久事件账本、本地采集器、主动收件箱、统一路由与频率预算、四个纵向场景、`pnpm test:p3` / `pnpm test:p3:ui`）；收口后又做了一轮复审并修复 8 个问题（过期事件周期性翻转、重开事件不再路由、弹窗预算被显式提醒占用等，见 [P3 计划 §9.6](docs/P3-LOCAL-PROACTIVITY-PLAN.md)）；连续两周真实使用观察尚未开始
 - **P4**：录音转写、会议纪要与聊天框语音输入已完成（`pnpm test:p4`），真实使用观察进行中，见 [P4 计划](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md)
 - **P5**：办公文档读写进行中。P5.0 已完成：PDF 附件可读（按版面重建表格、抽出图片、逐页标记，扫描件明确报错）、`gen_pdf` 改走 `printToPDF` 支持中文与 Markdown 排版（`pnpm test:p5`）；Word 生成 / 原位修改 / 图表见 [P5 计划](docs/P5-DOCUMENT-CAPABILITY-PLAN.md)
+- **P6**：意图理解与追问工程已完成（【证据不足先问】规则、`ask_user` 工具与提问弹窗、`user_questions` 落库与中断恢复、会议纪要 / 每日管家改用弹窗提问，`pnpm test:p6`）；真实使用观察进行中，见 [P6 计划](docs/P6-INTENT-AND-INQUIRY-PLAN.md)
+- **P8**：图片理解与 OCR **未开工**，契约见 [P8 计划](docs/P8-VISION-PLAN.md)
 - **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地
 
 ## License

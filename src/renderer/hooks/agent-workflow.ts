@@ -1,4 +1,4 @@
-import type { PermissionRequestPayload } from '@/shared/types';
+import type { PermissionRequestPayload, UserQuestionRequestPayload } from '@/shared/types';
 import type { UiMessage } from './useAgentEvents';
 import { toolDisplayName } from '../components/tool-labels';
 
@@ -13,7 +13,7 @@ export interface WorkflowStep {
 }
 
 export interface AgentWorkflowStatus {
-  mode: 'idle' | 'running' | 'permission';
+  mode: 'idle' | 'running' | 'permission' | 'question';
   headline: string;
   detail?: string;
   steps: WorkflowStep[];
@@ -38,7 +38,21 @@ export function deriveAgentWorkflow(
   messages: UiMessage[],
   isRunning: boolean,
   permissionRequest: PermissionRequestPayload | null,
+  questionRequest: UserQuestionRequestPayload | null = null,
 ): AgentWorkflowStatus {
+  if (questionRequest) {
+    return {
+      mode: 'question',
+      headline: '等待回答',
+      detail: questionRequest.question,
+      steps: [
+        step('prepare', '准备', 'done'),
+        step('think', '思考', 'done'),
+        step('tool', '工具', 'active'),
+        step('write', '输出', 'pending'),
+      ],
+    };
+  }
   if (permissionRequest) {
     return {
       mode: 'permission',

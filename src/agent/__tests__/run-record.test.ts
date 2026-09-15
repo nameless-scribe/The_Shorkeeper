@@ -57,6 +57,9 @@ describe('run recorder', () => {
     });
     recorder.waitingApproval();
     expect(getTaskRun('run-1')?.phase).toBe('waiting_approval');
+    recorder.waitingUser();
+    expect(getTaskRun('run-1')?.phase).toBe('waiting_user');
+    recorder.phase('waiting_tool');
     recorder.stepStart('c2', 'fetch_url');
     recorder.stepEnd('c2', 'fetch_url', { success: false, output: '', error: '已取消', errorCategory: 'cancelled' });
     // A read-only tool that echoes its input file as an attachment is not a produced artifact.

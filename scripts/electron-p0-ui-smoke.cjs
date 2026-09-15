@@ -5,6 +5,7 @@ const { pathToFileURL } = require('node:url');
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron');
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+const askResponses = [];
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'sk-asset',
@@ -147,6 +148,7 @@ function registerMocks() {
     'transcripts:list': () => [],
     'agent:runDetail': (_event, requestedRunId) => requestedRunId === runId ? detail : null,
     'permission:respond': () => ({ ok: true }),
+    'ask:respond': (_event, payload) => { askResponses.push(payload); return { ok: true }; },
     'update:getVersion': () => '1.3.0',
     'proactivity:unreadCount': () => 0,
     'proactivity:inbox': () => ({ attention: [], later: [], handled: [], unreadCount: 0, generatedAt: Date.now() }),
@@ -310,6 +312,34 @@ app.whenReady().then(async () => {
     setStage('capture Excel preview');
     const xlsxPreviewScreenshot = await capture(window, screenshotDirectory, 'xlsx-preview.png');
 
+    // P6.1：ask_user 弹窗——问题、选项、"其他"输入框；点选项即回答，且回答经 ask:respond 送达
+    setStage('open question dialog');
+    await window.webContents.executeJavaScript(`document.querySelector('[role="dialog"] button[title="拒绝"]').click()`);
+    await waitFor(window, `!document.body.innerText.includes('覆盖源工作簿，修改 2 个单元格')`, '关闭 Excel 预览');
+    window.webContents.send('ask:request', {
+      requestId: 'question-p0-ui-smoke',
+      question: '工作区里有两份报价单，改哪一份？',
+      why: '税率改动会写回文件，改错文件无法自动撤销',
+      options: [
+        { id: 'v1', label: '报价单-v1.xlsx', hint: '上周发出的版本' },
+        { id: 'v2', label: '报价单-v2.xlsx', hint: '今天修改中的版本' },
+      ],
+      allowFreeText: true,
+    });
+    await waitFor(
+      window,
+      `document.body.innerText.includes('改哪一份？') && document.body.innerText.includes('报价单-v2.xlsx') && document.body.innerText.includes('其他（自己填）') && document.body.innerText.includes('稍后再答')`,
+      'ask_user 提问弹窗',
+    );
+    setStage('capture question dialog');
+    const questionScreenshot = await capture(window, screenshotDirectory, 'question-dialog.png');
+    await window.webContents.executeJavaScript(`[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes('报价单-v2.xlsx')).click()`);
+    await waitFor(window, `!document.body.innerText.includes('改哪一份？')`, '回答后关闭提问弹窗');
+    assert(
+      askResponses.length === 1 && askResponses[0].requestId === 'question-p0-ui-smoke' && askResponses[0].optionId === 'v2',
+      `ask:respond 未收到选项回答: ${JSON.stringify(askResponses)}`,
+    );
+
     assert(
       rendererConsoleErrors.length === 0,
       `渲染进程输出了 ${rendererConsoleErrors.length} 条 console 错误 / 告警：\n${rendererConsoleErrors.join('\n')}`,
@@ -318,7 +348,7 @@ app.whenReady().then(async () => {
       ok: true,
       rendererDomVerified: true,
       rendererConsoleClean: true,
-      screenshots: [historyScreenshot, detailScreenshot, previewScreenshot, xlsxPreviewScreenshot],
+      screenshots: [historyScreenshot, detailScreenshot, previewScreenshot, xlsxPreviewScreenshot, questionScreenshot],
       ...result,
     }, null, 2));
   } catch (error) {

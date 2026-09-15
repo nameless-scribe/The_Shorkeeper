@@ -326,6 +326,8 @@ class CallSessionManager {
         persistMessages: persistTranscript,
         kind: 'voice',
         triggerRef: callId,
+        // 通话里模型直接用语音提问，不弹 ask_user 窗口（P6 §9.2）
+        excludeTools: ['ask_user'],
       })) {
         if (controller.signal.aborted) break;
 
