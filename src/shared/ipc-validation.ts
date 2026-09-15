@@ -16,7 +16,7 @@ export const MAX_AGENT_ATTACHMENTS = 100;
 export const MAX_WORKSPACE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 /** 录音附件单独上限，与转写服务硬上限一致 */
 export const MAX_WORKSPACE_AUDIO_ATTACHMENT_BYTES = 100 * 1024 * 1024;
-const WORKSPACE_ATTACHMENT_KINDS = ['text', 'office', 'audio'] as const;
+const WORKSPACE_ATTACHMENT_KINDS = ['text', 'office', 'audio', 'image'] as const;
 
 export function requireRecord(value: unknown, label = '参数'): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

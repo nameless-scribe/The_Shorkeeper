@@ -13,6 +13,7 @@ export type SettingsTab =
   | 'userTodos'
   | 'runs'
   | 'documents'
+  | 'datasources'
   | 'skills'
   | 'mcp'
   | 'model'
@@ -60,6 +61,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: '数据与任务',
     items: [
       { id: 'documents', label: '泰提斯终端', icon: '🛰' },
+      { id: 'datasources', label: '数据源', icon: '🗄' },
       { id: 'userTodos', label: '用户待办', icon: '✅' },
       { id: 'tasks', label: '定时任务', icon: '⏰' },
       { id: 'runs', label: '运行记录', icon: '📋' },
@@ -161,6 +163,7 @@ export const SETTINGS_TAB_TITLES: Record<SettingsTab, { title: string; subtitle:
   runs: { title: '运行记录', subtitle: '步骤、审批、产物与中断恢复', icon: '📋' },
   userTodos: { title: '用户待办', subtitle: '进度跟踪与 Excel 同步', icon: '✅' },
   documents: { title: '泰提斯终端', subtitle: '知识库导入与管理', icon: '🛰' },
+  datasources: { title: '数据源', subtitle: '只读连接业务数据库、数据字典与指标', icon: '🗄' },
   skills: { title: '技能', subtitle: 'Agent Skills 包', icon: '✨' },
   mcp: { title: 'MCP', subtitle: 'Model Context Protocol 服务器', icon: '🔌' },
   model: { title: 'API 设置', subtitle: '模型协议与接入配置', icon: '🔑' },

@@ -60,6 +60,8 @@ import { registerPluginsIpc } from './ipc/plugins';
 import { registerWebSearchIpc } from './ipc/web-search';
 import { registerVoiceIpc, shutdownVoiceRuntime } from './ipc/voice';
 import { registerAsrIpc } from './ipc/asr';
+import { registerDataSourcesIpc, shutdownDataSourceConnectors } from './ipc/datasources';
+import { registerVisionIpc } from './ipc/vision';
 import { registerPermissionIpc, requestPermissionConfirm } from './ipc/permission';
 import { cancelAllPendingQuestions, registerAskIpc, requestUserAnswerViaWindow } from './ipc/ask';
 import { setUserQuestionResponder } from '../src/agent/user-questions';
@@ -137,6 +139,12 @@ async function settleRuntimeForShutdown(): Promise<void> {
     console.error('[shutdown] 主动服务停止失败:', error instanceof Error ? error.message : error);
   }
   // 正在打印的隐藏窗口随之销毁，对应的 gen_pdf 调用会以错误结束，不会留下半成品
+  // P7：先关数据源连接池，避免退出时还有查询挂在远端
+  try {
+    await shutdownDataSourceConnectors();
+  } catch (error) {
+    console.error('[shutdown] 数据源连接池关闭失败:', error instanceof Error ? error.message : error);
+  }
   const printing = shutdownPdfPrintRuntime();
   if (printing) console.warn(`[shutdown] 中止 ${printing} 个进行中的 PDF 渲染`);
   const result = await coordinateRuntimeShutdown({
@@ -246,6 +254,8 @@ app.whenReady().then(async () => {
     registerWebSearchIpc();
     registerVoiceIpc();
     registerAsrIpc();
+    registerDataSourcesIpc();
+    registerVisionIpc();
     registerPermissionIpc();
     setPermissionConfirmer(requestPermissionConfirm);
     // ask_user 弹窗（P6.1）：与权限确认同一注入方式

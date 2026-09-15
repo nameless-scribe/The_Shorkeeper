@@ -43,3 +43,11 @@ Thumbs.db
 # 编辑器（可选，按需取消注释）
 # .vscode/
 .idea/
+
+# P8 真实样本图不入库
+docs/p8-samples/*.jpg
+docs/p8-samples/*.jpeg
+docs/p8-samples/*.png
+docs/p8-samples/*.webp
+docs/p8-samples/*.bmp
+docs/p8-samples/*.gif

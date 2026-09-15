@@ -157,6 +157,10 @@ export function formatAttachmentsForMessage(
       // 措辞避开技能触发词——附件本身不该替用户决定要不要出纪要。
       return `- ${a.originalName} → 工作区: ${a.relativePath}（${a.size} 字节，这是录音文件，需要文字内容时用 transcribe_audio 生成文稿，不要用 read_file 读取）`;
     }
+    if (kind === 'image') {
+      // 图片同理：只给路径，不自动描述（P8 §3.3），措辞不含技能触发词
+      return `- ${a.originalName} → 工作区: ${a.relativePath}（${a.size} 字节，这是图片，需要内容时用 look_at_image 提问，不要用 read_file 读取）`;
+    }
     const tool = workspaceFileToolHintLabel(workspaceFileToolHint(ext));
     return `- ${a.originalName} → 工作区: ${a.relativePath}（${a.size} 字节，建议 ${tool}）`;
   });

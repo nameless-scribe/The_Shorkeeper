@@ -86,6 +86,18 @@ import type {
   ContextSourceDetailInfo,
   UserQuestionRequestPayload,
   UserQuestionResponse,
+  ColumnManual,
+  CreateDataSourceInput,
+  DataDictionary,
+  DataSourceInfo,
+  DataSourceTestResult,
+  EnumProposalResult,
+  MetricInfo,
+  SchemaRefreshResult,
+  TableManual,
+  UpdateDataSourcePatch,
+  VisionSettingsInfo,
+  VisionSettingsPatch,
 } from '../src/shared/types';
 import type { RunTelemetrySnapshot } from '../src/agent/run-observability';
 
@@ -442,6 +454,32 @@ const shorekeeperApi = {
     getSettings: (): Promise<WebSearchSettingsInfo> => ipcRenderer.invoke('web-search:getSettings'),
     saveSettings: (patch: WebSearchSettingsPatch): Promise<WebSearchSettingsInfo> =>
       ipcRenderer.invoke('web-search:saveSettings', patch),
+  },
+  datasources: {
+    list: (): Promise<DataSourceInfo[]> => ipcRenderer.invoke('datasources:list'),
+    create: (input: CreateDataSourceInput): Promise<DataSourceInfo> => ipcRenderer.invoke('datasources:create', input),
+    update: (id: string, patch: UpdateDataSourcePatch): Promise<DataSourceInfo | null> =>
+      ipcRenderer.invoke('datasources:update', id, patch),
+    delete: (id: string): Promise<boolean> => ipcRenderer.invoke('datasources:delete', id),
+    test: (id: string): Promise<DataSourceTestResult> => ipcRenderer.invoke('datasources:test', id),
+    refreshSchema: (id: string): Promise<SchemaRefreshResult> => ipcRenderer.invoke('datasources:refreshSchema', id),
+    getDictionary: (id: string): Promise<DataDictionary> => ipcRenderer.invoke('datasources:getDictionary', id),
+    updateTableManual: (id: string, table: string, patch: Partial<TableManual>): Promise<DataDictionary> =>
+      ipcRenderer.invoke('datasources:updateTableManual', id, table, patch),
+    updateColumnManual: (id: string, table: string, column: string, patch: Partial<ColumnManual>): Promise<DataDictionary> =>
+      ipcRenderer.invoke('datasources:updateColumnManual', id, table, column, patch),
+    listMetrics: (id: string): Promise<MetricInfo[]> => ipcRenderer.invoke('datasources:listMetrics', id),
+    upsertMetric: (
+      id: string,
+      input: { name: string; sqlFragment: string; grain?: string; notes?: string },
+    ): Promise<MetricInfo> => ipcRenderer.invoke('datasources:upsertMetric', id, input),
+    deleteMetric: (id: string, name: string): Promise<boolean> => ipcRenderer.invoke('datasources:deleteMetric', id, name),
+    proposeEnumMeanings: (id: string, table: string): Promise<EnumProposalResult> =>
+      ipcRenderer.invoke('datasources:proposeEnumMeanings', id, table),
+  },
+  vision: {
+    getSettings: (): Promise<VisionSettingsInfo> => ipcRenderer.invoke('vision:getSettings'),
+    saveSettings: (patch: VisionSettingsPatch): Promise<VisionSettingsInfo> => ipcRenderer.invoke('vision:saveSettings', patch),
   },
   asr: {
     getSettings: (): Promise<AsrSettingsInfo> => ipcRenderer.invoke('asr:getSettings'),

@@ -132,6 +132,7 @@ function PreviewTextPane({
 
 function ToolPreviewPanel({ preview }: { preview: ToolPreviewInfo }) {
   const visibleChanges = preview.changes?.slice(0, 100) ?? [];
+  const [showTechnical, setShowTechnical] = useState(false);
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-keeper-cyan/25 bg-keeper-cyan/8 px-3 py-2.5">
@@ -156,6 +157,23 @@ function ToolPreviewPanel({ preview }: { preview: ToolPreviewInfo }) {
             content={preview.after ?? ''}
             truncated={preview.afterTruncated}
           />
+        </div>
+      )}
+
+      {preview.kind === 'query-plan' && preview.technicalDetails && (
+        <div className="rounded-xl border border-keeper-ice/10 bg-black/20">
+          <button
+            type="button"
+            onClick={() => setShowTechnical((value) => !value)}
+            className="keeper-dialog-btn w-full px-3 py-2 text-left text-[11px] text-keeper-ice/55 hover:text-keeper-cyan"
+          >
+            {showTechnical ? '收起执行详情' : '查看执行详情（SQL）'}
+          </button>
+          {showTechnical && (
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all border-t border-keeper-ice/10 p-3 font-mono text-[11px] leading-relaxed text-keeper-ice/70">
+              {preview.technicalDetails}
+            </pre>
+          )}
         </div>
       )}
 

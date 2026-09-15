@@ -26,7 +26,7 @@ describe('compileQueryPlan', () => {
     );
     expect(compiled.params).toEqual(['2026-08-01', '2026-09-01', '2', '3']);
     expect(compiled.columns).toEqual([
-      { name: 'name', kind: 'grain' },
+      { name: 'name', kind: 'grain', table: 'customers', column: 'name' },
       { name: '销售额', kind: 'metric' },
       { name: '订单数', kind: 'metric' },
     ]);

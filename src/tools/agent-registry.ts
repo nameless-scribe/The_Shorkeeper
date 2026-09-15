@@ -31,6 +31,9 @@ const CORE_TOOL_NAMES = new Set([
   'search_worldbook',
   'search_knowledge',
   'ask_user',
+  // P7：即使技能未被关键词激活，模型也能发现有数据源可查（计划 §11.5）
+  'list_data_sources',
+  'describe_data_source',
 ]);
 
 function buildBaseCacheKey(mcpTools: { name: string }[], pluginsKey: string): string {

@@ -26,6 +26,8 @@ const isExternal = (id: string) =>
   id === '@napi-rs/canvas' ||
   id.startsWith('@napi-rs/canvas') ||
   id === 'pdf-lib' ||
+  id === 'mysql2' ||
+  id.startsWith('mysql2/') ||
   id.startsWith('@modelcontextprotocol/') ||
   id.startsWith('node:') ||
   id.startsWith('sql.js/');

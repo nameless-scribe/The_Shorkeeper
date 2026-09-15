@@ -12,9 +12,11 @@ describe('product skill contracts', () => {
 
     expect(productSkills.map((skill) => skill.id).sort()).toEqual([
       'daily-steward',
+      'data-query',
       'doc-compose',
       'doc-to-markdown',
       'excel',
+      'image-qa',
       'meeting-notes',
       'progress-tracker',
       'task-execution',

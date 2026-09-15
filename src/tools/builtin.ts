@@ -32,6 +32,16 @@ import {
   listScheduledTasksTool,
 } from './schedule/schedule-tools';
 import { transcribeAudioTool } from './voice/transcribe-audio';
+import { describeDataSourceTool, listDataSourcesTool } from './data/data-source-tools';
+import { proposeQueryPlanTool } from './data/propose-query-plan';
+import { runSqlQueryTool } from './data/run-sql-query';
+import { updateDataDictionaryTool } from './data/update-data-dictionary';
+import { saveNamedQueryTool } from './data/save-named-query';
+import { findValuesTool } from './data/find-values';
+import { exportQueryResultTool } from './data/export-query-result';
+import { runNamedQueryTool } from './data/run-named-query';
+import { scheduleNamedQueryTool } from './data/schedule-named-query';
+import { lookAtImageTool } from './vision/look-at-image';
 import { updateAgentPlanTool } from './plan/plan-tools';
 import { askUserTool } from './interaction/ask-user';
 import {
@@ -85,6 +95,17 @@ export function createBuiltinRegistry(): ToolRegistry {
   registry.register(buildDailyBriefTool);
   registry.register(buildEveningReviewTool);
   registry.register(transcribeAudioTool);
+  registry.register(listDataSourcesTool);
+  registry.register(describeDataSourceTool);
+  registry.register(proposeQueryPlanTool);
+  registry.register(runSqlQueryTool);
+  registry.register(updateDataDictionaryTool);
+  registry.register(saveNamedQueryTool);
+  registry.register(findValuesTool);
+  registry.register(exportQueryResultTool);
+  registry.register(runNamedQueryTool);
+  registry.register(scheduleNamedQueryTool);
+  registry.register(lookAtImageTool);
   return registry;
 }
 

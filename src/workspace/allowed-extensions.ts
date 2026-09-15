@@ -34,6 +34,13 @@ export const WORKSPACE_OFFICE_EXTENSIONS = ['.doc', '.docx', '.pdf', '.xls', '.x
  */
 export const WORKSPACE_AUDIO_EXTENSIONS = new Set<string>(AUDIO_EXTENSIONS);
 
+/**
+ * 工作区上传：图片（P8.1）。不并入 WORKSPACE_IMPORT_EXTENSIONS：图片不是可读内容，不预解析，
+ * 需要内容时用 look_at_image 提问。
+ */
+export const WORKSPACE_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'] as const;
+export const WORKSPACE_IMAGE_EXTENSION_SET = new Set<string>(WORKSPACE_IMAGE_EXTENSIONS);
+
 export const WORKSPACE_IMPORT_EXTENSIONS = new Set<string>([
   ...WORKSPACE_TEXT_EXTENSIONS,
   ...WORKSPACE_OFFICE_EXTENSIONS,
@@ -43,18 +50,19 @@ export const MAX_WORKSPACE_IMPORT_BYTES = 20 * 1024 * 1024;
 /** 录音单独设上限，与转写服务的硬上限一致，不受 20MB 文档上限约束 */
 export const MAX_WORKSPACE_AUDIO_IMPORT_BYTES = MAX_AUDIO_BYTES;
 
-export type WorkspaceAttachmentKind = 'text' | 'office' | 'audio';
+export type WorkspaceAttachmentKind = 'text' | 'office' | 'audio' | 'image';
 
 export function classifyWorkspaceFile(ext: string): WorkspaceAttachmentKind {
   const normalized = ext.toLowerCase();
   if (WORKSPACE_AUDIO_EXTENSIONS.has(normalized)) return 'audio';
+  if (WORKSPACE_IMAGE_EXTENSION_SET.has(normalized)) return 'image';
   if ((WORKSPACE_OFFICE_EXTENSIONS as readonly string[]).includes(normalized)) return 'office';
   return 'text';
 }
 
 export function isWorkspaceImportableExtension(ext: string): boolean {
   const normalized = ext.toLowerCase();
-  return WORKSPACE_IMPORT_EXTENSIONS.has(normalized) || WORKSPACE_AUDIO_EXTENSIONS.has(normalized);
+  return WORKSPACE_IMPORT_EXTENSIONS.has(normalized) || WORKSPACE_AUDIO_EXTENSIONS.has(normalized) || WORKSPACE_IMAGE_EXTENSION_SET.has(normalized);
 }
 
 export function workspaceImportLimitBytes(kind: WorkspaceAttachmentKind): number {
@@ -83,14 +91,19 @@ export const WORKSPACE_PICK_DIALOG_FILTERS: WorkspaceDialogFilter[] = [
     name: '录音',
     extensions: AUDIO_EXTENSIONS.map(stripExtensionDot),
   },
+  {
+    name: '图片',
+    extensions: WORKSPACE_IMAGE_EXTENSIONS.map(stripExtensionDot),
+  },
   { name: '所有文件', extensions: ['*'] },
 ];
 
-export type WorkspaceFileToolHint = 'read_file' | 'read_xlsx' | 'convert_to_markdown' | 'transcribe_audio';
+export type WorkspaceFileToolHint = 'read_file' | 'read_xlsx' | 'convert_to_markdown' | 'transcribe_audio' | 'look_at_image';
 
 export function workspaceFileToolHint(ext: string): WorkspaceFileToolHint {
   const normalized = ext.toLowerCase();
   if (WORKSPACE_AUDIO_EXTENSIONS.has(normalized)) return 'transcribe_audio';
+  if (WORKSPACE_IMAGE_EXTENSION_SET.has(normalized)) return 'look_at_image';
   if (normalized === '.xlsx' || normalized === '.xls') return 'read_xlsx';
   if (normalized === '.doc' || normalized === '.docx' || normalized === '.pdf') return 'convert_to_markdown';
   return 'read_file';
@@ -104,6 +117,8 @@ export function workspaceFileToolHintLabel(hint: WorkspaceFileToolHint): string 
       return 'convert_to_markdown';
     case 'transcribe_audio':
       return 'transcribe_audio';
+    case 'look_at_image':
+      return 'look_at_image';
     default:
       return 'read_file';
   }

@@ -82,8 +82,12 @@ export function renderQueryPlan(plan: QueryPlan, dictionary: DataDictionary): Pl
   const metricNames = plan.metrics.map((metric) => metric.name);
   if (metricNames.length) lines.push(`统计：${metricNames.join('、')}`);
 
+  const listMode = Boolean(plan.select?.length) && !plan.rawSql;
+  const selectNames = (plan.select ?? []).map(nameOfColumn);
+  if (listMode) lines.push(`列出：${selectNames.join('、')}`);
+
   const grainNames = plan.grain.map(nameOfColumn);
-  lines.push(grainNames.length ? `按${grainNames.join('、')}分别统计` : '整体汇总，不拆分');
+  if (!listMode) lines.push(grainNames.length ? `按${grainNames.join('、')}分别统计` : '整体汇总，不拆分');
 
   const filterTexts = plan.filters.map((filter) => {
     const { table, column } = splitQualifiedColumn(filter.column);
@@ -94,17 +98,24 @@ export function renderQueryPlan(plan: QueryPlan, dictionary: DataDictionary): Pl
 
   if (plan.compare) lines.push(plan.compare.kind === 'yoy' ? '并与去年同期对比' : '并与上一个月对比');
 
-  const order = plan.orderBy
-    ? `按${plan.orderBy.metric}${plan.orderBy.direction === 'desc' ? '从高到低' : '从低到高'}`
-    : metricNames.length ? `按${metricNames[0]}从高到低` : '';
+  const timeColumnName = plan.timeRange ? columnBusinessName(dictionary, plan.fact.table, plan.timeRange.column) : undefined;
+  const orderName = plan.orderBy ? (listMode ? nameOfColumn(plan.orderBy.metric) : plan.orderBy.metric) : null;
+  const order = plan.orderBy && orderName
+    ? `按${orderName}${plan.orderBy.direction === 'desc' ? '从高到低' : '从低到高'}`
+    : listMode
+      ? (timeColumnName ? `按${timeColumnName}从新到旧` : '')
+      : metricNames.length ? `按${metricNames[0]}从高到低` : '';
   lines.push(`${order ? `${order}，` : ''}最多取 ${plan.limit} 条`);
 
   const questions = plan.unresolved.map((item) => item.question);
 
-  const summaryParts = [
-    `我准备这样统计：${timeText ?? '不限时间'}${plan.timeRange && columnBusinessName(dictionary, plan.fact.table, plan.timeRange.column) ? `（按${columnBusinessName(dictionary, plan.fact.table, plan.timeRange.column)}）` : ''}`,
-    grainNames.length ? `每个${grainNames.join('、')}的${metricNames.join('和') || subject}` : `${subject}的${metricNames.join('和')}整体汇总`,
-  ];
+  const timeClause = `${timeText ?? '不限时间'}${timeColumnName ? `（按${timeColumnName}）` : ''}`;
+  const summaryParts = listMode
+    ? [`我准备这样列：${timeClause}`, `${subject}清单，每条给出${selectNames.join('、')}`]
+    : [
+        `我准备这样统计：${timeClause}`,
+        grainNames.length ? `每个${grainNames.join('、')}的${metricNames.join('和') || subject}` : `${subject}的${metricNames.join('和')}整体汇总`,
+      ];
   let summary = `${summaryParts.join('，')}`;
   if (filterTexts.length) summary += `，只算${filterTexts.join('、')}`;
   if (plan.compare) summary += plan.compare.kind === 'yoy' ? '，并和去年同期比' : '，并和上个月比';

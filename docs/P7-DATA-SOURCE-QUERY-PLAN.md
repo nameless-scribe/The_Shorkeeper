@@ -413,7 +413,9 @@ P7.0 与 P7.1 可在 P5 / P6 进行中并行。
 
 未答（不阻塞 P7.1）：
 
-- **表数量级与关注表**：决定 3.1 的按需取表是否第一版就要 RAG 检索。P7.1 连上真实库看 `information_schema` 数量再定。
+- **表数量级与关注表**：用户 2026-09-15 答"暂时无法确定"。因此 P7.2 不按数量二选一，而是两条路都做、按实际数量自动切换：
+  关注表 ≤ 60 张时 `describe_data_source` 整份注入表清单；超过时只注入前 60 张并用现有向量检索按问题挑表（3.1 的注入策略原样落地）。
+  刷新结构后设置页会显示表数，届时自然知道走的是哪条路。
 - **上一次实现的失败点**：用户回忆一下具体是第 2 节的哪几条，本计划据此调整优先级。
 
 ---
@@ -517,3 +519,138 @@ interface QueryPlan {
 
 **待用户**：把 20 个真实问题填进 `docs/p7-eval/questions.json`（格式见 `docs/p7-eval/README.md`，至少 5 个笼统问题标 `mustAsk`）；
 回答 §10 的网络位置、SSL、时区三问，P7.1 连接层的默认值据此定。
+
+### 12.2 P7.1 MySQL 连接器、设置页与字典编辑器（2026-09-15）
+
+按 §11.3 走，`mysql2@3.24.4` 提升为直接依赖（vite externals、打包白名单含它的 7 个间接依赖）。三处与计划不同或计划没写的：
+
+- **取值表的候选列多了 tinyint / smallint**。§11.3 只写了 `enum` 与 `char/varchar(≤ 64)`，但 3.13.4 要模型提议枚举含义的
+  正是 `status tinyint` 这类状态码列，没有取值表就无从提议。整数列的 `GROUP BY` 同样受 2 秒超时与 500 万行上限约束。
+- **写权限探测只看 `SHOW GRANTS`，不做任何写尝试**（哪怕在只读事务里）。出现 `ALL PRIVILEGES` / `INSERT` / `UPDATE` /
+  `DELETE` / `DROP` 等任一写类权限即判"可写"并在设置页标出；账号通过角色授权时权限看不出来，标为"探测不了"并提醒。
+  `IDENTIFIED BY` 之后的内容一律不进证据串。
+- **会话初始化在连接第一次被取出时做**，而不是 `pool.on('connection')`：promise 池的事件给的是回调式连接，
+  没法在上面等 `SET` 完成再放行。`fresh` 标记保证每条物理连接只初始化一次。`max_execution_time` 不存在（MariaDB）时忽略，
+  靠客户端超时与断连兜底。
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 纯函数 | `src/datasources/mysql-helpers.ts` | 私网判断（回环 / RFC1918 / 链路本地 / 不带点的机器名）、SSL 提醒文案、标识符反引号、`SHOW GRANTS` 解析、时区探测解释（`SYSTEM` 时按系统时区说）、取值表候选、`information_schema` 三张表 → 骨架、样例值抽取（二进制与对象不进）、驱动错误码 → 人话 |
+| 驱动 | `src/datasources/mysql-driver.ts` | `MysqlDriver` 接口 + mysql2 实现：`dateStrings: true`（时间按服务器文本原样返回，不经 JS Date 换时区）、`bigNumberStrings`、连接池 3 条、`connectTimeout` 10 秒；流式查询按行回调，回调返回 false 或 signal 触发即 `destroy()` |
+| 连接器 | `src/datasources/mysql-connector.ts` | `ping`（版本、表数、时区探测）、`probeWritable`、`fetchSchema`（含 COMMENT；样例值每表 `SELECT * LIMIT 20` 一次、2 秒超时、失败计数；关闭开关则不读任何行）、`fetchValues`（`MAX_EXECUTION_TIME(2000)` 提示 + `LIMIT 201`，201 即高基数）、`latestTimestamps`（关注表时间列的 MAX，§10 时区核对用）、`explain`、`query`（maxRows 缺省 500 封顶 5000，超时默认 30 秒，超限断连并标 `truncated`） |
+| 缓存 | `src/datasources/connector-registry.ts` | 每数据源一个连接器，改配置 / 删除时关掉，退出时 `shutdownDataSourceConnectors` 最多等 2 秒再关数据库 |
+| 字典存取 | `src/datasources/dictionary-store.ts`、仓储 `replaceDictionaryEntries` | 表条目存 `TableSkeleton` + `TableManual`，列条目存 `ColumnSkeleton` + `ColumnManual`；刷新走 `mergeSkeleton` 后整份写回，人工层保留、消失的表列连人工层一起删；取值表挂在列骨架上随刷新替换，列不再是枚举型即清掉 |
+| 字典自举 | `src/datasources/enum-proposal.ts` | 候选：有取值表（2–30 个值）且没登记枚举含义的列；提示词给列名、类型、注释、业务名、取值；解析宽容（去代码块、只留真实取值、`?` 丢弃、未知列忽略）；45 秒超时；只产出提议，写入由用户逐列点"采用" |
+| IPC | `electron/ipc/datasources.ts` | 增删改查、`test`（ping + 写权限 + 关注表最新时间值 + SSL 提醒，结果写 `last_ok_at` / `last_error` / `writable_account`）、`refreshSchema`（关注表优先抓样例与取值；没勾关注表时取值表只建前 60 张）、字典表 / 列人工层、指标增删（片段拒绝分号、注释与写关键字）、枚举提议。所有参数经 `requireString` 等校验，标识符按正则 |
+| 设置页 | `src/renderer/settings/DataSourcesPage.tsx`、`datasources/DataSourceForm.tsx`、`DictionaryEditor.tsx`、`MetricsEditor.tsx`、`datasource-view.ts` | 侧栏"数据与任务 → 数据源"。表单：密码永不回填、公网主机未开 SSL 实时提醒、时区留空跟随服务器；卡片：状态徽章（未测试 / 已连通 / 账号可写 / 连接失败）、测试连接结果逐行展示时区探测与最新时间值；字典编辑器：左列搜表，右侧业务名 / 说明 / 时间基准列（日期类型排前）/ 关注 / 真源 / 合法连接（外键自动带入，可手动登记）/ 每列业务名、说明、取值预览、枚举含义文本（`1=待付款` 每行一条）、"让模型提议枚举含义"逐列采用；指标列表增删改 |
+| 探针 | `scripts/p7-mysql-probe.ts`（`pnpm p7:probe`） | 走生产同一条码路对真实库跑 ping / 权限 / 骨架 / 取值 / 流式查询；只打印数量，不打印行数据与密码 |
+| 测试 | `mysql-helpers.test.ts`、`mysql-connector.test.ts`（假驱动）、`dictionary-store.test.ts`（sql.js）、`enum-proposal.test.ts`、`datasource-view.test.ts` | 会话初始化只做一次且默认不 SET time_zone；样例关闭时不读行；取值表 201 → null；查询超限断连；已取消的 signal 直接拒绝；刷新保留人工层并删掉消失的列；枚举提议解析；页面文案。`pnpm test:p7` 15 个文件 126 用例 |
+
+**真实验证**：本机有 MySQL 8.0 服务，用不存在的账号跑 `pnpm p7:probe`，握手 106 ms 后返回 `ER_ACCESS_DENIED_ERROR`，
+被翻译成"用户名或密码不对……"——连接、超时与错误翻译这条路是通的。**用真实账号连用户的库、抓骨架、确认关注表字典这三步要用户来做**
+（见下）。
+
+**停线条件核对**（§9）：任何路径都没有写库（连接层没有写接口；`SET SESSION TRANSACTION READ ONLY` 再兜一层）；
+密码只在 `getDataSourceCredentials → connectionConfigFrom` 经手，列表接口与日志里没有；样例值与取值表只进 `data_dictionary`，
+探针脚本与 IPC 日志只打印数量；查询有上限、有超时、可取消。
+
+**明确不做**：开发者视图开关（对话里的结果卡片 P7.2 才有，开关随它一起做）；`options.focusTables` 字段保留但不用，关注表以字典里每张表的 `focused` 为准。
+
+**待用户**：
+1. 设置 → 数据源：添加真实库（建议只读账号），点"测试连接"，看时区探测与"账号可写"提示是否符合预期；
+2. 点"刷新结构"，看表数与耗时（大库先只勾关注表再刷新一次，取值表才会建全）；
+3. 在字典编辑器里把关注表的业务名、时间基准列、枚举含义过一遍——有 COMMENT 与模型提议的话目标十分钟；
+4. 顺便回答 §10 未答项：库里表的数量级（决定 P7.2 是否第一版就上 RAG 挑表）。
+
+### 12.3 P7.2 方案、SQL 与修复循环（2026-09-15，代码完成，基线待真实库）
+
+用户暂时连不上真实库，先把代码做完并用假连接层测好；评测集基线（`pnpm test:p7:eval`）等用户在设置里连上库、刷新结构后再跑。
+与计划不同或计划没写的四处：
+
+- **加了"清单模式"**（`QueryPlan.select`）。评测集 10 个问题里有 5 个是"有哪些项目没打尾款"、"员工今天都有什么任务"这类列行不聚合的问题，
+  §11.1 的方案只有聚合形状，这些问题会全部掉进逃生口，逃生口比例必然超过三成的停线条件。清单模式：`select` 列 `表.列`、
+  不带指标与分组，编译成 `SELECT … FROM 事实表 LEFT JOIN 维度 WHERE … ORDER BY 时间列 DESC LIMIT n`；自检是同过滤的总行数与日期覆盖。
+- **值定位只做字典内匹配，LIKE 探测推到 P7.3**。`propose_query_plan` 按 §3.9 是"不发请求"的，3.13.2 的高基数列 LIKE 探测要连库，
+  两者冲突时以"不发请求"为准：精确命中 → 枚举含义反查（"已付款"→ 2）→ 二元组相似度唯一命中（"华东区"→"华东"，回复里注明）→
+  否则变成一条带候选选项的"范围过滤"追问。没有取值表的列原样保留。
+- **大库挑表第一版用关键词二元组打分，不用向量检索**。§3.1 说"用现有 RAG 检索按问题挑表"，但字典条目还没进向量库（P7.3 才做命名查询的向量），
+  先用表名、业务名、说明、列注释的二元组重叠打分，命中不足时用关注表补齐；P7.3 接向量后再换。
+- **修复循环由模型驱动、工具计数**。工具拿到数据库报错后返回"数据库拒绝了这个查询（第 N 次）+ 原文"，模型带 `attempt` 改写重试；
+  第 3 次仍失败返回给用户的翻译文案并明确"不再重试"。EXPLAIN 行数估计取各表 rows 的乘积，超过 200 万先请用户缩小范围。
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 方案 | `query-plan.ts` | `select` 清单模式：与 `grain` / `metrics` 互斥，`orderBy.metric` 在清单模式下是 `表.列` |
+| 编译器 | `plan-compiler.ts` | 清单模式的编译与自检（总行数 / 日期覆盖）；分组列带 `table` / `column`，结果表头能换成业务名；同名列别名 `表_列` |
+| 渲染 | `plan-render.ts` | 清单模式的说法："我准备这样列：9 月（按付款时间），订单清单，每条给出……按付款时间从新到旧" |
+| 值定位 | `src/datasources/value-locator.ts` | 见上；相似度是字符二元组重叠率，≥ 0.6 且比第二名高 0.15 才算唯一命中 |
+| 挑表 | `src/datasources/table-search.ts` | 关注表超过 60 张且给了问题原文时按分数挑 |
+| 执行 | `src/datasources/query-runner.ts` | EXPLAIN → 阈值 → 主查询与自检 `Promise.all` 并行 → `evaluateSelfChecks`：可加指标（SUM / COUNT，非 DISTINCT）的分组合计 vs 整体合计，容差 0.5%，不过就 `check_failed` 不给结果；截断时跳过合计核对；对比周期不核对；清单模式的总行数与日期覆盖只做说明 |
+| 产物 | `src/datasources/csv.ts` | UTF-8 BOM、CRLF、RFC 4180 引号、公式样文本加撇号；路径 `查询/日期/时分秒-摘要.csv` |
+| 工具 | `src/tools/data/` | `list_data_sources`、`describe_data_source`（表清单 + 指标 + 今天 / 本周 / 本月 / 上月的左闭右开日期锚点；给 `table` 时返回列详情）、`propose_query_plan`（补口径、值定位、渲染、试编译；未登记指标与缺业务名作为提醒）、`run_sql_query`（`risk: medium`、幂等、`supportsPreview`、`evidence: artifact`；预览 `kind: 'query-plan'`，摘要是业务语言，SQL 在 `technicalDetails` 折叠；修订号是 sourceId + SQL + 参数的哈希）、`update_data_dictionary`（`LOCAL_UPSERT_CONTRACT`；指标片段拒绝分号 / 注释 / 写关键字；表列须在字典里） |
+| 共用 | `src/tools/data/source-access.ts`、`plan-preparation.ts` | 依赖注入（数据源、字典、连接器、查询记录、当前时间），两个工具对同一方案得到同一份准备结果 |
+| 确认弹窗 | `PermissionDialog.tsx`、`ToolPreviewInfo.technicalDetails` | `query-plan` 预览：摘要与要点直接显示，"查看执行详情（SQL）"默认收起 |
+| 可达性 | `agent-registry.ts` | `list_data_sources`、`describe_data_source` 进 `CORE_TOOL_NAMES` |
+| 技能 | `skills/data-query/SKILL.md` | 五槽位表、必问两项、最多问 2 个、方案确认、修复循环 ≤ 3 次、回复先给答案且不含 SQL / 表名 / 列名、追加条件只改槽位 |
+| 评测 | `scripts/p7-eval.ts`（`pnpm test:p7:eval`） | 无头跑 `runOrchestrator`：权限自动批准、追问按 `answers` 脚本作答（没有就选第一项）；断言 mustAsk / 追问 ≤ 2 / mustNotContain / 无 SQL 关键字 / rowCountBetween；输出通过率、逃生口比例、平均追问次数，报告写临时目录 |
+| 测试 | `list-plan`、`value-locator`、`table-search`、`csv`、`query-runner`、`src/tools/data/__tests__/data-tools.test.ts` | 假连接器与假依赖：预览不落盘且修订号不一致拒绝执行、CSV 表头是业务名、自检不过拦下并记失败、报错第 1 次可修 / 第 3 次不再重试、行数估计超阈值不碰库、清单模式的行数说明、字典写入与拒绝。`pnpm test:p7` 22 个文件 171 用例 |
+
+**停线条件核对**（§9）：非 SELECT 仍然到不了数据库（编译器只产 SELECT，逃生口过校验器，连接层只读事务）；
+校验器没加例外；方案有未确定项时 `run_sql_query` 拒绝执行；单次查询有上限、有超时、可取消；
+非开发者视图下工具给模型的输出不含 SQL（`metadata.sql` 只进运行记录与开发者详情）。
+
+**明确不做**（留给后续阶段）：命名查询保存与相似示例注入（P7.3）；高基数列 LIKE 探测（P7.3）；结果 → Excel / 图表的专用导出（P7.4，现在模型可直接用 `gen_xlsx` / `gen_chart`）；开发者视图开关（随对话里的结果卡片一起做）。
+
+**待用户**：连上真实库并确认关注表字典后跑 `pnpm test:p7:eval`，把通过率、逃生口比例、平均追问次数记进这里作为基线；
+低于一半先补字典与指标，不改代码。
+
+### 12.4 P7.3 学习循环（2026-09-15，代码完成，"通过率高于基线"待真实库）
+
+按 §3.6 的四条规则落地，与计划不同或计划没写的两处：
+
+- **命名查询存的是"模板 + 示例槽位值"**（`plan_json` 里是 `{ version: 1, template, exampleSlots }`）。模板里时间范围是 `{{time_from}}` / `{{time_to}}`，
+  过滤值是 `{{filter_i_j}}`；保存时的字面量单独放在 `exampleSlots`，只用来把示例渲染成人话（"做法示例：我准备这样统计：2026 年 8 月……"），
+  `propose_query_plan` 与技能都不把它当默认来源。`sql` 列存的是编译结果（本来就是 `?` 参数化的），P7.5 重跑时由模板 + 新槽位重新编译，不回放。
+- **高基数列的取值探测做成独立工具 `find_values`**，不塞进 `propose_query_plan`（它按 §3.9 不发请求）。最多 3 列、每列 1 秒、每列 6 个匹配，
+  `LIKE` 的 `%` `_` `\\` 都转义；一个匹配直接用精确值，多个匹配让用户选。
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 纯函数 | `src/datasources/named-queries.ts` | `parameterizePlan` / `instantiateTemplate`（互逆）、`planShapeKey`（去掉字面量、排序、上限后的形状）、`sameSlots`（§3.6 第 4 条：全同才允许跳过确认）、`findSimilarNamedQueries`（有向量按余弦 ≥ 0.80，否则字符二元组 ≥ 0.35，取前 3）、`describeNamedQueryExample`、`matchNamedQuery` |
+| 依赖 | `src/tools/data/source-access.ts` | `listNamedQueries`（带向量）、`saveNamedQuery`、`embedQuestion`（没配嵌入模型或 10 秒内失败返回 null，不影响流程） |
+| 工具 | `save_named_query` | `LOCAL_UPSERT_CONTRACT`；只保存能执行的方案；同名即更新；问题向量化失败也照存并说明"相似检索按关键词" |
+| 工具 | `find_values` | 只读；候选列是指定列或该表没有取值表的文本列 |
+| 注入 | `describe_data_source` | 带 `question` 时附"相似的过往查询"（做法示例，不是答案；槽位按当前问题填；没给时间范围仍要问） |
+| 复用 | `propose_query_plan` | 与某条命名查询形状一致 → 提示"按你上次「X」的方式，换成…"；槽位也全同 → 提示"完全相同，可直接执行" |
+| 技能 | `data-query` 1.1.0 | 示例只给形状；`find_values` 的用法；"七、学会"：确认后才 `save_named_query`，纠正立刻写回字典与记忆 |
+| 测试 | `named-queries.test.ts`、`data-tools.test.ts` | 参数化互逆、形状与槽位判定、向量 / 关键词两路检索与阈值、示例渲染、保存与更新、未就绪拒绝存、示例注入、形状 / 全同提示、取值探测与拒绝。`pnpm test:p7` 23 个文件 179 用例 |
+
+**停线条件核对**（§9）：没有任何路径返回保存的结果（命名查询里没有结果，`query_runs` 也没有）；命名查询以字面量被直接回放的路径不存在
+（复用只经过 `propose_query_plan` 的新方案）；缺时间范围仍会追问（技能与 `describe_data_source` 的示例说明都写死了）。
+
+**明确不做**：命名查询的向量与字典条目进 RAG 向量库（§5 里"作为可检索来源"）——现在是数据库里的 BLOB + JS 余弦，几百条量级够用；`run_named_query` 与定时重跑在 P7.5。
+
+**待用户**：连上真实库后先跑 P7.2 基线，再存两三条命名查询重跑一次 `pnpm test:p7:eval`，通过率必须高于基线（§4 P7.3 出口），两次结果都记进这里。
+
+### 12.5 P7.4 导出与图表（2026-09-15）
+
+- 工具 `export_query_result`（`WORKSPACE_WRITE_CONTRACT`）：输入 `run_sql_query` 落下的 CSV 路径，`format: xlsx | chart`。
+- **Excel**：工作表「结果」按列分型——全是数字（不含前导零的编号）的列写数字、全是 ISO 日期的列写日期（以 UTC 分量构造 `Date`，
+  Excel 没有时区，墙上时间与文本一致，`numFmt yyyy-mm-dd hh:mm:ss`）、其余文本；工作表「来源」两列（项 / 值）：数据源、方案的业务语言摘要、
+  SQL、执行时间、行数。方案与 SQL 从 `query_runs` 按产物路径找回（`getQueryRunByArtifactPath`），找不到就写"未知"。SQL 出现在这里是给核对用的，与 3.11 不冲突。
+- **图表**：复用 `gen_chart`（SVG + PNG），`<desc>` 写 CSV 路径、数据源与执行时间；类目超过 50 个提示"按更粗的粒度重查"，数值列不是数字列拒绝。
+- 固定样本（`export-and-rerun.test.ts`）：数字列不变文本（`007` 保持文本、`120.5` 成数字）、日期列格式、来源页五项、类目超限提示。
+- CSV 读回：`parseCsv`（RFC 4180，BOM）、`classifyCsvColumn`、`isoToExcelDate`。
+
+### 12.6 P7.5 命名查询定时重跑（2026-09-15，代码完成）
+
+- 工具 `run_named_query`：与 `run_sql_query` 同一条执行路径（`executePreparedPlan` 抽成共用：预览 → 确认 → EXPLAIN → 自检并行 → CSV → 查询记录）。
+  **时间范围必填**（`上月 / 本周 / 昨天` 等相对说法或起止日期），不沿用保存时的值（§3.6 第 3 条）；过滤值没给才沿用，并在结果说明里写"过滤值沿用保存时的「已付款、已退款」"。
+  跑完 `named_queries.last_run_at / last_row_count` 更新。产物路径本来就按日期（`查询/YYYY-MM-DD/HHmmss-摘要.csv`）。
+- 工具 `schedule_named_query`：挂到 P3 定时任务（`agent_prompt` 类型），payload 里 `prompt` 让助理到点跑 `run_named_query`，并记 `_shorekeeper_kind: named_query`、`namedQueryId`、`sourceId`、`timeRange`。
+  只接受相对时间范围；同一命名查询 + 同 cron + 同范围不重复创建。
+- **数据源被删时任务停用并提示**：`disableNamedQueryTasksForSource` 在设置页删除数据源时执行，任务 `enabled = 0` 并记 `last_error`"数据源「X」已删除，任务已停用"（P3 的失败事件据此提醒）。
+- 相对时间解析 `resolveTimePreset`（今天 / 昨天 / 本周 / 上周 / 本月 / 上月 / 今年 / 去年 / 最近 7 天 / 最近 30 天），左闭右开。
+- 测试：`export-and-rerun.test.ts`（重跑必须给时间范围、预设解析、覆盖过滤、沿用说明、旧格式拒绝）、`schedule-named-query.test.ts`（真实 sql.js 库：任务创建与幂等、非法参数、删源停用）。`pnpm test:p7` 25 个文件 189 用例。
+
+**待用户**（P7.6 真实使用）：连上库后走一遍"查 → 确认 → 保存命名查询 → 再跑一次上月 → 导出 Excel 看来源页 → 设个每月 1 号的定时"，两周内记录追问次数、方案是否需改、是否走逃生口、自检是否拦下错误。

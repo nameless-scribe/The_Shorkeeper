@@ -74,6 +74,19 @@ DEFAULT_MODEL=qwen-max
 
 ---
 
+## 5.1 视觉模型（看图）
+
+看图不换对话模型，只在你问图片时单独调一次视觉模型（**设置 → 语音 → 看图**）：
+
+- 开关"允许把图片发送到视觉模型"默认关；
+- 模型 ID 默认 `qwen3-vl-plus`（1 元 / 10 元 每百万输入 / 输出 token），便宜档 `qwen3-vl-flash`（0.15 / 1.5），两者接口一致；
+- 接入点与 Key 留空复用第 2 节配置的百炼；对话用 Claude 代理等非 OpenAI 兼容接口时，在这里单独填百炼的 `.../compatible-mode/v1` 与 Key；
+- 图片按 宽 × 高 / 1024 + 2 计 token，一张 2K 图约 3,000 token（不到 1 分钱），贵的是输出，工具已把输出上限设为 1,024（抄文字 4,096）。
+
+`.env` 对应项：`VISION_ENABLED`、`VISION_MODEL`、`VISION_BASE_URL`、`VISION_API_KEY`、`VISION_MAX_PIXELS`。真实调用探针：`pnpm vision:probe <图片>`。
+
+---
+
 ## 6. Claude 对话 + RAG 知识库（双 API）
 
 第三方 Claude 代理（如 Nuoda）通常只提供 `/v1/chat/completions`，**不提供** `/v1/embeddings`。若要用 Claude 做需求设计、同时检索知识库，需**分开配置**：

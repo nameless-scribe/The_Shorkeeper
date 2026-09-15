@@ -8,7 +8,7 @@
  */
 
 import { findJoin, findMetric, type DataDictionary, type DictionaryJoin } from './dictionary';
-import { isSqlIdentifier, splitQualifiedColumn, type QueryPlan } from './query-plan';
+import { isListPlan, isSqlIdentifier, splitQualifiedColumn, type QueryPlan } from './query-plan';
 import { validateReadOnlySql, wrapRawSql } from './sql-validator';
 
 export interface CompiledSql {
@@ -19,8 +19,10 @@ export interface CompiledSql {
 export interface CompiledPlan extends CompiledSql {
   /** 两条便宜的只读查询：整体合计（同过滤、无分组）与实际日期覆盖 */
   selfChecks: Array<{ label: string; sql: string; params: Array<string | number> }>;
-  /** 结果列的顺序与含义 */
-  columns: Array<{ name: string; kind: 'grain' | 'metric' | 'compare' }>;
+  /** 结果列的顺序与含义；field 是清单模式直接列出的列 */
+  columns: Array<{ name: string; kind: 'grain' | 'metric' | 'compare' | 'field'; table?: string; column?: string }>;
+  /** 清单模式：不聚合 */
+  list: boolean;
   /** 走了逃生口：没有自检 */
   raw: boolean;
   warnings: string[];
@@ -178,6 +180,7 @@ export function compileQueryPlan(plan: QueryPlan, dictionary: DataDictionary): C
         selfChecks: [],
         columns: [],
         raw: true,
+        list: false,
         warnings: [...validated.warnings, '这个结果未经自动核对'],
       },
     };
@@ -195,6 +198,7 @@ export function compileQueryPlan(plan: QueryPlan, dictionary: DataDictionary): C
       }
     }
     if (plan.compare && !plan.timeRange) return { ok: false, error: '同比 / 环比需要先给出时间范围' };
+    if (isListPlan(plan)) return compileListPlan(plan, resolved, dictionary);
 
     const params: Array<string | number> = [];
     const ctes: string[] = [];
@@ -216,11 +220,11 @@ export function compileQueryPlan(plan: QueryPlan, dictionary: DataDictionary): C
     const selectCols: string[] = [];
     for (const column of resolved.factGrain) {
       selectCols.push(`${FACT_ALIAS}.${q(column)} AS ${q(column)}`);
-      columns.push({ name: column, kind: 'grain' });
+      columns.push({ name: column, kind: 'grain', table: plan.fact.table, column });
     }
     for (const item of resolved.dimGrain) {
       selectCols.push(`${item.alias}.${q(item.column)} AS ${q(item.column)}`);
-      columns.push({ name: item.column, kind: 'grain' });
+      columns.push({ name: item.column, kind: 'grain', table: item.table, column: item.column });
     }
     for (const metric of plan.metrics) {
       if (plan.compare) {
@@ -284,8 +288,73 @@ export function compileQueryPlan(plan: QueryPlan, dictionary: DataDictionary): C
       });
     }
 
-    return { ok: true, compiled: { sql: checked.sql, params, selfChecks, columns, raw: false, warnings: checked.warnings } };
+    return { ok: true, compiled: { sql: checked.sql, params, selfChecks, columns, raw: false, list: false, warnings: checked.warnings } };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/**
+ * 清单模式（P7.2）：不聚合，`SELECT 列 FROM 事实表 LEFT JOIN 维度 WHERE … ORDER BY … LIMIT n`。
+ * 自检是同过滤的总行数（看有没有被 LIMIT 截掉）与日期覆盖；维度过滤放在同一条 WHERE 里（N:1 连接不放大行数）。
+ */
+function compileListPlan(plan: QueryPlan, resolved: Resolved, dictionary: DataDictionary): CompileResult {
+  const fact = plan.fact.table;
+  const factColumns = new Set(dictionary.tables[fact].auto.columns.map((column) => column.name));
+  const selectCols: string[] = [];
+  const columns: CompiledPlan['columns'] = [];
+  const aliasOf = (table: string): string => {
+    if (table === fact) return FACT_ALIAS;
+    const dim = resolved.dims.find((item) => item.table === table);
+    if (!dim) throw new Error(`列所在的表 ${table} 不在方案里`);
+    return dim.alias;
+  };
+  const used = new Set<string>();
+  for (const item of plan.select ?? []) {
+    const { table, column } = splitQualifiedColumn(item);
+    if (table === fact && !factColumns.has(column)) throw new Error(`事实表 ${fact} 没有列 ${column}`);
+    const alias = aliasOf(table);
+    // 同名列（如两张表都有 name）用 表_列 做别名，避免 CSV 表头重复
+    const label = used.has(column) ? `${table}_${column}` : column;
+    used.add(label);
+    selectCols.push(`${alias}.${q(column)} AS ${q(label)}`);
+    columns.push({ name: label, kind: 'field', table, column });
+  }
+
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (plan.timeRange) {
+    where.push(`${FACT_ALIAS}.${q(plan.timeRange.column)} >= ? AND ${FACT_ALIAS}.${q(plan.timeRange.column)} < ?`);
+    params.push(plan.timeRange.from, plan.timeRange.to);
+  }
+  for (const filter of plan.filters) {
+    const { table, column } = splitQualifiedColumn(filter.column);
+    where.push(filterClause(`${aliasOf(table)}.${q(column)}`, filter.op, filter.values.length));
+    params.push(...filter.values);
+  }
+  const joins = resolved.dims.map(
+    (dim) => `LEFT JOIN ${q(dim.table)} ${dim.alias} ON ${FACT_ALIAS}.${q(dim.join.fromColumn)} = ${dim.alias}.${q(dim.join.toColumn)}`,
+  );
+  const from = `FROM ${q(fact)} ${FACT_ALIAS}${joins.length ? ` ${joins.join(' ')}` : ''}${where.length ? ` WHERE ${where.join(' AND ')}` : ''}`;
+
+  let order = '';
+  if (plan.orderBy) {
+    const { table, column } = splitQualifiedColumn(plan.orderBy.metric);
+    order = ` ORDER BY ${aliasOf(table)}.${q(column)} ${plan.orderBy.direction === 'asc' ? 'ASC' : 'DESC'}`;
+  } else if (plan.timeRange) {
+    order = ` ORDER BY ${FACT_ALIAS}.${q(plan.timeRange.column)} DESC`;
+  }
+
+  const sql = `SELECT ${selectCols.join(', ')} ${from}${order} LIMIT ${plan.limit}`;
+  const checked = validateReadOnlySql(sql, plan.limit);
+  if (!checked.ok) return { ok: false, error: `编译结果未通过校验（编译器缺陷）：${checked.error}` };
+
+  const selfChecks: CompiledPlan['selfChecks'] = [
+    { label: '总行数', sql: `SELECT COUNT(*) AS \`总行数\` ${from} LIMIT 1`, params: [...params] },
+  ];
+  if (plan.timeRange) {
+    const column = `${FACT_ALIAS}.${q(plan.timeRange.column)}`;
+    selfChecks.push({ label: '日期覆盖', sql: `SELECT MIN(${column}) AS \`最早\`, MAX(${column}) AS \`最晚\` ${from} LIMIT 1`, params: [...params] });
+  }
+  return { ok: true, compiled: { sql: checked.sql, params, selfChecks, columns, raw: false, list: true, warnings: checked.warnings } };
 }

@@ -6,6 +6,7 @@ import { SettingsToggle } from './components/SettingsToggle';
 import { SettingsSegmented } from './components/SettingsSegmented';
 import { streamSpeechPlayback } from '../voice/stream-speech-playback';
 import { AsrCredentialsSection } from './AsrCredentialsSection';
+import { VisionSettingsSection } from './VisionSettingsSection';
 
 const PREVIEW_TEXT = '调律者，我在这里。';
 
@@ -443,6 +444,7 @@ export function VoicePage() {
         </section>
 
         <AsrCredentialsSection />
+        <VisionSettingsSection />
       </div>
     </SettingsPageShell>
   );

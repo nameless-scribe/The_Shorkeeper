@@ -6,7 +6,7 @@
 > 用户随手拍的一张截图，都只有路径没有内容。P8 给助理接上眼睛——用百炼的通义千问视觉模型。
 > P6（追问）与 P7（数据源）不依赖本阶段；本阶段依赖 P5.0 已完成的 `.assets/` 抽图。
 
-当前状态（2026-09-15）：**未开工**。本文是开工前的契约，不是验收记录。
+当前状态（2026-09-15）：**P8.0–P8.3 代码完成，真实调用探针与真实使用待用户**（见第 10 节）。
 用户决定（2026-09-15）：**接大模型，先试用千问的视觉模型**，不做本地 OCR 运行时。
 用户已同意（2026-09-15）第 3 节与第 8 节的主张：看图是工具不换对话模型、没问不看、同图同问不重复付费、
 发送前有开关、送去识别的图不压。开工顺序按 `P5-P7-ROADMAP.md`，目前尚未推进到 P8。
@@ -270,3 +270,35 @@ sidecar 落工作区，由现有 artifact 机制记录；请求 ID 与 token 用
 - 模型价格总表：https://help.aliyun.com/zh/model-studio/model-pricing
 - 通过 OpenAI 接口调用千问 VL：https://help.aliyun.com/zh/model-studio/qwen-vl-compatible-with-openai
 - OCR 专用模型：https://help.aliyun.com/zh/model-studio/qwen-vl-ocr
+
+### 10.1 P8.0–P8.3 代码完成，真实探针待用户（2026-09-15）
+
+用户要求"一直推进到结束"，P8 的代码部分用假服务器与现生成的小图测完；§2.5 的四件事要真实调用才能复核，
+探针脚本已就绪，等用户开通 `qwen3-vl-plus` 并把三张样图放进 `docs/p8-samples/` 后跑 `pnpm vision:probe`。
+与计划不同或计划没写的三处：
+
+- **多张图一问只写一份答案，落到每张图的 sidecar 里**（`images` 字段记同批图片）。缓存命中要求图片集合、问题、模式三者都相同，
+  单张图的旧结果不会被多张图的问题误用。
+- **设置放在"设置 → 语音"页底部**（与录音转写凭证并列），而不是插件页：两者都是"外部识别服务 + 凭证 + 开关"。
+- **一次运行内的预算在进程内按 runId 记**（10 次 / 30 张），不落库；超过返回明确错误而不是静默截断。
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 契约 | `src/vision/contract.ts` | 参数校验（1–6 张、必须有问题、三种模式）、token 公式 宽×高/1024+2、超像素上限缩到最长边 3600（不再低）、sidecar 路径（`.vision.md` / `.ocr.md`）与头部 JSON 的写读、三种模式的提示词（读文字：逐字、表格按行、图纸先标题栏、认不清写「?」） |
+| 预处理 | `src/vision/image-prep.ts` | PNG / JPEG / WebP 且像素不超时**原样送**（不重编码）；BMP / GIF 转 PNG；超限等比缩后转 PNG |
+| 客户端 | `src/vision/bailian-vl.ts` | OpenAI 兼容 `chat/completions`，`content[]` 混排文字与 data URL，`enable_thinking: false`、不流式；30 秒超时、取消传播；错误分四类（http / timeout / cancelled / network / malformed）带状态码与请求 ID |
+| 设置 | `src/config/vision.ts`、`electron/ipc/vision.ts`、`VisionSettingsSection.tsx` | 开关默认关；模型 ID 默认 `qwen3-vl-plus`；接入点与 Key 留空复用 API 设置里的百炼配置（对话协议不是 OpenAI 兼容时要求单独填）；Key 加密存、只回传掩码；单张最大像素可调（下限 100 万） |
+| 工具 | `src/tools/vision/look-at-image.ts` | `risk: low`、幂等、`evidence: artifact`；顺序：参数 → sidecar 命中（不调接口）→ 开关与凭证 → 读文件（≤ 20 MB）→ 预处理 → 预算 → 请求 → sidecar；失败按类别映射 `errorCategory`，不留半成品 |
+| 附件 | `allowed-extensions.ts`、`import.ts`、`read-file.ts`、`ipc-validation.ts` | `image` 分类（6 种扩展名，20 MB，不并入文本白名单）；介绍行"这是图片，需要内容时用 look_at_image 提问，不要用 read_file 读取"（不含技能触发词）；对话框"图片"分组；`read_file` 读图片时拒绝并指路。聊天卡片缩略图沿用 P5.3 的内联预览 |
+| 技能 | `skills/image-qa/SKILL.md`、`doc-to-markdown` 1.3.0 | 没问不看、带着问题看、引用文件名、`?` 照实转告、图纸先 `read_text`；扫描 PDF 用户问内容时按页 `look_at_image` |
+| 探针 | `scripts/vision-probe.ts`（`pnpm vision:probe`） | 每张图各调一次，打印尺寸、送出字节、公式估算 vs `prompt_tokens`、请求 ID、回答前 200 字；对 400 / 404 / 413 给出 §2.5 对应的判断提示 |
+| 测试 | `src/vision/__tests__/`、`src/tools/vision/__tests__/`、`src/config/__tests__/vision-settings.test.ts`、`src/workspace/__tests__/image-attachments.test.ts` | 公式与缩放、参数校验、sidecar 往返与匹配、原样送 / BMP 转 PNG / 解码失败、请求体与鉴权头、4xx / 超时 / 取消 / 非 JSON / 空回答 / 网络错误、工具的缓存命中与 refresh、多图 sidecar、开关关闭与未配置不发请求、失败不留 sidecar、预算上限、设置的默认关 / 复用 / 独立 / 半填拒绝、附件分类与介绍行、`read_file` 拒绝图片。`pnpm test:p8` |
+
+**停线条件核对**（§8）：开关关闭时工具在读文件之前就返回，图片不会发出；同图同问同模式第二次不调接口（测试断言请求数不变）；
+缩放下限 3600 写死在契约里；`question` 为空直接拒绝；识别结果只落 sidecar 与工具输出，不写记忆；只有一个供应商；预算超过 10 次报错。
+
+**待用户**（P8.0 出口与 P8.2 / P8.3 出口）：
+1. 百炼控制台开通 `qwen3-vl-plus`；把设备照片、图纸页、截图各一张放进 `docs/p8-samples/`；
+2. `.env` 里已有百炼 Key 与接入点的话直接 `pnpm vision:probe docs/p8-samples/*.jpg docs/p8-samples/*.png`，把请求 ID、token 误差、`enable_thinking` 是否被接受、大图上限记到这里；
+3. 应用里：设置 → 语音 → 看图 打开开关；拖一张照片进聊天问"这是什么"，看回答与缩略图；同一问题再问一次，运行记录里应是 `cached: true`；
+4. 对桌面那份 6 页扫描图纸，转 Markdown 后问"这个件什么材质、图号多少"，人工核对标题栏 5 个字段的准确率，据此决定要不要做 P8.4。

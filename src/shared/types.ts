@@ -25,13 +25,13 @@ export interface ChatMessage {
   content: string;
 }
 
-export type WorkspaceAttachmentKind = 'text' | 'office' | 'audio';
+export type WorkspaceAttachmentKind = 'text' | 'office' | 'audio' | 'image';
 
 export interface WorkspaceAttachment {
   relativePath: string;
   originalName: string;
   size: number;
-  /** 文本 / Office / 录音；缺省按扩展名推断。录音在上下文里只给路径，不读内容 */
+  /** 文本 / Office / 录音 / 图片；缺省按扩展名推断。录音与图片在上下文里只给路径，不读内容 */
   kind?: WorkspaceAttachmentKind;
   /** 工具产物的完成证据：写入后读回计算的内容摘要 */
   sha256?: string;
@@ -885,11 +885,13 @@ export interface ToolPreviewChange {
 
 /** 用户确认前展示的无副作用工具预览；revision 仅用于确认后防止执行过期预览。 */
 export interface ToolPreviewInfo {
-  kind: 'text-diff' | 'cell-changes';
+  kind: 'text-diff' | 'cell-changes' | 'query-plan';
   target: string;
   summary: string;
   revision: string;
   details?: string[];
+  /** query-plan：折叠的 SQL 与参数，默认收起（计划 §3.9） */
+  technicalDetails?: string;
   before?: string;
   after?: string;
   beforeTruncated?: boolean;
@@ -1150,3 +1152,79 @@ export type SpeechPlaybackStep =
 export type VoiceSynthesizeResult =
   | { ok: true; steps: SpeechPlaybackStep[] }
   | { ok: false; error: string };
+
+// ---------------------------------------------------------------------------
+// P7 数据源（设置页与 IPC 共用）
+// ---------------------------------------------------------------------------
+
+export type {
+  DataSourceInfo,
+  DataSourceOptions,
+  CreateDataSourceInput,
+  UpdateDataSourcePatch,
+  MetricInfo,
+} from '../db/repositories/datasources';
+export type { DataDictionary, TableManual, ColumnManual, DictionaryJoin, JoinCardinality } from '../datasources/dictionary';
+export type { TimeZoneProbe } from '../datasources/mysql-helpers';
+export type { EnumProposal, EnumProposalCandidate } from '../datasources/enum-proposal';
+
+export interface DataSourceTestResult {
+  ok: boolean;
+  /** 已翻译成人话的失败原因 */
+  error?: string;
+  serverVersion?: string;
+  tableCount?: number;
+  latencyMs?: number;
+  /** null = 探测不了（如只授予了角色） */
+  writableAccount?: boolean | null;
+  writableEvidence?: string | null;
+  timeZone?: import('../datasources/mysql-helpers').TimeZoneProbe;
+  /** 关注表里时间基准列的最新值，帮用户看库存的是本地时间还是 UTC */
+  latestTimestamps?: Array<{ table: string; column: string; value: string | null }>;
+  warnings: string[];
+}
+
+export interface SchemaRefreshResult {
+  tables: number;
+  columns: number;
+  /** 建了取值表的列数 */
+  valueColumns: number;
+  /** 抓取值时扫过的列数 */
+  scannedColumns: number;
+  skippedSamples: number;
+  durationMs: number;
+}
+
+export interface EnumProposalResult {
+  proposals: import('../datasources/enum-proposal').EnumProposal[];
+  /** 没有候选列时为 0，页面据此提示"先刷新结构" */
+  candidateCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// P8 看图（视觉模型）设置
+// ---------------------------------------------------------------------------
+
+export interface VisionSettingsInfo {
+  /** 允许把图片发送到视觉模型；默认关 */
+  enabled: boolean;
+  model: string;
+  /** 单独指定的接入点；空表示复用对话模型的 */
+  baseUrl: string;
+  apiKeyMasked: string;
+  maxPixels: number;
+  configured: boolean;
+  credentialsSource: 'own' | 'shared' | 'none';
+  reason: string | null;
+}
+
+export interface VisionSettingsPatch {
+  enabled?: boolean;
+  model?: string;
+  baseUrl?: string;
+  /** 留空表示不修改 */
+  apiKey?: string;
+  maxPixels?: number;
+  /** 删除单独保存的接入点与 Key，改回复用 */
+  clearCredentials?: boolean;
+}

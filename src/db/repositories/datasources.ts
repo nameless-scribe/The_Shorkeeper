@@ -257,6 +257,38 @@ export function replaceDictionaryAutoLayer(
   });
 }
 
+/**
+ * 整份替换：骨架与（已合并好的）人工层一起写，不在列表里的旧条目删除。
+ * 刷新骨架走这里：人工层的保留由 dictionary-store 的 mergeSkeleton 负责。
+ */
+export function replaceDictionaryEntries(
+  sourceId: string,
+  entries: Array<{ objectKey: string; auto: Record<string, unknown>; manual: Record<string, unknown> }>,
+  db: AppDatabase = getDatabase(),
+): void {
+  const now = Date.now();
+  db.transaction(() => {
+    const keep = new Set(entries.map((entry) => entry.objectKey));
+    const existing = db
+      .prepare('SELECT object_key FROM data_dictionary WHERE data_source_id = ?')
+      .all(sourceId) as Array<{ object_key: string }>;
+    for (const row of existing) {
+      if (!keep.has(row.object_key)) {
+        db.prepare('DELETE FROM data_dictionary WHERE data_source_id = ? AND object_key = ?').run(sourceId, row.object_key);
+      }
+    }
+    const upsert = db.prepare(
+      `INSERT INTO data_dictionary (id, data_source_id, object_key, auto_json, manual_json, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (data_source_id, object_key) DO UPDATE SET
+         auto_json = excluded.auto_json, manual_json = excluded.manual_json, updated_at = excluded.updated_at`,
+    );
+    for (const entry of entries) {
+      upsert.run(uuidv4(), sourceId, entry.objectKey, JSON.stringify(entry.auto), JSON.stringify(entry.manual), now);
+    }
+  });
+}
+
 /** 写人工层：只覆盖给出的字段，其余保留；条目不存在时创建（auto 为空）。 */
 export function updateDictionaryManualLayer(
   sourceId: string,
@@ -515,6 +547,15 @@ export function listQueryRuns(filter: { sourceId?: string; runId?: string; limit
     .prepare(`SELECT * FROM query_runs${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''} ORDER BY started_at DESC LIMIT ${limit}`)
     .all(...params) as unknown as QueryRunRow[];
   return rows.map(rowToQueryRun);
+}
+
+/** 导出用：按产物路径找回这次查询的方案与 SQL */
+export function getQueryRunByArtifactPath(artifactPath: string, db: AppDatabase = getDatabase()): QueryRunInfo | null {
+  const normalized = artifactPath.replace(/\\/g, '/');
+  const row = db
+    .prepare("SELECT * FROM query_runs WHERE artifact_path = ? AND status = 'succeeded' ORDER BY started_at DESC LIMIT 1")
+    .get(normalized) as QueryRunRow | undefined;
+  return row ? rowToQueryRun(row) : null;
 }
 
 /** 启动收口：进程退出时仍在 running 的查询记录一律标为 cancelled。 */

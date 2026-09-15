@@ -49,6 +49,11 @@ export interface QueryPlan {
   /** 分组列，`表.列` */
   grain: string[];
   metrics: PlanMetric[];
+  /**
+   * 清单模式（P7.2）：不聚合，直接列出这些列（`表.列`）。有 select 时 metrics 可以为空、grain 必须为空；
+   * "还有哪些项目没打尾款"、"今天员工都有什么任务"这类问题走这里，不用逃生口。
+   */
+  select?: string[];
   compare?: { kind: 'yoy' | 'mom' };
   orderBy?: { metric: string; direction: 'asc' | 'desc' };
   limit: number;
@@ -60,9 +65,11 @@ export interface QueryPlan {
 export const PLAN_DEFAULT_LIMIT = 500;
 export const PLAN_MAX_LIMIT = 5000;
 export const PLAN_MAX_FILTER_VALUES = 200;
+export const PLAN_MAX_SELECT_COLUMNS = 30;
 
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const QUALIFIED = /^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/;
+// MySQL 标识符允许 Unicode 字母（中文表名）与数字开头（不能全是数字），长度 ≤ 64；编译器一律反引号包裹，所以只需排除反引号、点、空白与控制字符
+const IDENTIFIER = /^(?![0-9]+$)[\p{L}\p{N}_$]{1,64}$/u;
+const QUALIFIED = /^(?![0-9]+\.)[\p{L}\p{N}_$]{1,64}\.(?![0-9]+$)[\p{L}\p{N}_$]{1,64}$/u;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?$/;
 const FILTER_OPS: ReadonlySet<string> = new Set(['eq', 'in', 'neq', 'gte', 'lte', 'like']);
 const SLOTS: ReadonlySet<string> = new Set(['指标', '时间范围', '粒度', '范围过滤', '排序数量']);
@@ -168,6 +175,20 @@ export function parseQueryPlan(value: unknown): Parsed {
   }
   if (metrics.length > 10) return fail('指标最多 10 个');
 
+  let select: string[] | undefined;
+  if (value.select !== undefined && value.select !== null) {
+    if (!Array.isArray(value.select)) return fail('select 必须是数组');
+    const columns: string[] = [];
+    for (const item of value.select) {
+      if (typeof item !== 'string' || !isQualifiedColumn(item)) return fail('select 每项须为 表.列');
+      if (!columns.includes(item)) columns.push(item);
+    }
+    if (columns.length > PLAN_MAX_SELECT_COLUMNS) return fail(`select 最多 ${PLAN_MAX_SELECT_COLUMNS} 列`);
+    if (columns.length) select = columns;
+  }
+  if (select && grain.length) return fail('清单模式（select）不能同时分组（grain）；要汇总就去掉 select');
+  if (select && metrics.length) return fail('清单模式（select）不能同时带指标（metrics）');
+
   let compare: QueryPlan['compare'];
   if (value.compare !== undefined && value.compare !== null) {
     if (!isRecord(value.compare) || (value.compare.kind !== 'yoy' && value.compare.kind !== 'mom')) {
@@ -179,8 +200,8 @@ export function parseQueryPlan(value: unknown): Parsed {
   let orderBy: QueryPlan['orderBy'];
   if (value.orderBy !== undefined && value.orderBy !== null) {
     const order = value.orderBy;
-    if (!isRecord(order) || typeof order.metric !== 'string' || !metricNames.has(order.metric)) {
-      return fail('orderBy.metric 必须是方案里的指标名');
+    if (!isRecord(order) || typeof order.metric !== 'string' || !(select ? isQualifiedColumn(order.metric) : metricNames.has(order.metric))) {
+      return fail(select ? 'orderBy.metric 须是某一列（表.列）' : 'orderBy.metric 必须是方案里的指标名');
     }
     if (order.direction !== 'asc' && order.direction !== 'desc') return fail('orderBy.direction 只能是 asc 或 desc');
     orderBy = { metric: order.metric, direction: order.direction };
@@ -210,17 +231,23 @@ export function parseQueryPlan(value: unknown): Parsed {
     rawSql = value.rawSql.trim();
   }
 
-  if (!rawSql && !metrics.length) return fail('方案至少要有一个指标（或走 rawSql）');
+  if (!rawSql && !metrics.length && !select) return fail('方案至少要有一个指标，或用 select 列清单（或走 rawSql）');
 
   return {
     plan: {
       sourceId, fact, dimensions, filters, grain, metrics, limit, unresolved,
+      ...(select ? { select } : {}),
       ...(timeRange ? { timeRange } : {}),
       ...(compare ? { compare } : {}),
       ...(orderBy ? { orderBy } : {}),
       ...(rawSql ? { rawSql } : {}),
     },
   };
+}
+
+/** 清单模式：不聚合，直接列行 */
+export function isListPlan(plan: QueryPlan): boolean {
+  return Boolean(plan.select?.length) && !plan.rawSql;
 }
 
 /** 方案是否可以直接执行：没有未确定项。 */

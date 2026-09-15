@@ -16,6 +16,8 @@ export interface ColumnSkeleton {
   samples: string[];
   /** MySQL COLUMN_COMMENT，作为业务名的初始值 */
   comment?: string;
+  /** 枚举型列的取值表（去重值 ≤ 200），随骨架刷新；高基数列不建（3.13.2） */
+  knownValues?: string[];
 }
 
 export interface TableSkeleton {
@@ -114,6 +116,13 @@ export function mergeSkeleton(
     for (const column of table.columns) {
       if (!columns[column.name]?.businessName && column.comment?.trim()) {
         columns[column.name] = { ...(columns[column.name] ?? {}), businessName: truncateSample(column.comment, 30) };
+      }
+      // 取值表是骨架的一部分：刷新时整份替换，列不再是枚举型就清掉
+      if (column.knownValues?.length) {
+        columns[column.name] = { ...(columns[column.name] ?? {}), knownValues: column.knownValues.slice(0, KNOWN_VALUES_MAX) };
+      } else if (columns[column.name]?.knownValues) {
+        const { knownValues: _dropped, ...rest } = columns[column.name];
+        columns[column.name] = rest;
       }
     }
     // 外键自动生成 N:1 连接建议；人工层已有同 id 的不重复

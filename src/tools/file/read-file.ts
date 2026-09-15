@@ -4,6 +4,7 @@ import { READ_ONLY_CONTRACT } from '../contract';
 import { buildFileArtifact, withFileArtifact } from './artifact';
 import { buildPathNotFoundHint, enrichFsError, isEnoent } from './workspace-hints';
 import { resolveWorkspacePath } from './workspace-path';
+import { WORKSPACE_IMAGE_EXTENSION_SET } from '../../workspace/allowed-extensions';
 
 const MAX_RETURN_CHARS = 100_000;
 export const readFileTool: ToolDefinition = {
@@ -38,6 +39,11 @@ export const readFileTool: ToolDefinition = {
     };
     if (!filePath?.trim()) {
       return { success: false, output: '', error: '缺少 path 参数' };
+    }
+
+    const extension = filePath.trim().slice(filePath.trim().lastIndexOf('.')).toLowerCase();
+    if (WORKSPACE_IMAGE_EXTENSION_SET.has(extension)) {
+      return { success: false, output: '', error: '这是图片，read_file 只能读文本；要看内容请用 look_at_image 提问', errorCategory: 'invalid_arguments' };
     }
 
     try {
