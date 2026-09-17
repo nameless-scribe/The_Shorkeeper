@@ -21,8 +21,9 @@ export interface EvalQuestion {
   notes?: string;
 }
 
-export const EVAL_MIN_QUESTIONS = 20;
-export const EVAL_MIN_VAGUE = 5;
+/** 首轮真实库基线使用用户确认的 10 个问题；后续可按真实使用自然扩充。 */
+export const EVAL_MIN_QUESTIONS = 10;
+export const EVAL_MIN_VAGUE = 4;
 
 type Parsed = { questions: EvalQuestion[]; warnings: string[] } | { error: string };
 

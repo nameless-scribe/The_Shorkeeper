@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EVAL_MIN_QUESTIONS, parseEvalSet } from '../eval-set';
+import { EVAL_MIN_QUESTIONS, EVAL_MIN_VAGUE, parseEvalSet } from '../eval-set';
 
 describe('P7 eval set format', () => {
   it('parses a valid set and warns when it is still too small', () => {
@@ -15,7 +15,7 @@ describe('P7 eval set format', () => {
     expect(parsed.questions[1].expect.mustAsk).toBe(true);
     expect(parsed.warnings).toEqual([
       `评测集只有 3 个问题，计划要求至少 ${EVAL_MIN_QUESTIONS} 个`,
-      '笼统问题（mustAsk）只有 1 个，计划要求至少 5 个',
+      `笼统问题（mustAsk）只有 1 个，计划要求至少 ${EVAL_MIN_VAGUE} 个`,
     ]);
   });
 
@@ -32,9 +32,12 @@ describe('P7 eval set format', () => {
     expect('error' in parsed && parsed.error).toContain(fragment);
   });
 
-  it('keeps docs/p7-eval/questions.json parseable (the user fills it in)', () => {
+  it('accepts the 10 user questions as the first baseline without count warnings', () => {
     const file = path.resolve(__dirname, '../../../docs/p7-eval/questions.json');
     const parsed = parseEvalSet(JSON.parse(fs.readFileSync(file, 'utf-8')));
-    expect('error' in parsed ? parsed.error : null).toBeNull();
+    if ('error' in parsed) throw new Error(parsed.error);
+    expect(parsed.questions).toHaveLength(EVAL_MIN_QUESTIONS);
+    expect(parsed.questions.filter((item) => item.expect.mustAsk)).toHaveLength(EVAL_MIN_VAGUE);
+    expect(parsed.warnings).toEqual([]);
   });
 });
