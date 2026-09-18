@@ -90,9 +90,22 @@ pnpm db:seed
 | `0027_audio_transcripts.sql` | P4 录音转写账本 `audio_transcripts`（幂等键、状态、产物路径、供应商请求 ID） |
 | `0028_user_questions.sql` | P6.2 `ask_user` 提问账本 `user_questions`：问题、选项、回答、状态与决定方式 |
 | `0029_datasources.sql` | P7 数据源查询：`data_sources`、`data_dictionary`、`metrics`、`named_queries`、`query_runs` |
+| `0030_run_checkpoints.sql` | 聊天预算检查点 `task_run_checkpoints`：加密快照、到期时间、单次认领与续跑关联；删除会话联动清理 |
 | `0026_proactive_events.sql` | P3 本地主动服务：`proactive_events`、`proactivity_decisions`、`proactivity_deliveries`、`proactivity_feedback`，以及 `scheduled_tasks` 的失败真源列（`last_error`、`last_error_at`、`failure_count`） |
 
 打包时 migration 以 `extraResources/db-migrations/` 形式随安装包分发；开发态直接读 `src/db/migrations/`。
+
+### 执行检查点（0030）
+
+`task_run_checkpoints` 扩展现有 TaskRun 记录，不建立另一套任务系统。`run_id` 唯一并引用原运行；`session_id` 限定会话，`root_run_id` 关联任务链，`claimed_run_id` 唯一关联后续运行。子运行的 `trigger_ref` 为 `checkpoint:<id>`。原运行保留 `error / budget_exhausted`，不覆写为成功。
+
+快照仅在原运行 `finalizing` 且无 running/interrupted 工具步骤时写入，回读校验成功后才提示已保存。只有原运行已可靠记录预算停止终态才开放认领。认领在事务中检查会话、到期、原运行状态、未被使用、子运行已登记为 running；认领后失败或进程崩溃也不自动释放，避免副作用重放。
+
+`payload` 使用现有系统密钥保护层加密，不能加密就不保存，不能解密就禁止继续。解密后的版本化 JSON 上限 100,000 字节，包含目标、已确认回答、有界事实/剩余事项、文件 SHA-256、成功非幂等调用摘要、配置/工具/数据源结构指纹及累计用量；不保存任意完整 prompt、原始工具参数或数据源密码。renderer 仅取得可用状态、标识、到期时间、累计用量等元数据，不取得快照正文。
+
+有效期 7 天，在保存或读取详情时清理过期快照；删除会话通过 trigger 联动删除。备份中的历史密文仍遵循既有备份保留策略，不承诺即时物理擦除。重启后同一系统用户可继续有效且未认领的检查点，不自动执行；旧记录不补造检查点。文件变化、配置/权限/数据字典变化会阻止恢复，远端业务数据的新鲜度仍需查询核对。
+
+0030 沿用既有事务迁移、迁移前备份和 native WAL 规则。临时库验证覆盖 sql.js / better-sqlite3 的写入、重开、单次认领、过期、会话删除，以及 native 副本迁移/回滚校验；禁止以真实用户库进行自动化验证。
 
 ### 种子数据（`pnpm db:seed`）
 

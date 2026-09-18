@@ -5,13 +5,13 @@ import {
   appendStreamPlaceholder,
   appendTextDelta,
   attachToolArtifacts,
-  dropStreamingMessages,
   endToolCall,
   finalizeStream,
   findLastPersistedAssistant,
   markThinking,
   startToolCall,
   streamIdForRun,
+  stopStream,
   toUiMessages,
   type UiMessage,
 } from './agent-messages';
@@ -206,6 +206,7 @@ export function useAgentEvents(
       }
 
       if (event.type === 'run_error') {
+        if (event.runId !== currentRunIdRef.current) return;
         setAgentPlan([]);
         streamRunsRef.current.delete(event.runId);
         if (runSessionIdRef.current !== activeSessionId) {
@@ -213,7 +214,7 @@ export function useAgentEvents(
             setIsRunning(false);
             currentRunIdRef.current = null;
             setError(formatRunErrorForUser(event.message, event.runId));
-            applyMessages(dropStreamingMessages(messagesRef.current));
+            applyMessages(stopStream(messagesRef.current, streamIdForRun(event.runId), Boolean(event.reason)));
           }
           return;
         }
@@ -222,7 +223,7 @@ export function useAgentEvents(
         currentRunIdRef.current = null;
         runSessionIdRef.current = null;
         setError(formatRunErrorForUser(event.message, event.runId));
-        applyMessages(dropStreamingMessages(messagesRef.current));
+        applyMessages(stopStream(messagesRef.current, streamIdForRun(event.runId), Boolean(event.reason)));
       }
     });
     return () => {

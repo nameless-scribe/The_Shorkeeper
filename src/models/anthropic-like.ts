@@ -123,13 +123,14 @@ export async function* streamChatAnthropic(
   options?: {
     tools?: OpenAIToolSchema[];
     signal?: AbortSignal;
+    maxOutputTokens?: number;
   },
 ): AsyncGenerator<ModelEvent> {
   const { system, messages: anthropicMessages } = convertMessages(messages);
 
   const body: Record<string, unknown> = {
     model: config.model,
-    max_tokens: 8192,
+    max_tokens: options?.maxOutputTokens ?? 8192,
     messages: anthropicMessages,
     stream: true,
   };
@@ -166,6 +167,7 @@ export async function* streamChatAnthropic(
   const decoder = new TextDecoder();
   let buffer = '';
   let assistantContent = '';
+  let stopReason: string | undefined;
   const toolAcc: ToolUseAccumulator = {};
   let roundUsage = { promptTokens: 0, completionTokens: 0, cachedTokens: 0 };
 
@@ -216,6 +218,7 @@ export async function* streamChatAnthropic(
           }
         }
 
+        if (parsed.type === 'message_delta') stopReason = parsed.delta?.stop_reason ?? stopReason;
         if (parsed.type === 'message_delta' && parsed.usage) {
           roundUsage.completionTokens = parsed.usage.output_tokens ?? roundUsage.completionTokens;
         }
@@ -239,6 +242,7 @@ export async function* streamChatAnthropic(
             type: 'round_complete',
             content: assistantContent || null,
             toolCalls,
+            ...(stopReason ? { stopReason } : {}),
           };
           yield { type: 'done' };
           return;
@@ -251,6 +255,7 @@ export async function* streamChatAnthropic(
       type: 'round_complete',
       content: assistantContent || null,
       toolCalls,
+      ...(stopReason ? { stopReason } : {}),
     };
     yield { type: 'done' };
   } catch (err) {

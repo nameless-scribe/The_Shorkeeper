@@ -75,8 +75,8 @@ describe('native SQLite migration rehearsal', () => {
     expect(
       migrated.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE status = 'applied'").get()
         ?.count,
-      // 随 migration 数量增长；新增 0029_datasources 后为 29
-    ).toBe(29);
+      // 随 migration 数量增长；新增 0030_run_checkpoints 后为 30
+    ).toBe(30);
     migrated.close();
   });
 

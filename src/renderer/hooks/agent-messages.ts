@@ -99,6 +99,11 @@ export function dropStreamingMessages(messages: UiMessage[]): UiMessage[] {
   return messages.filter((m) => !m.streaming);
 }
 
+/** 预算/必要回答停止不是成功完成，但其阶段摘要和工具证据不能被错误清理掉。 */
+export function stopStream(messages: UiMessage[], streamId: string, preserveSummary: boolean): UiMessage[] {
+  return preserveSummary ? finalizeStream(messages, streamId, '').messages : dropStreamingMessages(messages);
+}
+
 export interface FinalizedStream {
   messages: UiMessage[];
   /** 流式消息上累计的工具调用，供随后回填到持久化消息上 */

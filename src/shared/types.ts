@@ -16,6 +16,7 @@ export type ModelEvent =
       type: 'round_complete';
       content: string | null;
       toolCalls: OpenAIToolCall[];
+      stopReason?: string;
     }
   | { type: 'done' }
   | { type: 'error'; message: string };
@@ -137,6 +138,18 @@ export interface TaskRunDetail {
   artifacts: ArtifactInfo[];
   approvals: ApprovalInfo[];
   contextSources: TaskRunContextSourceInfo[];
+  checkpoint?: RunCheckpointInfo | null;
+}
+
+export interface RunCheckpointInfo {
+  id: string;
+  runId: string;
+  rootRunId: string;
+  expiresAt: number;
+  claimedRunId: string | null;
+  available: boolean;
+  unavailableReason?: string;
+  totals?: { rounds: number; toolCalls: number; tokens: number; activeMs: number; segments: number };
 }
 
 export type ContextSourceType = 'memory' | 'document' | 'goal' | 'commitment';
@@ -169,6 +182,7 @@ export interface AgentSendPayload {
   sessionId?: string;
   message: string;
   attachments?: WorkspaceAttachment[];
+  resumeCheckpointId?: string;
 }
 
 export interface ModelConfig {

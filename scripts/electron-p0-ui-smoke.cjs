@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, net, protocol } = require('electron');
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 const askResponses = [];
+let resumeCalls = 0;
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'sk-asset',
@@ -81,8 +82,8 @@ function registerMocks() {
     sessionId: 'session-p0-ui-smoke',
     kind: 'chat',
     triggerRef: null,
-    phase: 'finished',
-    terminalReason: 'finished',
+    phase: 'error',
+    terminalReason: 'budget_exhausted',
     errorSummary: null,
     modelId: 'qwen-plus',
     assistantMessageId: 'message-p0-ui-smoke',
@@ -95,6 +96,8 @@ function registerMocks() {
   };
   const detail = {
   contextSources: [],
+    checkpoint: { id: 'checkpoint-ui', runId, rootRunId: runId, expiresAt: now + 86400000, claimedRunId: null, available: true,
+      totals: { rounds: 20, toolCalls: 30, tokens: 300000, activeMs: 5000, segments: 1 } },
     run,
     steps: [
       {
@@ -127,12 +130,13 @@ function registerMocks() {
     'appearance:get': () => appearance,
     'app:status': () => ({
       model: 'qwen-plus', profileName: 'P0 UI Smoke', baseUrl: 'http://127.0.0.1',
-      apiConfigured: false, databasePath: 'isolated',
+      apiConfigured: true, databasePath: 'isolated',
     }),
     'sessions:current': () => ({
       id: run.sessionId, title: 'P0 UI Smoke', createdAt: now, updatedAt: now, assistantMode: 'focus',
     }),
-    'messages:list': () => [],
+    'messages:list': () => [{ id: 'budget-ready', sessionId: run.sessionId, role: 'assistant', content: '预算测试已就绪', createdAt: now }],
+    'workspace:getFileInfo': () => null,
     'model:getProfiles': () => ({ activeId: null, profiles: [] }),
     'voice:getSettings': () => voice,
     'voice:call:isActive': () => ({ active: false }),
@@ -147,6 +151,15 @@ function registerMocks() {
     'agent:runHistory': () => [run],
     'transcripts:list': () => [],
     'agent:runDetail': (_event, requestedRunId) => requestedRunId === runId ? detail : null,
+    'agent:send': async (_event, payload) => {
+      assert(payload.resumeCheckpointId === 'checkpoint-ui' && payload.sessionId === run.sessionId && payload.message === '确认继续一段', '继续参数错误');
+      resumeCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (resumeCalls === 1) return { ok: false, error: '临时检查失败，请核对后重试' };
+      detail.checkpoint.available = false;
+      detail.checkpoint.claimedRunId = 'child-ui';
+      return { ok: true, runId: 'child-ui' };
+    },
     'permission:respond': () => ({ ok: true }),
     'ask:respond': (_event, payload) => { askResponses.push(payload); return { ok: true }; },
     'update:getVersion': () => '1.3.0',
@@ -154,6 +167,7 @@ function registerMocks() {
     'proactivity:inbox': () => ({ attention: [], later: [], handled: [], unreadCount: 0, generatedAt: Date.now() }),
   };
   for (const [channel, handler] of Object.entries(handlers)) ipcMain.handle(channel, handler);
+  return appearance;
 }
 
 function registerAssetProtocol() {
@@ -191,7 +205,7 @@ async function capture(window, directory, filename) {
 
 app.whenReady().then(async () => {
   registerAssetProtocol();
-  registerMocks();
+  const appearance = registerMocks();
   const preloadPath = path.resolve('dist-electron/preload.mjs');
   const indexPath = path.resolve('dist/index.html');
   assert(fs.existsSync(preloadPath), `缺少 preload：${preloadPath}`);
@@ -200,6 +214,8 @@ app.whenReady().then(async () => {
   const screenshotDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'shorekeeper-p0-ui-'));
   const window = new BrowserWindow({
     show: true,
+    // 与真实聊天窗口一致；系统边框的最小宽度会干扰 360px 验收。
+    frame: false,
     width: 1200,
     height: 820,
     webPreferences: {
@@ -227,6 +243,32 @@ app.whenReady().then(async () => {
     await window.loadFile(indexPath);
     setStage('open settings');
     await waitFor(window, `Boolean(document.querySelector('button[title="设置"]'))`, '设置按钮');
+    // 预算耗尽走现有 error 终态，但必须保留阶段摘要；开发 React 下同时验证订阅不重复。
+    setStage('controlled stop keeps partial reply');
+    await waitFor(window, `document.body.innerText.includes('预算测试已就绪')`, '会话消息加载完成');
+    const stoppedRunId = 'budget-ui-smoke';
+    window.webContents.send('agent:event', { type: 'run_started', runId: stoppedRunId, sessionId: 'session-p0-ui-smoke' });
+    window.webContents.send('agent:event', { type: 'tool_call_start', runId: stoppedRunId, callId: 'budget-read', name: 'read_file', args: { path: 'report.md' } });
+    window.webContents.send('agent:event', { type: 'tool_call_end', runId: stoppedRunId, callId: 'budget-read', result: { success: true, output: '已读取 report.md' } });
+    window.webContents.send('agent:event', { type: 'text_delta', runId: stoppedRunId, delta: '阶段摘要保留测试：已读取文件，剩余分析未完成。未保存可精确续跑的检查点。' });
+    await waitFor(window, `document.body.innerText.includes('阶段摘要保留测试')`, '流式阶段摘要');
+    window.webContents.send('agent:event', { type: 'run_error', runId: stoppedRunId, sessionId: 'session-p0-ui-smoke', reason: 'budget_exhausted', message: '已达到本段工具调用预算' });
+    await waitFor(window, `document.body.innerText.includes('已达到本段工具调用预算') && document.body.innerText.includes('阶段摘要保留测试')`, '预算停止后摘要仍在');
+    assert(await window.webContents.executeJavaScript(`document.body.innerText.split('阶段摘要保留测试').length === 2`), '阶段摘要重复显示');
+    window.setSize(360, 520);
+    await waitFor(window, 'window.innerWidth <= 360', '最小聊天尺寸');
+    assert(await window.webContents.executeJavaScript('document.querySelector("header").getBoundingClientRect().height < 130'), '最小窗口标题栏挤占摘要区域');
+    await window.webContents.executeJavaScript(`document.querySelectorAll('.overflow-y-auto').forEach((element) => { element.scrollTop = element.scrollHeight; })`);
+    const budgetDefaultScreenshot = await capture(window, screenshotDirectory, 'budget-stop-default-min.png');
+    window.webContents.send('appearance:changed', { ...appearance, colors: {
+      ...appearance.colors, navyDeep: '#1b1326', navy: '#2b1d3b', cyan: '#dfa8ed', cyanDim: '#9165a0',
+      ice: '#fff2ff', iceDeep: '#ddbbeb',
+    } });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const budgetAlternateScreenshot = await capture(window, screenshotDirectory, 'budget-stop-alternate-min.png');
+    assert(await window.webContents.executeJavaScript('document.documentElement.scrollWidth <= window.innerWidth'), '预算停止产生横向溢出');
+    window.webContents.send('appearance:changed', appearance);
+    window.setSize(1200, 820);
     await window.webContents.executeJavaScript(`document.querySelector('button[title="设置"]').click()`);
     setStage('open run history');
     await waitFor(
@@ -243,7 +285,7 @@ app.whenReady().then(async () => {
 
     setStage('open run detail');
     await window.webContents.executeJavaScript(
-      `[...document.querySelectorAll('button')].find((item) => item.textContent.includes('对话 · 已完成')).click()`,
+      `[...document.querySelectorAll('button')].find((item) => item.textContent.includes('对话 · 失败')).click()`,
     );
     await waitFor(
       window,
@@ -252,6 +294,28 @@ app.whenReady().then(async () => {
     );
     setStage('capture run detail');
     const detailScreenshot = await capture(window, screenshotDirectory, 'run-detail.png');
+
+    setStage('checkpoint confirmation and duplicate submit guard');
+    await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((b) => b.textContent === '继续一段').click()`);
+    await waitFor(window, `document.body.innerText.includes('确认新增最多 20 次')`, '继续额度确认');
+    await window.webContents.executeJavaScript(`[...document.querySelectorAll('h3')].find((h) => h.textContent === '检查点与继续').scrollIntoView({block:'start'})`);
+    const checkpointDefaultScreenshot = await capture(window, screenshotDirectory, 'checkpoint-confirm-default.png');
+    window.webContents.send('appearance:changed', { ...appearance, colors: { ...appearance.colors, navyDeep: '#1b1326', navy: '#2b1d3b', cyan: '#dfa8ed', cyanDim: '#9165a0' } });
+    window.setSize(360, 520);
+    await waitFor(window, 'window.innerWidth <= 360', '检查点最小窗口');
+    await window.webContents.executeJavaScript(`[...document.querySelectorAll('h3')].find((h) => h.textContent === '检查点与继续').scrollIntoView({block:'start'})`);
+    const checkpointMinimumScreenshot = await capture(window, screenshotDirectory, 'checkpoint-confirm-violet-min.png');
+    window.setSize(1200, 820);
+    window.webContents.send('appearance:changed', appearance);
+    await window.webContents.executeJavaScript(`(() => { const b = [...document.querySelectorAll('button')].find((b) => b.textContent === '确认额度并继续'); b.click(); b.click(); })()`);
+    await waitFor(window, `[...document.querySelectorAll('button')].some((b) => b.textContent === '继续中…' && b.disabled)`, '继续中禁用');
+    await waitFor(window, `document.body.innerText.includes('临时检查失败')`, '继续失败反馈');
+    assert(resumeCalls === 1, '重复点击发送了多个继续请求');
+    await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((b) => b.textContent === '继续一段').click()`);
+    await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((b) => b.textContent === '确认额度并继续').click()`);
+    await waitFor(window, `document.body.innerText.includes('检查点已使用')`, '已使用检查点禁用');
+    assert(await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((b) => b.textContent === '继续一段').disabled`), '已使用检查点仍可点击');
+    assert(resumeCalls === 2, '继续请求计数错误');
 
     setStage('open write preview');
     await window.webContents.executeJavaScript(`document.querySelector('button[title="关闭"]').click()`);
@@ -348,7 +412,7 @@ app.whenReady().then(async () => {
       ok: true,
       rendererDomVerified: true,
       rendererConsoleClean: true,
-      screenshots: [historyScreenshot, detailScreenshot, previewScreenshot, xlsxPreviewScreenshot, questionScreenshot],
+      screenshots: [historyScreenshot, detailScreenshot, previewScreenshot, xlsxPreviewScreenshot, questionScreenshot, budgetDefaultScreenshot, budgetAlternateScreenshot, checkpointDefaultScreenshot, checkpointMinimumScreenshot],
       ...result,
     }, null, 2));
   } catch (error) {

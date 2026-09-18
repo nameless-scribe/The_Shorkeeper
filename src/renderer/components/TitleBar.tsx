@@ -43,14 +43,14 @@ export function TitleBar({
 
   return (
     <header
-      className="keeper-glass-panel flex shrink-0 items-center justify-between rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3"
+      className="keeper-glass-panel flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3"
       {...drag}
     >
-      <div className="min-w-0">
+      <div className="min-w-0 w-full sm:w-auto sm:flex-1">
         <h1 className="text-sm font-semibold tracking-wide text-keeper-ice">
           The Shorekeeper
         </h1>
-        <p className="text-xs text-keeper-ice/60">
+        <p className="truncate text-xs text-keeper-ice/60" title={status?.apiConfigured ? `${formatConnectionLabel(status)} 已连接` : '未配置 API Key'}>
           {status?.apiConfigured ? (
             <>
               <span className="text-keeper-cyan drop-shadow-accent">◆</span>{' '}

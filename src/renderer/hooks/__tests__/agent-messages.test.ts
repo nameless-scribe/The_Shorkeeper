@@ -11,6 +11,7 @@ import {
   markThinking,
   startToolCall,
   streamIdForRun,
+  stopStream,
   toUiMessages,
   type UiMessage,
 } from '../agent-messages';
@@ -30,6 +31,17 @@ const okResult = { success: true, output: '完成' } as never;
 const failResult = { success: false, error: '超时' } as never;
 
 describe('agent message transforms', () => {
+  it('retains a controlled-stop summary and tool evidence instead of deleting the stream', () => {
+    let messages = appendStreamPlaceholder([], STREAM, now);
+    messages = startToolCall(messages, STREAM, { callId: 'c1', name: 'read_file', args: {} });
+    messages = endToolCall(messages, STREAM, { callId: 'c1', result: { success: true, output: 'ok' } });
+    messages = appendTextDelta(messages, STREAM, '本段停止，已读取文件，尚未完成');
+    const stopped = stopStream(messages, STREAM, true);
+    expect(stopped[0]).toMatchObject({ streaming: false, thinking: false, content: '本段停止，已读取文件，尚未完成' });
+    expect(stopped[0].toolCalls).toHaveLength(1);
+    expect(stopStream(messages, STREAM, false)).toEqual([]);
+    expect(stopStream(stopped, STREAM, true)).toEqual(stopped);
+  });
   it('drops system messages and keeps only display fields', () => {
     const list = [
       persisted({ id: 'm0', role: 'system', content: '人设' }),

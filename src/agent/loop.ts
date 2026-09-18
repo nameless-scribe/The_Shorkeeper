@@ -26,6 +26,10 @@ import { resolveCallContract, shouldSuppressDuplicateCall } from '../tools/contr
 import { enforceToolEvidence } from '../tools/evidence';
 import { awaitWithAbort, createLinkedTimeoutSignal } from './abort';
 import { estimateTokens, truncateToTokenBudget } from './context-budget';
+import { canonicalCallSignature, DEFAULT_EXECUTION_LIMITS, estimateRequestTokens, positiveLimit } from './execution-limits';
+import { finalizeStoppedRun, type StopSummary } from './run-finalization';
+import { CheckpointTracker } from './checkpoint-tracker';
+import type { RunCheckpoint } from './checkpoint-contract';
 
 export const DEFAULT_MODEL_ROUND_TIMEOUT_MS = 120_000;
 export const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 120_000;
@@ -44,7 +48,7 @@ export interface AgentLoopOptions {
   policy?: PermissionPolicy;
   signal?: AbortSignal;
   cacheStablePrefix?: string;
-  onPhaseChange?: (phase: 'running' | 'waiting_tool') => void;
+  onPhaseChange?: (phase: 'running' | 'waiting_tool' | 'finalizing') => void;
   onModelRoundStart?: (round: number) => void;
   onModelRoundEnd?: (
     round: number,
@@ -65,6 +69,12 @@ export interface AgentLoopOptions {
   modelRuntime?: ModelRuntimeConfig;
   toolResultContextBudgetTokens?: number;
   maxToolCallsPerRound?: number;
+  maxToolCalls?: number;
+  maxActiveMs?: number;
+  maxTotalTokens?: number;
+  maxInputTokens?: number;
+  questionTimeoutMs?: number;
+  checkpoint?: { goal: string; environment: string; previous?: RunCheckpoint; save: (snapshot: RunCheckpoint) => void };
 }
 
 interface CompletedToolCall {
@@ -87,7 +97,7 @@ function normalizeRoundToolCalls(toolCalls: OpenAIToolCall[]): OpenAIToolCall[] 
 }
 
 function toolCallSignature(toolCall: OpenAIToolCall): string {
-  return `${toolCall.function.name}\0${toolCall.function.arguments}`;
+  return canonicalCallSignature(toolCall.function.name, toolCall.function.arguments);
 }
 
 function formatToolResultForModel(result: ToolResult, maxTokens: number): string {
@@ -162,7 +172,7 @@ async function authorizeToolCall(
   registry: ToolRegistry,
   policy: PermissionPolicy,
   previewTimeoutMs: number,
-  hooks?: Pick<AgentLoopOptions, 'onPermissionStart' | 'onPermissionEnd'>,
+  hooks?: Pick<AgentLoopOptions, 'onPermissionStart' | 'onPermissionEnd'> & { onUserWaitElapsed?: (ms: number) => void; requireFreshApproval?: boolean },
 ): Promise<AuthorizedToolCall | ToolResult> {
   const tool = registry.get(toolCall.function.name);
   if (!tool) {
@@ -176,7 +186,9 @@ async function authorizeToolCall(
 
   const args = parsed.args;
   const contract = resolveCallContract(tool, args);
-  const decision = checkPermission(tool, policy, args);
+  const policyDecision = checkPermission(tool, policy, args);
+  const decision = hooks?.requireFreshApproval && contract.risk !== 'read' && policyDecision !== 'deny'
+    ? 'confirm' : policyDecision;
   let previewRevision: string | undefined;
 
   if (decision === 'deny') {
@@ -248,6 +260,7 @@ async function authorizeToolCall(
     }
 
     let approved: boolean;
+    const waitStartedAt = Date.now();
     try {
       approved = await confirmPermission(tool.name, args, ctx.signal, {
         runId: ctx.runId,
@@ -264,6 +277,8 @@ async function authorizeToolCall(
         );
       }
       throw error;
+    } finally {
+      hooks?.onUserWaitElapsed?.(Date.now() - waitStartedAt);
     }
     if (activityId) {
       hooks?.onPermissionEnd?.(
@@ -311,27 +326,46 @@ export async function* runAgentLoop(
     sessionId,
     runId,
     registry,
-    maxRounds = 10,
+    maxRounds: requestedRounds,
     policy = defaultPermissionPolicy(),
     signal,
     modelTimeoutMs = DEFAULT_MODEL_ROUND_TIMEOUT_MS,
     toolTimeoutMs = DEFAULT_TOOL_EXECUTION_TIMEOUT_MS,
     toolResultContextBudgetTokens = DEFAULT_TOOL_RESULT_CONTEXT_BUDGET_TOKENS,
-    maxToolCallsPerRound = DEFAULT_MAX_TOOL_CALLS_PER_ROUND,
+    maxToolCallsPerRound: requestedCallsPerRound,
   } = options;
 
   const modelRuntime = options.modelRuntime ?? loadModelRuntimeConfig();
   const config = modelRuntime;
   const tools = registry.toOpenAITools();
   const workspaceRoot = ensureWorkspaceDir();
+  const maxRounds = positiveLimit(requestedRounds, DEFAULT_EXECUTION_LIMITS.rounds);
+  const maxToolCallsPerRound = positiveLimit(requestedCallsPerRound, DEFAULT_MAX_TOOL_CALLS_PER_ROUND);
+  const maxToolCalls = positiveLimit(options.maxToolCalls, DEFAULT_EXECUTION_LIMITS.toolCalls);
+  const maxActiveMs = positiveLimit(options.maxActiveMs, DEFAULT_EXECUTION_LIMITS.activeMs);
+  const maxTotalTokens = positiveLimit(options.maxTotalTokens, DEFAULT_EXECUTION_LIMITS.tokens);
+  const maxInputTokens = positiveLimit(options.maxInputTokens ?? 24_000, 256_000);
+  const startedAt = Date.now();
+  let userWaitMs = 0;
+  let totalTokens = 0;
+  let toolCalls = 0;
+  const summary: StopSummary = {
+    reason: 'budget_exhausted', message: `已达到本段模型工作轮次预算 (${maxRounds})`,
+    facts: [], pending: [], succeeded: 0, failed: 0,
+  };
+  const activeRemaining = () => Math.max(0, maxActiveMs - (Date.now() - startedAt - userWaitMs));
   let messages = [...options.messages];
   let rounds = 0;
+  let issuedRounds = 0;
   const completedToolCalls = new Map<string, CompletedToolCall>();
   /** 非幂等副作用工具在本轮 run 内已成功执行过的调用签名 → 首次结果 */
   const completedSideEffects = new Map<string, ToolResult>();
+  const checkpoint = options.checkpoint;
+  const tracker = checkpoint ? new CheckpointTracker(workspaceRoot, checkpoint.previous) : undefined;
+  const repeatedFailures = new Map<string, number>();
 
   try {
-  while (rounds < maxRounds) {
+  work: while (rounds < maxRounds) {
     options.onPhaseChange?.('running');
     if (signal?.aborted) {
       yield ev.runError(runId, '已取消', sessionId);
@@ -340,16 +374,30 @@ export async function* runAgentLoop(
 
     rounds += 1;
     messages = compactToolResults(messages, toolResultContextBudgetTokens);
+    const estimatedInput = estimateRequestTokens(messages, tools);
+    // 预留一份有界收尾输入及输出，不能把全部额度耗在业务请求上。
+    const finalReserve = 7000;
+    if (estimatedInput > maxInputTokens || totalTokens + estimatedInput
+        + DEFAULT_EXECUTION_LIMITS.outputTokens + finalReserve > maxTotalTokens || activeRemaining() <= 0) {
+      summary.message = estimatedInput > maxInputTokens ? '完整模型输入达到上下文预算'
+        : activeRemaining() <= 0 ? '已达到本段主动执行时间预算' : '已达到本段累计 token 预算';
+      break;
+    }
     options.onModelRoundStart?.(rounds);
+    issuedRounds += 1;
     let roundContent: string | null = null;
     let roundToolCalls: OpenAIToolCall[] = [];
+    let outputTruncated = false;
 
-    const modelTimeout = createLinkedTimeoutSignal(signal, modelTimeoutMs);
+    let roundUsage = 0;
+    let estimatedOutput = 0;
+    const modelTimeout = createLinkedTimeoutSignal(signal, Math.min(modelTimeoutMs, activeRemaining()));
     const modelStream = streamChat(messages, config, {
       tools,
       signal: modelTimeout.signal,
       cacheStablePrefix: options.cacheStablePrefix,
       protocol: modelRuntime.protocol,
+      maxOutputTokens: DEFAULT_EXECUTION_LIMITS.outputTokens,
     });
     let modelError: string | null = null;
     const iterator = modelStream[Symbol.asyncIterator]();
@@ -371,14 +419,19 @@ export async function* runAgentLoop(
         if (step.done) break;
         const event = step.value;
         if (event.type === 'text_delta') {
+          estimatedOutput += estimateTokens(event.delta);
           yield ev.textDelta(runId, event.delta);
         } else if (event.type === 'reasoning_delta') {
+          estimatedOutput += estimateTokens(event.delta);
           yield ev.reasoningDelta(runId, event.delta);
         } else if (event.type === 'usage') {
+          roundUsage = Math.max(roundUsage, event.promptTokens + event.completionTokens);
           yield ev.usage(runId, event.promptTokens, event.completionTokens, event.cachedTokens);
         } else if (event.type === 'round_complete') {
           roundContent = event.content;
           roundToolCalls = event.toolCalls;
+          outputTruncated = event.stopReason === 'length' || event.stopReason === 'max_tokens';
+          estimatedOutput = Math.max(estimatedOutput, estimateTokens(JSON.stringify(event)));
         } else if (event.type === 'error') {
           modelError = modelTimeout.didTimeout()
             ? '模型请求超时'
@@ -398,6 +451,7 @@ export async function* runAgentLoop(
         }
       }
       modelTimeout.dispose();
+      totalTokens += Math.max(roundUsage, estimatedInput + estimatedOutput);
       options.onModelRoundEnd?.(
         rounds,
         modelError ? (signal?.aborted ? 'cancelled' : 'failed') : 'succeeded',
@@ -406,11 +460,20 @@ export async function* runAgentLoop(
     }
 
     if (modelError) {
+      if (!signal?.aborted && activeRemaining() <= 0) {
+        summary.message = '已达到本段主动执行时间预算';
+        break;
+      }
       yield ev.runError(runId, modelError, sessionId);
       return;
     }
 
     roundToolCalls = normalizeRoundToolCalls(roundToolCalls);
+
+    if (outputTruncated) {
+      summary.message = '模型输出达到长度上限，本次输出不完整，未执行其中的工具调用';
+      break;
+    }
 
     if (roundToolCalls.length > Math.max(1, Math.floor(maxToolCallsPerRound))) {
       yield ev.runError(
@@ -454,9 +517,17 @@ export async function* runAgentLoop(
       const toolName = toolCall.function.name;
       const signature = toolCallSignature(toolCall);
 
+      if (toolCalls >= maxToolCalls || activeRemaining() <= 0) {
+        summary.message = toolCalls >= maxToolCalls ? `已达到本段工具调用预算 (${maxToolCalls})` : '已达到本段主动执行时间预算';
+        summary.pending.push(`未执行：${toolName}（及本批后续调用）`);
+        break work;
+      }
+      toolCalls += 1;
+
       yield ev.toolCallStart(runId, callId, toolName, parsedArgs.args);
 
       let result: ToolResult;
+      let executed = false;
       const completed = completedToolCalls.get(callId);
       const registeredTool = registry.get(toolName);
       const suppressDuplicates = registeredTool && !parsedArgs.error
@@ -480,9 +551,12 @@ export async function* runAgentLoop(
         result = createToolError(parsedArgs.error, 'invalid_arguments');
       } else if (priorSideEffect) {
         result = markDuplicateSideEffect(priorSideEffect);
+      } else if (tracker?.blocks(toolName, toolCall.function.arguments)) {
+        result = createToolError('此前执行段已成功执行此副作用，禁止重放；请复用已有结果并检查下一步', 'permission_denied');
       } else {
         // ask_user：等待期间运行阶段切到 waiting_user，正在进行的计划项标为"等用户"
         const askingUser = toolName === ASK_USER_TOOL_NAME && registeredTool !== undefined;
+        const questionStartedAt = askingUser ? Date.now() : undefined;
         if (askingUser) {
           options.onQuestionStart?.();
           if (markRunPlanWaitingUser(runId, true)) yield ev.planUpdated(runId, getRunPlan(runId));
@@ -494,10 +568,12 @@ export async function* runAgentLoop(
             toolCtx,
             registry,
             policy,
-            toolTimeoutMs,
+            Math.min(toolTimeoutMs, Math.max(1, activeRemaining())),
             {
               onPermissionStart: options.onPermissionStart,
               onPermissionEnd: options.onPermissionEnd,
+              onUserWaitElapsed: (ms) => { if (!askingUser) userWaitMs += ms; },
+              requireFreshApproval: Boolean(checkpoint?.previous),
             },
           );
         } catch (error) {
@@ -509,8 +585,14 @@ export async function* runAgentLoop(
 
         if (isToolResult(authorized)) {
           result = authorized;
+        } else if (!askingUser && activeRemaining() <= 0) {
+          result = createToolError('本段执行时间预算已耗尽，未启动工具执行', 'timeout');
         } else {
-          const toolTimeout = createLinkedTimeoutSignal(signal, toolTimeoutMs);
+          await tracker?.before(parsedArgs.args);
+          executed = true;
+          const toolTimeout = createLinkedTimeoutSignal(signal, askingUser
+            ? positiveLimit(options.questionTimeoutMs, 10 * 60_000)
+            : Math.min(toolTimeoutMs, Math.max(1, activeRemaining())));
           try {
             result = await awaitWithAbort(
               executeAuthorizedTool(authorized, { ...toolCtx, signal: toolTimeout.signal }),
@@ -536,6 +618,7 @@ export async function* runAgentLoop(
           }
         }
         if (askingUser) {
+          userWaitMs += Date.now() - questionStartedAt!;
           options.onQuestionEnd?.(
             result.success ? 'succeeded' : result.errorCategory === 'cancelled' ? 'cancelled' : 'failed',
             result.success ? undefined : result.error,
@@ -552,10 +635,44 @@ export async function* runAgentLoop(
       }
 
       yield ev.toolCallEnd(runId, callId, result);
+      if (executed) await tracker?.after(toolName, toolCall.function.arguments, result, Boolean(suppressDuplicates),
+        registeredTool ? resolveCallContract(registeredTool, parsedArgs.args).risk !== 'read' : true);
+
+      if (!completed && !priorSideEffect) {
+        if (result.success) summary.succeeded += 1;
+        else summary.failed += 1;
+        summary.facts.unshift(`${toolName}：${result.success ? '成功' : '失败'} — ${formatToolResultForModel(result, 200)}`);
+        if (result.success && registeredTool && resolveCallContract(registeredTool, parsedArgs.args).evidence === 'artifact') {
+          for (const artifact of result.artifacts ?? []) {
+            summary.facts.unshift(`已验证产物：${artifact.relativePath}（${artifact.size} 字节）`);
+          }
+        }
+      }
 
       if (signal?.aborted) {
         yield ev.runError(runId, '已取消', sessionId);
         return;
+      }
+
+      if (toolName === ASK_USER_TOOL_NAME && !result.success) {
+        summary.reason = 'awaiting_input';
+        summary.message = '尚未收到必要回答，已停止本批后续操作';
+        summary.pending.push('请补充或重新确认尚未回答的问题');
+        break work;
+      }
+
+      if (!result.success) {
+        const failures = (repeatedFailures.get(signature) ?? 0) + 1;
+        repeatedFailures.set(signature, failures);
+        if (failures >= 3) {
+          summary.reason = 'repeated_failure';
+          summary.message = `相同工具和参数连续失败或重放失败结果 3 次 (${toolName})，已停止重复尝试`;
+          summary.pending.push('需要修正失败原因后重新确认下一步');
+          break work;
+        }
+        if (failures === 2) result = { ...result, error: `${result.error ?? '执行失败'}；相同请求已失败两次，请修正参数或换一种方法，不要重复调用` };
+      } else {
+        repeatedFailures.delete(signature);
       }
 
       if (toolName === 'update_agent_plan' && result.success) {
@@ -581,7 +698,37 @@ export async function* runAgentLoop(
     options.onPhaseChange?.('running');
   }
 
-  yield ev.runError(runId, `已达到最大工具轮次 (${maxRounds})`, sessionId);
+  options.onPhaseChange?.('finalizing');
+  summary.pending.push(...getRunPlan(runId).filter((item) => item.status !== 'completed' && item.status !== 'cancelled')
+    .map((item) => item.content));
+  let finalUsage = 0;
+  for await (const event of finalizeStoppedRun({
+    runId, sessionId, summary, signal, runtime: modelRuntime,
+    goal: options.messages.filter((message) => message.role === 'user').at(-1)?.content ?? '',
+    timeoutMs: Math.min(modelTimeoutMs, 30_000), maxInputTokens,
+    remainingTokens: Math.max(0, maxTotalTokens - totalTokens),
+  })) {
+    if (event.type === 'usage') finalUsage = Math.max(finalUsage, event.promptTokens + event.completionTokens);
+    if (event.type === 'run_error' && event.reason === 'budget_exhausted' && checkpoint && tracker && !signal?.aborted) {
+      try {
+        const previous = checkpoint.previous;
+        checkpoint.save(tracker.snapshot({
+          rootRunId: previous?.rootRunId ?? runId, goal: checkpoint.goal, environment: checkpoint.environment,
+          facts: [...summary.facts, ...previous?.facts ?? []].slice(0, 150), pending: summary.pending,
+          totals: {
+            rounds: issuedRounds + (previous?.totals.rounds ?? 0), toolCalls: toolCalls + (previous?.totals.toolCalls ?? 0),
+            tokens: totalTokens + Math.max(finalUsage, 7000) + (previous?.totals.tokens ?? 0),
+            activeMs: Date.now() - startedAt - userWaitMs + (previous?.totals.activeMs ?? 0),
+            segments: 1 + (previous?.totals.segments ?? 0),
+          },
+        }));
+        yield ev.textDelta(runId, '\n检查点已保存。可在本次运行详情中确认额度并继续一段；普通发送消息仍是新任务。');
+      } catch {
+        yield ev.textDelta(runId, '\n本次未能建立可安全继续的检查点，请核对已有产物后重新确认任务。');
+      }
+    }
+    yield event;
+  }
   } finally {
     clearRunPlan(runId);
   }

@@ -1,4 +1,5 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { ModelEvent } from '../../shared/types';
@@ -7,6 +8,7 @@ import { ToolRegistry } from '../../tools/registry';
 import type { ToolDefinition } from '../../tools/types';
 import { setPermissionConfirmer } from '../permissions';
 import { estimateTokens } from '../context-budget';
+import type { RunCheckpoint } from '../checkpoint-contract';
 
 const { streamChatMock } = vi.hoisted(() => ({
   streamChatMock: vi.fn(),
@@ -85,9 +87,17 @@ const hangingTool: ToolDefinition = {
 };
 
 describe('runAgentLoop lifecycle boundaries', () => {
+  let workspace: string;
   beforeEach(() => {
+    workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-loop-budget-'));
+    vi.stubEnv('SHOREKEEPER_WORKSPACE_DIR', workspace);
     vi.clearAllMocks();
     streamChatMock.mockReset();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    fs.rmSync(workspace, { recursive: true, force: true });
   });
 
   it('finishes a normal text run without tool calls', async () => {
@@ -537,10 +547,191 @@ describe('runAgentLoop lifecycle boundaries', () => {
     expect(events.at(-1)).toEqual({
       type: 'run_error',
       runId: 'run-4',
-      message: '已达到最大工具轮次 (2)',
+      message: '已达到本段模型工作轮次预算 (2)',
+      reason: 'budget_exhausted',
       sessionId: 'session-4',
     });
+    expect(streamChatMock).toHaveBeenCalledTimes(3);
+    expect(streamChatMock.mock.calls[2][2].tools).toBeUndefined();
+    expect(events.some((event) => event.type === 'text_delta' && event.delta.includes('本段已停止'))).toBe(true);
+  });
+
+  it('finishes a progressing task after more than ten tool rounds', async () => {
+    let round = 0;
+    const execute = vi.fn(async () => ({ success: true, output: `page ${round}` }));
+    const registry = new ToolRegistry();
+    registry.register({ ...failingTool, name: 'pages', execute });
+    streamChatMock.mockImplementation(() => {
+      round += 1;
+      return modelEvents(round <= 12 ? [{ type: 'round_complete', content: null, toolCalls: [{
+        id: `page-${round}`, type: 'function', function: { name: 'pages', arguments: JSON.stringify({ page: round }) },
+      }] }] : textRound('十二页处理完成'));
+    });
+    const events = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry, policy,
+      messages: [{ role: 'user', content: '读取十二页' }] }));
+    expect(execute).toHaveBeenCalledTimes(12);
+    expect(events.at(-1)).toMatchObject({ type: 'text_delta', delta: '十二页处理完成' });
+    expect(events.some((event) => event.type === 'run_error')).toBe(false);
+  });
+
+  it('preserves the tenth successful result when finalization fails', async () => {
+    let round = 0;
+    const registry = new ToolRegistry();
+    registry.register({ ...failingTool, name: 'pages', execute: async () => ({ success: true, output: `verified-page-${round}` }) });
+    streamChatMock.mockImplementation(() => {
+      round += 1;
+      return modelEvents(round <= 10 ? [{ type: 'round_complete', content: null, toolCalls: [{
+        id: `page-${round}`, type: 'function', function: { name: 'pages', arguments: '{}' },
+      }] }] : [{ type: 'error', message: 'offline' }]);
+    });
+    const events = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry, policy, maxRounds: 10,
+      messages: [{ role: 'user', content: '读取十页' }] }));
+    expect(events.filter((event) => event.type === 'tool_call_end')).toHaveLength(10);
+    expect(events.at(-2)).toMatchObject({ type: 'text_delta', delta: expect.stringContaining('verified-page-10') });
+    expect(events.at(-1)).toMatchObject({ type: 'run_error', reason: 'budget_exhausted' });
+    expect(streamChatMock.mock.calls[10][2]).toMatchObject({ maxOutputTokens: 2000 });
+    expect(streamChatMock.mock.calls[10][2].tools).toBeUndefined();
+  });
+
+  it('counts actual tool dispatches within a batch, not only model rounds', async () => {
+    const execute = vi.fn(async () => ({ success: true, output: 'verified' }));
+    const registry = new ToolRegistry();
+    registry.register({ ...failingTool, execute });
+    streamChatMock.mockImplementation(() => modelEvents([{ type: 'round_complete', content: null,
+      toolCalls: ['a', 'b', 'c'].map((id) => ({ id, type: 'function' as const,
+        function: { name: 'failing_tool', arguments: '{}' } })),
+    }]));
+    const events = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry, policy, maxToolCalls: 2,
+      messages: [{ role: 'user', content: '执行' }] }));
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(events.at(-1)).toMatchObject({ reason: 'budget_exhausted', message: expect.stringContaining('工具调用预算 (2)') });
+    // 收尾中即使返回工具调用也不执行。
     expect(streamChatMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('checks full input including tool schemas before issuing a request', async () => {
+    const registry = new ToolRegistry();
+    registry.register({ ...failingTool, description: '大'.repeat(1000) });
+    const events = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry, policy, maxInputTokens: 1,
+      messages: [{ role: 'user', content: '执行' }] }));
+    expect(streamChatMock).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ reason: 'budget_exhausted', message: '完整模型输入达到上下文预算' });
+  });
+
+  it('does not spend a finalization request when cumulative token allowance is exhausted', async () => {
+    const events = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry: new ToolRegistry(), policy,
+      maxTotalTokens: 1, messages: [{ role: 'user', content: '执行' }] }));
+    expect(streamChatMock).not.toHaveBeenCalled();
+    expect(events.at(-2)).toMatchObject({ type: 'text_delta', delta: expect.stringContaining('本段已停止') });
+    expect(events.at(-1)).toMatchObject({ reason: 'budget_exhausted' });
+  });
+
+  it('stops repeated failures despite fresh call IDs and reordered JSON keys', async () => {
+    let round = 0;
+    const registry = new ToolRegistry();
+    registry.register(failingTool);
+    streamChatMock.mockImplementation(() => {
+      round += 1;
+      return modelEvents([{ type: 'round_complete', content: null, toolCalls: [{
+        id: `retry-${round}`, type: 'function', function: {
+          name: 'failing_tool', arguments: round % 2 ? '{ "a": 1, "b": 2 }' : '{"b":2,"a":1}',
+        },
+      }] }]);
+    });
+    const events = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry, policy,
+      messages: [{ role: 'user', content: '执行' }] }));
+    expect(failingTool.execute).toHaveBeenCalledTimes(3);
+    expect(events.at(-1)).toMatchObject({ reason: 'repeated_failure' });
+    const thirdInput = streamChatMock.mock.calls[2][0];
+    expect(thirdInput.at(-1).content).toContain('相同请求已失败两次');
+  });
+
+  it.each(['length', 'max_tokens'])('does not execute tool calls from a truncated %s response', async (stopReason) => {
+    const registry = new ToolRegistry();
+    registry.register(failingTool);
+    streamChatMock.mockReturnValueOnce(modelEvents([{ type: 'round_complete', content: null, stopReason,
+      toolCalls: [{ id: 'truncated', type: 'function', function: { name: 'failing_tool', arguments: '{}' } }],
+    }])).mockReturnValueOnce(modelEvents([{ type: 'round_complete', content: '不完整的收尾', toolCalls: [], stopReason }]));
+    const events = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry, policy,
+      messages: [{ role: 'user', content: '执行' }] }));
+    expect(failingTool.execute).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ reason: 'budget_exhausted', message: expect.stringContaining('输出不完整') });
+    expect(events.filter((event) => event.type === 'text_delta').map((event) => event.delta).join('')).not.toContain('不完整的收尾');
+  });
+
+  it('uses controlled finalization when the active budget expires inside a model request', async () => {
+    vi.useFakeTimers();
+    streamChatMock.mockImplementationOnce(async function* () { await new Promise(() => undefined); })
+      .mockReturnValueOnce(modelEvents(textRound('尚未完成')));
+    const pending = collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry: new ToolRegistry(), policy,
+      maxActiveMs: 100, messages: [{ role: 'user', content: '执行' }] }));
+    await vi.advanceTimersByTimeAsync(100);
+    const events = await pending;
+    expect(events.at(-1)).toMatchObject({ reason: 'budget_exhausted', message: '已达到本段主动执行时间预算' });
+    expect(events.at(-2)).toMatchObject({ type: 'text_delta', delta: expect.stringContaining('本段已停止') });
+  });
+
+  it('saves a bounded checkpoint and blocks a successful non-idempotent effect in a later segment', async () => {
+    const execute = vi.fn(async () => ({ success: true, output: 'sent once' }));
+    const registry = new ToolRegistry();
+    registry.register({ ...failingTool, name: 'send_once', execute,
+      sideEffects: { risk: 'low', idempotent: false, supportsPreview: false, reversible: 'none', evidence: 'none' } });
+    let snapshot: RunCheckpoint | undefined;
+    const toolRound = (): ModelEvent[] => [{ type: 'round_complete', content: null, toolCalls: [{
+      id: 'call-new', type: 'function', function: { name: 'send_once', arguments: '{"to":"test"}' },
+    }] }];
+    streamChatMock.mockReturnValueOnce(modelEvents(toolRound())).mockReturnValueOnce(modelEvents(textRound('阶段总结')));
+    const first = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'parent', registry, policy, maxRounds: 1,
+      messages: [{ role: 'user', content: '原任务' }], checkpoint: {
+        goal: '原任务', environment: 'a'.repeat(64), save: (value) => { snapshot = value; },
+      } }));
+    expect(snapshot).toMatchObject({ rootRunId: 'parent', totals: { segments: 1, rounds: 1, toolCalls: 1 } });
+    expect(snapshot?.completedEffects).toHaveLength(1);
+    expect(first.some((event) => event.type === 'text_delta' && event.delta.includes('检查点已保存'))).toBe(true);
+    streamChatMock.mockReturnValueOnce(modelEvents(toolRound())).mockReturnValueOnce(modelEvents(textRound('阶段总结')));
+    const second = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'child', registry, policy, maxRounds: 1,
+      messages: [{ role: 'user', content: '继续' }], checkpoint: {
+        goal: '原任务', environment: 'a'.repeat(64), previous: snapshot, save: (value) => { snapshot = value; },
+      } }));
+    expect(execute).toHaveBeenCalledOnce();
+    expect(second).toContainEqual(expect.objectContaining({ type: 'tool_call_end', result: expect.objectContaining({
+      error: expect.stringContaining('禁止重放'),
+    }) }));
+    expect(snapshot?.totals.segments).toBe(2);
+    expect(snapshot?.totals.rounds).toBe(2);
+  });
+
+  it('does not claim resumability when checkpoint persistence fails', async () => {
+    streamChatMock.mockImplementation(() => modelEvents([{ type: 'round_complete', content: null, toolCalls: [{
+      id: 'call', type: 'function', function: { name: 'failing_tool', arguments: '{}' },
+    }] }]));
+    const registry = new ToolRegistry(); registry.register(failingTool);
+    const events = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry, policy, maxRounds: 1,
+      messages: [{ role: 'user', content: '任务' }], checkpoint: { goal: '任务', environment: 'a'.repeat(64), save: () => { throw new Error('disk full'); } } }));
+    const text = events.filter((event) => event.type === 'text_delta').map((event) => event.delta).join('');
+    expect(text).not.toContain('检查点已保存');
+    expect(text).toContain('未能建立可安全继续');
+  });
+
+  it('requires a fresh approval for changed side-effect arguments in a resumed task', async () => {
+    const execute = vi.fn(async () => ({ success: true, output: 'sent' }));
+    const confirm = vi.fn(async () => false);
+    setPermissionConfirmer(confirm);
+    const registry = new ToolRegistry();
+    registry.register({ ...failingTool, name: 'send_changed', execute,
+      sideEffects: { risk: 'low', idempotent: false, supportsPreview: false, reversible: 'none', evidence: 'output' } });
+    streamChatMock.mockReturnValueOnce(modelEvents([{ type: 'round_complete', content: null, toolCalls: [{
+      id: 'new', type: 'function', function: { name: 'send_changed', arguments: '{"to":"new-recipient"}' },
+    }] }])).mockReturnValueOnce(modelEvents(textRound('未发送')));
+    const events = await collectEvents(runAgentLoop({ sessionId: 's', runId: 'r', registry, policy,
+      messages: [{ role: 'user', content: '继续' }], checkpoint: { goal: '原任务', environment: 'a'.repeat(64), save: () => undefined,
+        previous: { version: 1, rootRunId: 'parent', goal: '原任务', environment: 'a'.repeat(64), answers: [], facts: [], pending: [], files: [], completedEffects: [],
+          totals: { rounds: 20, toolCalls: 1, tokens: 1000, activeMs: 100, segments: 1 } },
+      } }));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(execute).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool_call_end', result: expect.objectContaining({ errorCategory: 'permission_denied' }) }));
+    setPermissionConfirmer(async () => false);
   });
 
   it('keeps a review-style write request read-only when writes are not allowed', async () => {

@@ -193,7 +193,12 @@ export function parseAgentSendPayload(value: unknown): AgentSendPayload {
     throw new TypeError('消息和附件不能同时为空');
   }
 
-  return { sessionId, message, attachments };
+  const resumeCheckpointId = input.resumeCheckpointId === undefined ? undefined
+    : requireString(input.resumeCheckpointId, '检查点 ID', { maxLength: 200 }).trim();
+  if (resumeCheckpointId === '') throw new TypeError('检查点 ID 不能为空');
+  if (resumeCheckpointId && (!sessionId || attachments.length)) throw new TypeError('继续检查点必须指定会话且不能附加新文件');
+  if (resumeCheckpointId && message !== '确认继续一段') throw new TypeError('继续入口只接受明确确认；修改目标请发送新消息');
+  return { sessionId, message, attachments, ...(resumeCheckpointId ? { resumeCheckpointId } : {}) };
 }
 
 const WINDOW_KINDS = new Set(['chat', 'status', 'schedule', 'call']);

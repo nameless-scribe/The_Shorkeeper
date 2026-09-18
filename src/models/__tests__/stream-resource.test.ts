@@ -40,6 +40,26 @@ function completedStreamingResponse(payloads: string[]) {
 }
 
 describe('model stream resource cleanup', () => {
+  it.each([
+    { stream: streamOpenAI, payloads: [JSON.stringify({ choices: [{ delta: { content: '截断' }, finish_reason: 'length' }] }), '[DONE]'], reason: 'length' },
+    { stream: streamChatAnthropic, payloads: [JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'max_tokens' } }), JSON.stringify({ type: 'message_stop' })], reason: 'max_tokens' },
+  ])('propagates provider truncation reason $reason', async ({ stream, payloads, reason }) => {
+    vi.stubGlobal('fetch', vi.fn(async () => completedStreamingResponse(payloads)));
+    const events = [];
+    for await (const event of stream([{ role: 'user', content: '收尾' }], config)) events.push(event);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'round_complete', stopReason: reason }));
+  });
+  it.each([streamOpenAI, streamChatAnthropic])('sends a bounded output allowance and omits tools for finalization', async (stream) => {
+    const fetch = vi.fn(async () => completedStreamingResponse([]));
+    vi.stubGlobal('fetch', fetch);
+    for await (const _event of stream([{ role: 'user', content: '收尾' }], config, { maxOutputTokens: 2000 })) {
+      // drain
+    }
+    const request = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(request.max_tokens).toBe(2000);
+    expect(request.tools).toBeUndefined();
+    expect(request.tool_choice).toBeUndefined();
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });

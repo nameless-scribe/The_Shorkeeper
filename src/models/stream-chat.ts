@@ -13,6 +13,7 @@ export async function* streamChat(
     signal?: AbortSignal;
     cacheStablePrefix?: string;
     protocol?: ModelProtocol;
+    maxOutputTokens?: number;
   },
 ): AsyncGenerator<ModelEvent> {
   const protocol = options?.protocol ?? getModelProtocol();

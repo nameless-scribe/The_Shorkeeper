@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { ModelEvent } from '../../shared/types';
 import type { PermissionPolicy } from '../types';
 import { ToolRegistry } from '../../tools/registry';
@@ -77,12 +80,65 @@ async function run(runId: string, hooks: { onQuestionStart?: () => void; onQuest
   return events;
 }
 
+let workspace: string;
+beforeEach(() => {
+  workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-question-budget-'));
+  vi.stubEnv('SHOREKEEPER_WORKSPACE_DIR', workspace);
+});
 afterEach(() => {
+  vi.unstubAllEnvs();
+  fs.rmSync(workspace, { recursive: true, force: true });
+  vi.useRealTimers();
   setUserQuestionResponder(null);
   streamChatMock.mockReset();
 });
 
 describe('ask_user inside the agent loop (P6.1)', () => {
+  it('accepts an answer after three minutes without charging user wait as active execution', async () => {
+    vi.useFakeTimers();
+    setUserQuestionResponder(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 180_000));
+      return { answer: 'v2', optionId: 'v2', decidedBy: 'user' };
+    });
+    streamChatMock.mockReturnValueOnce(modelEvents(askRound('delayed')))
+      .mockReturnValueOnce(modelEvents(textRound('好，改 v2')));
+    const registry = new ToolRegistry();
+    registry.register(askUserTool);
+    const pending = (async () => {
+      const events = [];
+      for await (const event of runAgentLoop({ sessionId: 's', runId: 'delayed', registry, policy,
+        messages: [{ role: 'user', content: '修改' }], maxActiveMs: 60_000 })) events.push(event);
+      return events;
+    })();
+    await vi.advanceTimersByTimeAsync(180_000);
+    const events = await pending;
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool_call_end', result: expect.objectContaining({ success: true }) }));
+    expect(events.at(-1)).toMatchObject({ type: 'text_delta', delta: '好，改 v2' });
+  });
+
+  it('stops dependent calls in the same batch when the question times out at ten minutes', async () => {
+    vi.useFakeTimers();
+    setUserQuestionResponder(async () => new Promise(() => undefined));
+    const execute = vi.fn(async () => ({ success: true, output: 'must not run' }));
+    const registry = new ToolRegistry();
+    registry.register(askUserTool);
+    registry.register({ ...askUserTool, name: 'dependent', execute });
+    const initial = askRound('timeout');
+    if (initial[0].type === 'round_complete') initial[0].toolCalls.push({ id: 'dependent', type: 'function', function: { name: 'dependent', arguments: '{}' } });
+    streamChatMock.mockReturnValueOnce(modelEvents(initial)).mockReturnValueOnce(modelEvents(textRound('等待回答')));
+    const pending = (async () => {
+      const events = [];
+      for await (const event of runAgentLoop({ sessionId: 's', runId: 'timeout', registry, policy,
+        messages: [{ role: 'user', content: '修改' }] })) events.push(event);
+      return events;
+    })();
+    await vi.advanceTimersByTimeAsync(599_999);
+    expect(streamChatMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const events = await pending;
+    expect(execute).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ type: 'run_error', reason: 'awaiting_input' });
+  });
   it('switches the run phase to waiting_user around the question and marks the active plan item', async () => {
     const runId = 'run-question';
     setRunPlan(runId, [

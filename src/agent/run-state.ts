@@ -3,6 +3,9 @@ export type RunTerminalReason =
   | 'cancelled'
   | 'error'
   | 'max_rounds'
+  | 'budget_exhausted'
+  | 'awaiting_input'
+  | 'repeated_failure'
   | 'empty_response';
 
 export interface RunFinalizeContext {

@@ -1,4 +1,5 @@
 export type RunErrorCategory =
+  | 'controlled_stop'
   | 'cancelled'
   | 'timeout'
   | 'permission_denied'
@@ -10,6 +11,7 @@ export type RunErrorCategory =
   | 'internal';
 
 export function classifyRunError(message: string): RunErrorCategory {
+  if (/本段.*预算|尚未收到必要回答|已停止重复尝试|模型输出达到长度上限|完整模型输入达到上下文预算/.test(message)) return 'controlled_stop';
   if (/取消|cancel|abort/i.test(message)) return 'cancelled';
   if (/超时|timeout|timed out/i.test(message)) return 'timeout';
   if (/权限.*拒绝|拒绝.*操作|permission.*denied/i.test(message)) return 'permission_denied';
@@ -23,6 +25,8 @@ export function classifyRunError(message: string): RunErrorCategory {
 
 export function getRunRecoveryAdvice(category: RunErrorCategory): string | null {
   switch (category) {
+    case 'controlled_stop':
+      return '先核对阶段摘要和已有产物，再确认剩余工作；重新发送会启动新运行，不会自动从断点续跑。';
     case 'cancelled':
       return null;
     case 'timeout':

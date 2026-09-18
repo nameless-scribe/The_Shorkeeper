@@ -1,4 +1,3 @@
-import type { AgentSendPayload } from '../../src/shared/types';
 import { trustedIpcMain as ipcMain } from './trusted-ipc';
 import { parseAgentSendPayload } from '../../src/shared/ipc-validation';
 import { requireFiniteNumber, requireRecord, requireString } from '../../src/shared/ipc-validation';
@@ -15,6 +14,7 @@ import { cancelAllPendingQuestions } from './ask';
 import { formatAttachmentsForMessage } from '../../src/workspace/import';
 import { enrichAttachmentsMessage } from '../../src/workspace/attachment-preparse';
 import { runOrchestrator } from '../../src/agent/orchestrator';
+import { getRunCheckpointInfo } from '../../src/db/repositories/run-checkpoints';
 import {
   getRunDiagnostic,
   listRunDiagnostics,
@@ -37,7 +37,7 @@ import {
 } from '../state/presence';
 
 export function registerAgentIpc() {
-  ipcMain.handle('agent:send', async (event, rawPayload: AgentSendPayload) => {
+  ipcMain.handle('agent:send', async (event, rawPayload: unknown) => {
     const payload = parseAgentSendPayload(rawPayload);
     const session = resolveAgentSession(payload.sessionId);
     if (!session) {
@@ -72,6 +72,7 @@ export function registerAgentIpc() {
         userMessage,
         resolvedSessionId,
         controller.signal,
+        { resumeCheckpointId: payload.resumeCheckpointId },
       )) {
         if (controller.signal.aborted) break;
 
@@ -166,6 +167,7 @@ export function registerAgentIpc() {
       artifacts: listRunArtifacts(runId),
       approvals: listApprovals({ runId }),
       contextSources: listTaskRunContextSources(runId),
+      checkpoint: getRunCheckpointInfo(runId),
     };
   });
 

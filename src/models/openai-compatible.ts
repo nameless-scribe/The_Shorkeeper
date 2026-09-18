@@ -133,6 +133,7 @@ export async function* streamChat(
     tools?: OpenAIToolSchema[];
     signal?: AbortSignal;
     cacheStablePrefix?: string;
+    maxOutputTokens?: number;
   },
 ): AsyncGenerator<ModelEvent> {
   const apiMessages = encodeMessagesForApi(messages, options?.cacheStablePrefix);
@@ -147,6 +148,8 @@ export async function* streamChat(
     body.tools = options.tools;
     body.tool_choice = 'auto';
   }
+
+  if (options?.maxOutputTokens) body.max_tokens = options.maxOutputTokens;
 
   if (shouldIncludeStreamUsage()) {
     body.stream_options = { include_usage: true };
@@ -178,6 +181,7 @@ export async function* streamChat(
   let buffer = '';
   const toolAcc: ToolCallAccumulator = {};
   let assistantContent = '';
+  let stopReason: string | undefined;
 
   try {
     while (true) {
@@ -199,6 +203,7 @@ export async function* streamChat(
             type: 'round_complete',
             content: assistantContent || null,
             toolCalls,
+            ...(stopReason ? { stopReason } : {}),
           };
           yield { type: 'done' };
           return;
@@ -212,6 +217,7 @@ export async function* streamChat(
         }
 
         const delta = parsed.choices?.[0]?.delta;
+        stopReason = parsed.choices?.[0]?.finish_reason ?? stopReason;
         const message = parsed.choices?.[0]?.message;
 
         if (delta?.reasoning_content) {
@@ -246,6 +252,7 @@ export async function* streamChat(
       type: 'round_complete',
       content: assistantContent || null,
       toolCalls,
+      ...(stopReason ? { stopReason } : {}),
     };
     yield { type: 'done' };
   } catch (err) {

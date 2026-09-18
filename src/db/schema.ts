@@ -448,6 +448,17 @@ export interface ProactivityFeedbackRow {
   created_at: number;
 }
 
+export interface TaskRunCheckpointRow {
+  id: string;
+  run_id: string;
+  session_id: string;
+  root_run_id: string;
+  payload: string;
+  created_at: number;
+  expires_at: number;
+  claimed_run_id: string | null;
+}
+
 export const INIT_SQL = `
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY NOT NULL,

@@ -154,6 +154,36 @@ function ContextSourcesList({ sources }: { sources: TaskRunContextSourceInfo[] }
 
 function RunDetailView({ detail, onBack }: { detail: TaskRunDetail; onBack: () => void }) {
   const { run, steps, approvals, artifacts } = detail;
+  const [checkpoint, setCheckpoint] = useState(detail.checkpoint);
+  const [confirmContinue, setConfirmContinue] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+  const [continueMessage, setContinueMessage] = useState<string | null>(null);
+  const continueLock = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const continueRun = async () => {
+    if (!checkpoint?.available || continueLock.current) return;
+    continueLock.current = true;
+    setContinuing(true);
+    setContinueMessage(null);
+    try {
+      const currentSession = await window.shorekeeper.sessions.current();
+      if (currentSession.id !== run.sessionId) throw new Error('请先在历史会话中切换到这条运行所属的会话，再继续。');
+      const result = await window.shorekeeper.agent.send({
+        sessionId: run.sessionId, message: '确认继续一段', resumeCheckpointId: checkpoint.id,
+      });
+      const latest = await window.shorekeeper.agent.runDetail(run.id);
+      if (!alive.current) return;
+      setCheckpoint(latest?.checkpoint);
+      setContinueMessage(result?.ok ? '本段已结束，可返回列表查看新的运行记录。'
+        : result?.error ?? '未能继续，请刷新运行详情后核对。');
+    } catch (error) {
+      if (alive.current) setContinueMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      continueLock.current = false;
+      if (alive.current) { setContinuing(false); setConfirmContinue(false); }
+    }
+  };
   // 旧版本主进程可能不返回来源列表：按空处理，不让整页崩溃。
   const contextSources = detail.contextSources ?? [];
   const runIssue = formatRunIssue(run);
@@ -182,6 +212,22 @@ function RunDetailView({ detail, onBack }: { detail: TaskRunDetail; onBack: () =
           )}
         </SettingsPanel>
       </SettingsSection>
+
+      {checkpoint && <SettingsSection title="检查点与继续" hint={`有效期至 ${formatRunTime(checkpoint.expiresAt)}`}>
+        <SettingsPanel title={checkpoint.claimedRunId ? '检查点已使用' : checkpoint.available ? '可确认继续一段' : '检查点不可继续'}>
+          {checkpoint.unavailableReason && <p className="text-xs text-amber-200/80">{checkpoint.unavailableReason}</p>}
+          {checkpoint.totals && <p className="text-xs text-keeper-ice/60">任务累计：{checkpoint.totals.segments} 段 · {checkpoint.totals.rounds} 次工作请求 · {checkpoint.totals.toolCalls} 次工具调度 · 约 {checkpoint.totals.tokens} token（含保守收尾预留）</p>}
+          <p className="text-xs leading-relaxed text-keeper-ice/65">继续前会核对权限和文件；写入、发送等操作需重新确认。旧查询结果仅代表上段时间，可能需要重新核对。</p>
+          {confirmContinue && <p className="text-xs leading-relaxed text-keeper-ice/75">确认新增最多 20 次模型工作请求、120 次工具调用、15 分钟主动执行和 60 万 token 额度？工具审批仍需单独确认。</p>}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <SettingsActionLink disabled={!checkpoint.available || continuing} onClick={() => confirmContinue ? void continueRun() : setConfirmContinue(true)}>
+              {continuing ? '继续中…' : confirmContinue ? '确认额度并继续' : '继续一段'}
+            </SettingsActionLink>
+            {confirmContinue && !continuing && <SettingsActionLink onClick={() => setConfirmContinue(false)}>取消</SettingsActionLink>}
+          </div>
+          {continueMessage && <p role="status" className="break-words text-xs text-keeper-ice/70">{continueMessage}</p>}
+        </SettingsPanel>
+      </SettingsSection>}
 
       <SettingsSection title="工具步骤" hint={`${steps.length} 项`}>
         <StepList steps={steps} />

@@ -23,7 +23,7 @@ const TERMINAL_PHASES = new Set<RunPhase>(['finished', 'cancelled', 'error']);
 const ALLOWED_TRANSITIONS: Record<RunPhase, ReadonlySet<RunPhase>> = {
   created: new Set(['running', 'cancelled', 'error']),
   running: new Set(['running', 'waiting_tool', 'finalizing', 'cancelled', 'error']),
-  waiting_tool: new Set(['running', 'waiting_tool', 'cancelled', 'error']),
+  waiting_tool: new Set(['running', 'waiting_tool', 'finalizing', 'cancelled', 'error']),
   finalizing: new Set(['finished', 'cancelled', 'error']),
   finished: new Set(),
   cancelled: new Set(),

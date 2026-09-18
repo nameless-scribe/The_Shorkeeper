@@ -12,6 +12,16 @@ import {
 } from '../ipc-validation';
 
 describe('IPC runtime validation', () => {
+  it('accepts explicit continuation only with a session, bounded checkpoint ID and unchanged task', () => {
+    const payload = { sessionId: 's', message: '确认继续一段', resumeCheckpointId: 'cp' };
+    expect(parseAgentSendPayload(payload).resumeCheckpointId).toBe('cp');
+    for (const invalid of [
+      { ...payload, sessionId: undefined }, { ...payload, resumeCheckpointId: {} },
+      { ...payload, resumeCheckpointId: 'x'.repeat(201) }, { ...payload, message: '改成删除文件' },
+      { ...payload, resumeCheckpointId: '   ' },
+      { ...payload, attachments: [{ relativePath: 'a.txt', originalName: 'a.txt', size: 1 }] },
+    ]) expect(() => parseAgentSendPayload(invalid)).toThrow();
+  });
   it('normalizes a valid agent payload', () => {
     expect(parseAgentSendPayload({
       sessionId: 'session-1',

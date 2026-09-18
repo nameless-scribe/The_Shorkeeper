@@ -15,8 +15,23 @@ const state = vi.hoisted(() => ({
   setTaskRunModel: vi.fn(),
   acknowledgeTaskRun: vi.fn(),
   databaseReady: true,
+  readCheckpoint: vi.fn(),
+  claimCheckpoint: vi.fn(),
+  validateCheckpoint: vi.fn(),
+  loopStopReason: undefined as undefined | 'budget_exhausted' | 'awaiting_input',
   assistantMode: 'focus' as 'focus' | 'organize' | 'review' | 'companion',
 }));
+
+vi.mock('../../db/repositories/run-checkpoints', () => ({
+  readRunCheckpoint: (...args: unknown[]) => state.readCheckpoint(...args),
+  claimRunCheckpoint: (...args: unknown[]) => state.claimCheckpoint(...args),
+  saveRunCheckpoint: vi.fn(),
+}));
+vi.mock('../checkpoint-tracker', () => ({
+  checkpointEnvironment: () => 'a'.repeat(64),
+  validateCheckpointFiles: (...args: unknown[]) => state.validateCheckpoint(...args),
+}));
+vi.mock('../permissions', () => ({ ensureWorkspaceDir: () => 'isolated-test-workspace' }));
 
 vi.mock('../../db/state', () => ({
   isDatabaseReady: () => state.databaseReady,
@@ -54,6 +69,7 @@ vi.mock('../loop', () => ({
       cachedTokens: 2,
     };
     yield { type: 'text_delta', runId: input.runId, delta: '模型回答' };
+    if (state.loopStopReason) yield { type: 'run_error', runId: input.runId, reason: state.loopStopReason, message: '本段已停止' };
   },
 }));
 vi.mock('../context-builder', () => ({
@@ -145,6 +161,10 @@ import { buildSystemPromptParts } from '../context-builder';
 describe('orchestrator runtime boundaries', () => {
   beforeEach(() => {
     state.loopInput = null;
+    state.readCheckpoint.mockReset();
+    state.claimCheckpoint.mockReset();
+    state.validateCheckpoint.mockReset();
+    state.loopStopReason = undefined;
     state.assistantMode = 'focus';
     state.insertMessage.mockReset();
     state.insertMessage.mockImplementation((_sessionId: string, role: string) => ({ id: `${role}-message-id` }));
@@ -157,6 +177,46 @@ describe('orchestrator runtime boundaries', () => {
     state.setTaskRunModel.mockReset();
     state.acknowledgeTaskRun.mockReset();
     state.databaseReady = true;
+  });
+
+  it.each(['budget_exhausted', 'awaiting_input'] as const)('persists the partial summary without marking %s as finished', async (reason) => {
+    state.loopStopReason = reason;
+    const events = [];
+    for await (const event of runOrchestrator('复杂任务', 'focus-session')) events.push(event);
+    expect(state.insertMessage).toHaveBeenCalledWith('focus-session', 'assistant', '模型回答');
+    expect(events.at(-1)).toMatchObject({ type: 'run_error', reason });
+    expect(events.some((event) => event.type === 'run_finished')).toBe(false);
+    expect(state.finishTaskRun).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      phase: 'error', terminalReason: reason, assistantMessageId: 'assistant-message-id',
+    }));
+    expect(state.scheduleMemory).not.toHaveBeenCalled();
+  });
+
+  it('validates and claims an explicit continuation before passing bounded pinned facts to the loop', async () => {
+    state.readCheckpoint.mockReturnValue({ version: 1, goal: '导出已核对的结果', answers: ['金额含税'], facts: ['CSV 已完成'],
+      pending: ['Excel 未完成'], files: [], completedEffects: [], environment: 'a'.repeat(64), rootRunId: 'parent',
+      totals: { rounds: 20, toolCalls: 30, tokens: 100000, activeMs: 1000, segments: 1 } });
+    const events = [];
+    for await (const event of runOrchestrator('确认继续一段', 's', undefined, { resumeCheckpointId: 'cp' })) events.push(event);
+    expect(state.readCheckpoint).toHaveBeenCalledWith('cp', 's');
+    expect(state.validateCheckpoint).toHaveBeenCalledOnce();
+    expect(state.claimCheckpoint).toHaveBeenCalledWith('cp', 's', expect.any(String));
+    const messages = state.loopInput?.messages ?? [];
+    expect(messages).toHaveLength(2);
+    expect(messages[1].content).toContain('金额含税');
+    expect(messages[1].content).toContain('CSV 已完成');
+    expect(messages[1].content).not.toContain('此前回答');
+    expect(events.at(-1)).toMatchObject({ type: 'run_finished' });
+  });
+
+  it('does not enter the tool loop or claim a checkpoint when source validation fails', async () => {
+    state.readCheckpoint.mockReturnValue({ goal: '原任务' });
+    state.validateCheckpoint.mockRejectedValueOnce(new Error('来源变化'));
+    const events = [];
+    for await (const event of runOrchestrator('确认继续一段', 's', undefined, { resumeCheckpointId: 'cp' })) events.push(event);
+    expect(state.loopInput).toBeNull();
+    expect(state.claimCheckpoint).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ type: 'run_error', message: '来源变化' });
   });
 
   it('acknowledges the interrupted-run notice only after this run finishes successfully', async () => {
