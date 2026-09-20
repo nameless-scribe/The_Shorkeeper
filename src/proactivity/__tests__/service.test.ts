@@ -292,4 +292,24 @@ describe('P3 proactivity service closed loop', () => {
     expect(popup).not.toHaveBeenCalled();
     expect(listProactiveEvents({})).toHaveLength(0);
   });
+
+  it('does not write a popup result after its cycle is aborted', async () => {
+    createCommitment({ title: '停止前提醒', owner: 'user', dueAt: clock + HOUR });
+    const controller = new AbortController();
+    let releasePopup: (() => void) | null = null;
+    popup = vi.fn(() => new Promise<void>((resolve) => { releasePopup = resolve; }));
+
+    const cycle = runProactivityCycle(deps(), { trigger: 'signal', signal: controller.signal });
+    await vi.waitFor(() => expect(popup).toHaveBeenCalledOnce());
+    controller.abort();
+    releasePopup!();
+
+    await expect(cycle).rejects.toMatchObject({ name: 'AbortError' });
+    expect(listDeliveries({ subjectKind: 'event' })).toHaveLength(1);
+    expect(listDeliveries({ subjectKind: 'event' })[0]).toMatchObject({
+      status: 'planned',
+      sentAt: null,
+      errorCategory: null,
+    });
+  });
 });

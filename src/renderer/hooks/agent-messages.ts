@@ -99,6 +99,11 @@ export function dropStreamingMessages(messages: UiMessage[]): UiMessage[] {
   return messages.filter((m) => !m.streaming);
 }
 
+/** 发送 IPC 未被主进程接收时，撤回只存在于界面的乐观消息。 */
+export function removeMessageById(messages: UiMessage[], messageId: string): UiMessage[] {
+  return messages.filter((message) => message.id !== messageId);
+}
+
 /** 预算/必要回答停止不是成功完成，但其阶段摘要和工具证据不能被错误清理掉。 */
 export function stopStream(messages: UiMessage[], streamId: string, preserveSummary: boolean): UiMessage[] {
   return preserveSummary ? finalizeStream(messages, streamId, '').messages : dropStreamingMessages(messages);

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition } from '../types';
 import { CONTENT_DEPENDENT_WRITE_CONTRACT } from '../contract';
-import { withFileArtifact, writeWorkspaceFileAtomically } from './artifact';
+import { StaleWorkspaceRevisionError, withFileArtifact, writeWorkspaceFileAtomically } from './artifact';
 import { revisionForBuffer, stalePreviewResult, truncatePreviewText } from './preview';
 import { resolveWorkspacePath } from './workspace-path';
 
@@ -92,7 +92,7 @@ export const replaceTextTool: ToolDefinition = {
         ctx.workspaceRoot,
         filePath,
         (temporaryPath) => fs.writeFile(temporaryPath, next, 'utf-8'),
-        { preserveBackup: true },
+        { preserveBackup: true, expectedRevision: currentRevision },
       );
       const digest = createHash('sha256').update(next).digest('hex');
       return withFileArtifact(
@@ -104,6 +104,7 @@ export const replaceTextTool: ToolDefinition = {
         artifact,
       );
     } catch (err) {
+      if (err instanceof StaleWorkspaceRevisionError) return stalePreviewResult(filePath);
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, output: '', error: message };
     }

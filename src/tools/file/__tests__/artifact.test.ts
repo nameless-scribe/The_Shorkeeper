@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { writeWorkspaceFileAtomically } from '../artifact';
+import { StaleWorkspaceRevisionError, writeWorkspaceFileAtomically } from '../artifact';
+import { getWorkspaceFileRevision } from '../preview';
 
 describe('writeWorkspaceFileAtomically', () => {
   afterEach(() => {
@@ -109,5 +110,57 @@ describe('writeWorkspaceFileAtomically', () => {
 
     await expect(fs.readFile(target, 'utf8')).resolves.toBe('old plan');
     await expect(fs.readdir(outside)).resolves.toEqual([]);
+  });
+
+  it('serializes concurrent writes to the same target without deleting another result', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-atomic-'));
+    let releaseFirst!: () => void;
+    const firstMayFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstStarted!: () => void;
+    const firstDidStart = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    let secondWriterStarted = false;
+
+    const first = writeWorkspaceFileAtomically(root, 'shared.md', async (temporaryPath) => {
+      await fs.writeFile(temporaryPath, 'first', 'utf8');
+      firstStarted();
+      await firstMayFinish;
+    });
+    await firstDidStart;
+    const second = writeWorkspaceFileAtomically(root, 'shared.md', async (temporaryPath) => {
+      secondWriterStarted = true;
+      await fs.writeFile(temporaryPath, 'second', 'utf8');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(secondWriterStarted).toBe(false);
+
+    releaseFirst();
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    await expect(fs.readFile(path.join(root, 'shared.md'), 'utf8')).resolves.toBe('second');
+    await expect(fs.readdir(root)).resolves.toEqual(['shared.md']);
+  });
+
+  it('rechecks the preview revision under the target lock before replacement', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-atomic-'));
+    const target = path.join(root, 'report.md');
+    await fs.writeFile(target, 'previewed', 'utf8');
+    const revision = await getWorkspaceFileRevision(root, 'report.md');
+
+    await expect(
+      writeWorkspaceFileAtomically(
+        root,
+        'report.md',
+        async (temporaryPath) => {
+          await fs.writeFile(temporaryPath, 'generated', 'utf8');
+          await fs.writeFile(target, 'external edit', 'utf8');
+        },
+        { expectedRevision: revision, preserveBackup: true },
+      ),
+    ).rejects.toBeInstanceOf(StaleWorkspaceRevisionError);
+    await expect(fs.readFile(target, 'utf8')).resolves.toBe('external edit');
+    await expect(fs.readdir(root)).resolves.toEqual(['report.md']);
   });
 });

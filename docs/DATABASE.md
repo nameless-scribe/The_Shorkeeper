@@ -91,6 +91,7 @@ pnpm db:seed
 | `0028_user_questions.sql` | P6.2 `ask_user` 提问账本 `user_questions`：问题、选项、回答、状态与决定方式 |
 | `0029_datasources.sql` | P7 数据源查询：`data_sources`、`data_dictionary`、`metrics`、`named_queries`、`query_runs` |
 | `0030_run_checkpoints.sql` | 聊天预算检查点 `task_run_checkpoints`：加密快照、到期时间、单次认领与续跑关联；删除会话联动清理 |
+| `0031_audio_transcript_attempts.sql` | 录音转写 attempt 原子认领，阻止同一幂等键并发计费与旧请求覆盖新状态 |
 | `0026_proactive_events.sql` | P3 本地主动服务：`proactive_events`、`proactivity_decisions`、`proactivity_deliveries`、`proactivity_feedback`，以及 `scheduled_tasks` 的失败真源列（`last_error`、`last_error_at`、`failure_count`） |
 
 打包时 migration 以 `extraResources/db-migrations/` 形式随安装包分发；开发态直接读 `src/db/migrations/`。

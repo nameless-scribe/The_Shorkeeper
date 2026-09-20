@@ -582,7 +582,7 @@ interface QueryPlan {
 | 值定位 | `src/datasources/value-locator.ts` | 见上；相似度是字符二元组重叠率，≥ 0.6 且比第二名高 0.15 才算唯一命中 |
 | 挑表 | `src/datasources/table-search.ts` | 关注表超过 60 张且给了问题原文时按分数挑 |
 | 执行 | `src/datasources/query-runner.ts` | EXPLAIN → 阈值 → 主查询与自检 `Promise.all` 并行 → `evaluateSelfChecks`：可加指标（SUM / COUNT，非 DISTINCT）的分组合计 vs 整体合计，容差 0.5%，不过就 `check_failed` 不给结果；截断时跳过合计核对；对比周期不核对；清单模式的总行数与日期覆盖只做说明 |
-| 产物 | `src/datasources/csv.ts` | UTF-8 BOM、CRLF、RFC 4180 引号、公式样文本加撇号；路径 `查询/日期/时分秒-摘要.csv` |
+| 产物 | `src/datasources/csv.ts` | UTF-8 BOM、CRLF、RFC 4180 引号、公式样文本加撇号；路径 `查询/日期/时分秒-摘要-查询记录ID.csv`，同秒同摘要也不会覆盖 |
 | 工具 | `src/tools/data/` | `list_data_sources`、`describe_data_source`（表清单 + 指标 + 今天 / 本周 / 本月 / 上月的左闭右开日期锚点；给 `table` 时返回列详情）、`propose_query_plan`（补口径、值定位、渲染、试编译；未登记指标与缺业务名作为提醒）、`run_sql_query`（`risk: medium`、幂等、`supportsPreview`、`evidence: artifact`；预览 `kind: 'query-plan'`，摘要是业务语言，SQL 在 `technicalDetails` 折叠；修订号是 sourceId + SQL + 参数的哈希）、`update_data_dictionary`（`LOCAL_UPSERT_CONTRACT`；指标片段拒绝分号 / 注释 / 写关键字；表列须在字典里） |
 | 共用 | `src/tools/data/source-access.ts`、`plan-preparation.ts` | 依赖注入（数据源、字典、连接器、查询记录、当前时间），两个工具对同一方案得到同一份准备结果 |
 | 确认弹窗 | `PermissionDialog.tsx`、`ToolPreviewInfo.technicalDetails` | `query-plan` 预览：摘要与要点直接显示，"查看执行详情（SQL）"默认收起 |
@@ -642,7 +642,7 @@ interface QueryPlan {
 
 - 工具 `run_named_query`：与 `run_sql_query` 同一条执行路径（`executePreparedPlan` 抽成共用：预览 → 确认 → EXPLAIN → 自检并行 → CSV → 查询记录）。
   **时间范围必填**（`上月 / 本周 / 昨天` 等相对说法或起止日期），不沿用保存时的值（§3.6 第 3 条）；过滤值没给才沿用，并在结果说明里写"过滤值沿用保存时的「已付款、已退款」"。
-  跑完 `named_queries.last_run_at / last_row_count` 更新。产物路径本来就按日期（`查询/YYYY-MM-DD/HHmmss-摘要.csv`）。
+  跑完 `named_queries.last_run_at / last_row_count` 更新。产物路径按日期并带查询记录 ID（`查询/YYYY-MM-DD/HHmmss-摘要-查询记录ID.csv`）。
 - 工具 `schedule_named_query`：挂到 P3 定时任务（`agent_prompt` 类型），payload 里 `prompt` 让助理到点跑 `run_named_query`，并记 `_shorekeeper_kind: named_query`、`namedQueryId`、`sourceId`、`timeRange`。
   只接受相对时间范围；同一命名查询 + 同 cron + 同范围不重复创建。
 - **数据源被删时任务停用并提示**：`disableNamedQueryTasksForSource` 在设置页删除数据源时执行，任务 `enabled = 0` 并记 `last_error`"数据源「X」已删除，任务已停用"（P3 的失败事件据此提醒）。
@@ -650,3 +650,9 @@ interface QueryPlan {
 - 测试：`export-and-rerun.test.ts`（重跑必须给时间范围、预设解析、覆盖过滤、沿用说明、旧格式拒绝）、`schedule-named-query.test.ts`（真实 sql.js 库：任务创建与幂等、非法参数、删源停用）。`pnpm test:p7` 25 个文件 189 用例。
 
 **待用户**（P7.6 真实使用）：连上库后走一遍"查 → 确认 → 保存命名查询 → 再跑一次上月 → 导出 Excel 看来源页 → 设个每月 1 号的定时"，两周内记录追问次数、方案是否需改、是否走逃生口、自检是否拦下错误。
+
+### 12.7 P7 稳定性补强（2026-09-20）
+
+- 查询 CSV 文件名加入 `query_runs.id` 的安全短后缀，消除同一秒内相同摘要互相覆盖的窗口。
+- 应用启动恢复统一调用 `markInterruptedQueryRuns()`，上次进程遗留的 `running` 查询改为 `cancelled` 并记录中断原因；恢复失败会阻止数据库依赖功能继续启动。
+- 回归覆盖同秒路径唯一性、Repository 收口与启动恢复编排。

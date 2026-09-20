@@ -386,7 +386,23 @@ describe('scheduler execution safety', () => {
     });
 
     expect(markTaskRun).not.toHaveBeenCalled();
-    expect(disableScheduledTask).not.toHaveBeenCalled();
+    expect(disableScheduledTask).toHaveBeenCalledWith('task-unsupported');
+    error.mockRestore();
+  });
+
+  it('disables a failed one-time reminder instead of leaving it enabled without a timer', async () => {
+    state.showReminderPopup.mockRejectedValueOnce(new Error('popup failed'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await runScheduledTask({
+      ...task,
+      id: 'task-once-failed',
+      scheduleKind: 'once',
+      actionType: 'reminder',
+    });
+
+    expect(markTaskRun).not.toHaveBeenCalled();
+    expect(disableScheduledTask).toHaveBeenCalledWith('task-once-failed');
     error.mockRestore();
   });
 });

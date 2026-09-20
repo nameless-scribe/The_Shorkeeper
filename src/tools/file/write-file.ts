@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import type { ToolDefinition } from '../types';
 import { PREVIEWABLE_WORKSPACE_WRITE_CONTRACT } from '../contract';
-import { withFileArtifact, writeWorkspaceFileAtomically } from './artifact';
+import { StaleWorkspaceRevisionError, withFileArtifact, writeWorkspaceFileAtomically } from './artifact';
 import {
   previewRevisionIsCurrent,
   readWorkspaceTextPreview,
@@ -65,6 +65,7 @@ export const writeFileTool: ToolDefinition = {
         ctx.workspaceRoot,
         filePath,
         (temporaryPath) => fs.writeFile(temporaryPath, content, 'utf-8'),
+        { expectedRevision: ctx.previewRevision },
       );
       return withFileArtifact(
         {
@@ -74,6 +75,7 @@ export const writeFileTool: ToolDefinition = {
         artifact,
       );
     } catch (err) {
+      if (err instanceof StaleWorkspaceRevisionError) return stalePreviewResult(filePath);
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, output: '', error: message };
     }

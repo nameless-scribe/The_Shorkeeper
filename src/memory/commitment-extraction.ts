@@ -56,12 +56,12 @@ export interface ProposeCommitmentsResult {
  */
 export function proposeCommitmentsFromDrafts(
   drafts: CommitmentDraft[],
-  context: { sessionId: string; runId?: string | null; now?: number },
+  context: { sessionId: string; runId?: string | null },
 ): ProposeCommitmentsResult {
   const result: ProposeCommitmentsResult = { proposed: 0, skippedLowConfidence: 0, skippedDuplicate: 0 };
   if (!drafts.length) return result;
 
-  const now = context.now ?? Date.now();
+  const now = Date.now();
   const existing = listCommitments({ limit: 500 })
     .filter((item) => item.createdAt >= now - COMMITMENT_DEDUP_WINDOW_MS)
     .map((item) => normalizeCommitmentTitle(item.title));
@@ -79,7 +79,7 @@ export function proposeCommitmentsFromDrafts(
     }
     const due = draft.due ? parseDueInput(draft.due) : null;
     // 模型换算错误得到的过去时间不能写入：确认后会立刻被复盘标为 missed。
-    const dueAt = due && due.dueAt >= Date.now() ? due.dueAt : null;
+    const dueAt = due && due.dueAt >= now ? due.dueAt : null;
     createCommitment({
       title: draft.title,
       owner: 'user',

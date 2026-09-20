@@ -9,6 +9,7 @@ import {
   finalizeStream,
   findLastPersistedAssistant,
   markThinking,
+  removeMessageById,
   startToolCall,
   streamIdForRun,
   stopStream,
@@ -136,6 +137,20 @@ describe('agent message transforms', () => {
     expect(dropStreamingMessages(messages).map((m) => m.id)).toEqual(['a1']);
   });
 
+  it('removes only the rejected optimistic message after an IPC send failure', () => {
+    const messages: UiMessage[] = [
+      { id: 'persisted', role: 'assistant', content: '上一条回复' },
+      { id: 'local-failed', role: 'user', content: '没有真正发出去' },
+      { id: 'local-other', role: 'user', content: '另一条消息' },
+    ];
+
+    expect(removeMessageById(messages, 'local-failed')).toEqual([
+      messages[0],
+      messages[2],
+    ]);
+    expect(messages).toHaveLength(3);
+  });
+
   // StrictMode 会把 state updater 调用两次。这些变换被当作 updater 体使用，
   // 必须满足：同一份输入调用两次，结果一致，且不修改入参。
   it('stays pure and stable when applied twice with the same input (StrictMode double-invoke)', () => {
@@ -151,6 +166,7 @@ describe('agent message transforms', () => {
       () => startToolCall(base, STREAM, { callId: 'c2', name: 'write_file', args: {} }),
       () => endToolCall(base, STREAM, { callId: 'c1', result: okResult }),
       () => dropStreamingMessages(base),
+      () => removeMessageById(base, STREAM),
       () => finalizeStream(base, STREAM, '正文'),
       () => attachToolArtifacts(base, { toolCalls: [] }),
     ];

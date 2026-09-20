@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeDatabase, initDatabase } from '../../db';
 import { createCommitment, listCommitments, setCommitmentStatus } from '../../db/repositories/commitments';
 import { listUserTasks } from '../../db/user-tasks';
@@ -20,6 +20,7 @@ describe('commitment extraction', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     closeDatabase();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -41,6 +42,8 @@ describe('commitment extraction', () => {
   });
 
   it('proposes confident, new commitments without creating tasks, and skips duplicates for 30 days', () => {
+    const logicalNow = new Date(2026, 8, 15, 12).getTime();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(logicalNow);
     const result = proposeCommitmentsFromDrafts(
       [
         { title: '周五前把报告发给老板', due: '2026-09-18', promisedTo: '老板', confidence: 0.9, reason: '' },
@@ -62,6 +65,8 @@ describe('commitment extraction', () => {
       taskId: null,
     });
     expect(proposed.dueAt).toBe(new Date(2026, 8, 18, 23, 59, 59, 999).getTime());
+    expect(proposed.createdAt).toBe(logicalNow);
+    expect(proposed.dueAt).toBeGreaterThan(proposed.createdAt);
     expect(listUserTasks()).toEqual([]);
 
     // The user rejected it: it must not be proposed again next turn.
@@ -74,10 +79,11 @@ describe('commitment extraction', () => {
 
     // An old record outside the window no longer blocks a fresh proposal.
     const old = createCommitment({ title: '每年体检', owner: 'user' });
+    clock.mockReturnValue(old.createdAt + 31 * 24 * 60 * 60 * 1000);
     expect(
       proposeCommitmentsFromDrafts(
         [{ title: '每年体检', due: null, promisedTo: null, confidence: 0.9, reason: '' }],
-        { sessionId: 's1', now: old.createdAt + 31 * 24 * 60 * 60 * 1000 },
+        { sessionId: 's1' },
       ).proposed,
     ).toBe(1);
   });

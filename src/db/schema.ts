@@ -376,6 +376,7 @@ export interface AudioTranscriptRow {
   engine_type: string;
   diarization: number;
   status: string;
+  attempt_id: string | null;
   transcript_path: string | null;
   sentence_count: number | null;
   speaker_count: number | null;

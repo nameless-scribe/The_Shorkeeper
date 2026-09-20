@@ -298,6 +298,16 @@ export async function runScheduledTask(task: ScheduledTaskInfo): Promise<void> {
     } catch (recordError) {
       console.warn('[scheduler] 记录任务失败状态失败:', recordError instanceof Error ? recordError.message : recordError);
     }
+    if (task.scheduleKind === 'once') {
+      // 一次性任务异常后的副作用可能未知，不能自动重放；禁用并由失败事件提示用户处理。
+      // 否则计时器已经消费、数据库却仍显示 enabled，当前进程内再也不会执行。
+      try {
+        disableScheduledTask(task.id);
+        notifyTasksChanged();
+      } catch (disableError) {
+        console.warn('[scheduler] 禁用失败的一次性任务失败:', disableError instanceof Error ? disableError.message : disableError);
+      }
+    }
   } finally {
     runningTaskIds.delete(task.id);
   }

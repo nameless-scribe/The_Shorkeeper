@@ -1,9 +1,14 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { closeDatabase, initDatabase } from '../../db';
-import { listAudioTranscripts } from '../../db/repositories/audio-transcripts';
+import {
+  completeAudioTranscript,
+  listAudioTranscripts,
+  startAudioTranscript,
+} from '../../db/repositories/audio-transcripts';
 import { summarizeTranscript, transcribeAudioTool, transcriptPathFor } from '../voice/transcribe-audio';
 
 const ENV_KEYS = ['TENCENT_ASR_SECRET_ID', 'TENCENT_ASR_SECRET_KEY', 'TENCENT_ASR_APP_ID'] as const;
@@ -155,6 +160,53 @@ describe('transcribe_audio execution guards', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('为空');
       expect(listAudioTranscripts({})).toHaveLength(0);
+    });
+
+    it('returns artifact evidence when a completed transcript is reused', async () => {
+      const audio = Buffer.from([1, 2, 3]);
+      fs.writeFileSync(path.join(workspace, 'cached.m4a'), audio);
+      fs.writeFileSync(path.join(workspace, 'cached.transcript.md'), '# 已有逐字稿\n');
+      const claim = startAudioTranscript({
+        sourcePath: 'cached.m4a',
+        sourceHash: createHash('sha256').update(audio).digest('hex'),
+        sizeBytes: audio.length,
+        engineType: '16k_zh',
+        diarization: true,
+      });
+      expect(claim.claimed).toBe(true);
+      completeAudioTranscript(claim.record.id, claim.attemptId!, {
+        transcriptPath: 'cached.transcript.md',
+        durationMs: 1000,
+        sentenceCount: 1,
+        speakerCount: 1,
+      });
+
+      const result = await transcribeAudioTool.execute({ path: 'cached.m4a', diarization: true }, ctx());
+      expect(result).toMatchObject({ success: true });
+      expect(result.output).toContain('未重复计费');
+      expect(result.artifacts).toHaveLength(1);
+      expect(result.artifacts?.[0]).toMatchObject({ relativePath: 'cached.transcript.md' });
+    });
+
+    it('does not start a second provider request while the same key is running', async () => {
+      const audio = Buffer.from([4, 5, 6]);
+      fs.writeFileSync(path.join(workspace, 'running.m4a'), audio);
+      const first = startAudioTranscript({
+        sourcePath: 'running.m4a',
+        sourceHash: createHash('sha256').update(audio).digest('hex'),
+        sizeBytes: audio.length,
+        engineType: '16k_zh',
+        diarization: true,
+      });
+
+      const result = await transcribeAudioTool.execute({ path: 'running.m4a', diarization: true }, ctx());
+      expect(result).toMatchObject({ success: false, error: expect.stringContaining('正在转写') });
+      expect(listAudioTranscripts({})).toHaveLength(1);
+      expect(listAudioTranscripts({})[0]).toMatchObject({
+        id: first.record.id,
+        status: 'running',
+        attemptId: first.attemptId,
+      });
     });
   });
 });

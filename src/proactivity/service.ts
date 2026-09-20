@@ -78,6 +78,13 @@ export interface CycleReport {
   changed: boolean;
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const error = new Error('Proactivity cycle aborted');
+  error.name = 'AbortError';
+  throw error;
+}
+
 function emptyRouted(): Record<ProactivityRoute, number> {
   return { inbox: 0, notify: 0, defer: 0, suppress: 0 };
 }
@@ -99,7 +106,9 @@ export async function routeAndDeliverEvent(
   attempt: string,
   deps: ProactivityServiceDeps,
   report: CycleReport,
+  signal?: AbortSignal,
 ): Promise<void> {
+  throwIfAborted(signal);
   const db = deps.db ?? getDatabase();
   const now = deps.now?.() ?? Date.now();
   // 同一周期里事件可能已被来源解决或用户处理：以账本当前状态为准，不用采集时的快照。
@@ -175,10 +184,13 @@ export async function routeAndDeliverEvent(
     return;
   }
   try {
+    throwIfAborted(signal);
     await deps.popup(event.title, popupBody(event));
+    throwIfAborted(signal);
     markDeliverySent(claimed.delivery.id, now, db);
     report.popupsSent += 1;
   } catch (error) {
+    throwIfAborted(signal);
     markDeliveryFailed(claimed.delivery.id, error instanceof Error ? error.name || 'popup_error' : 'popup_error', db);
     report.popupsFailed += 1;
     deps.log?.(`[proactivity] 事件弹窗失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -189,13 +201,16 @@ export async function routeAndDeliverEvent(
 export async function replayDeferredDeliveries(
   deps: ProactivityServiceDeps,
   report: CycleReport,
+  signal?: AbortSignal,
 ): Promise<void> {
+  throwIfAborted(signal);
   const db = deps.db ?? getDatabase();
   const now = deps.now?.() ?? Date.now();
   const planned = listPlannedDeliveries({ channel: 'popup', dueBefore: now, limit: 50 }, db);
   if (!planned.length) return;
   const settings = deps.getSettings();
   for (const delivery of planned) {
+    throwIfAborted(signal);
     if (!delivery.eventId) {
       cancelDelivery(delivery.id, db);
       continue;
@@ -220,12 +235,15 @@ export async function replayDeferredDeliveries(
     }, db);
     if (decision.route === 'notify') {
       try {
+        throwIfAborted(signal);
         await deps.popup(event.title, popupBody(event));
+        throwIfAborted(signal);
         markDeliverySent(delivery.id, now, db);
         report.popupsSent += 1;
         report.deferredReplayed += 1;
         report.changed = true;
       } catch (error) {
+        throwIfAborted(signal);
         markDeliveryFailed(delivery.id, error instanceof Error ? error.name || 'popup_error' : 'popup_error', db);
         report.popupsFailed += 1;
       }
@@ -242,8 +260,13 @@ export async function replayDeferredDeliveries(
 
 export async function runProactivityCycle(
   deps: ProactivityServiceDeps,
-  options: { domains?: ReadonlySet<ProactiveEventDomain> | null; trigger?: ProactivityCycleTrigger } = {},
+  options: {
+    domains?: ReadonlySet<ProactiveEventDomain> | null;
+    trigger?: ProactivityCycleTrigger;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<CycleReport> {
+  throwIfAborted(options.signal);
   const db = deps.db ?? getDatabase();
   const now = deps.now?.() ?? Date.now();
   const trigger = options.trigger ?? 'manual';
@@ -285,6 +308,7 @@ export async function runProactivityCycle(
 
   const scanDomains = domains == null || domains.size > 0;
   if (scanDomains) {
+    throwIfAborted(options.signal);
     const snapshot = loadLocalStateSnapshot(domains, now, db);
     const projection = projectLocalEvents(snapshot);
     report.projected = projection.events.length;
@@ -294,6 +318,7 @@ export async function runProactivityCycle(
     db.beginBatch();
     try {
       for (const projected of projection.events) {
+        throwIfAborted(options.signal);
         produced.add(projected.dedupeKey);
         const result = upsertProactiveEvent(projected, db);
         if (result.outcome === 'created' || result.outcome === 'reopened') report.created += 1;
@@ -314,6 +339,7 @@ export async function runProactivityCycle(
         }
       }
       for (const domain of projection.completeDomains) {
+        throwIfAborted(options.signal);
         const stale = listActiveProactiveEventsByDomain(domain, db).filter((event) => !produced.has(event.dedupeKey));
         if (stale.length) {
           report.resolvedBySource += resolveProactiveEventsBySource(
@@ -335,10 +361,11 @@ export async function runProactivityCycle(
   }
 
   for (const item of toRoute) {
-    await routeAndDeliverEvent(item.event, item.attempt, deps, report);
+    await routeAndDeliverEvent(item.event, item.attempt, deps, report, options.signal);
   }
-  await replayDeferredDeliveries(deps, report);
+  await replayDeferredDeliveries(deps, report, options.signal);
 
+  throwIfAborted(options.signal);
   if (trigger === 'sweep' || trigger === 'startup') {
     const cutoff = now - HANDLED_EVENT_RETENTION_MS;
     pruneHandledProactiveEvents(cutoff, db);
@@ -347,6 +374,7 @@ export async function runProactivityCycle(
   }
 
   report.finishedAt = deps.now?.() ?? Date.now();
+  throwIfAborted(options.signal);
   if (report.changed) deps.onInboxChanged?.(report);
   return report;
 }

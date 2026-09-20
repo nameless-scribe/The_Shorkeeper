@@ -30,6 +30,7 @@ export interface AudioTranscriptInfo {
   engineType: string;
   diarization: boolean;
   status: AudioTranscriptStatus;
+  attemptId: string | null;
   transcriptPath: string | null;
   sentenceCount: number | null;
   speakerCount: number | null;
@@ -43,7 +44,7 @@ export interface AudioTranscriptInfo {
 }
 
 const SELECT = `SELECT id, source_path, source_hash, size_bytes, duration_ms, provider, engine_type,
-    diarization, status, transcript_path, sentence_count, speaker_count, error, provider_code,
+    diarization, status, attempt_id, transcript_path, sentence_count, speaker_count, error, provider_code,
     provider_request_id, sensitivity, created_at, updated_at, completed_at
   FROM audio_transcripts`;
 
@@ -65,6 +66,7 @@ function rowToInfo(row: AudioTranscriptRow): AudioTranscriptInfo {
     engineType: String(row.engine_type),
     diarization: Number(row.diarization) === 1,
     status: (STATUSES.has(String(row.status)) ? String(row.status) : 'failed') as AudioTranscriptStatus,
+    attemptId: text(row.attempt_id),
     transcriptPath: text(row.transcript_path),
     sentenceCount: num(row.sentence_count),
     speakerCount: num(row.speaker_count),
@@ -125,6 +127,14 @@ export interface StartAudioTranscriptInput {
   provider?: string;
   sensitivity?: string;
   now?: number;
+  /** 仅当调用方已确认该 succeeded 记录的产物缺失且版本仍相同时才允许重跑。 */
+  retrySucceededUpdatedAt?: number;
+}
+
+export interface StartAudioTranscriptResult {
+  record: AudioTranscriptInfo;
+  claimed: boolean;
+  attemptId: string | null;
 }
 
 /**
@@ -135,7 +145,7 @@ export interface StartAudioTranscriptInput {
 export function startAudioTranscript(
   input: StartAudioTranscriptInput,
   db: AppDatabase = getDatabase(),
-): AudioTranscriptInfo {
+): StartAudioTranscriptResult {
   return db.transaction(() => {
     const now = input.now ?? Date.now();
     const existing = findAudioTranscriptByKey(
@@ -143,23 +153,31 @@ export function startAudioTranscript(
       db,
     );
     if (existing) {
+      if (existing.status === 'running') {
+        return { record: existing, claimed: false, attemptId: null };
+      }
+      if (existing.status === 'succeeded' && input.retrySucceededUpdatedAt !== existing.updatedAt) {
+        return { record: existing, claimed: false, attemptId: null };
+      }
+      const attemptId = uuidv4();
       db.prepare(
         `UPDATE audio_transcripts
-         SET source_path = ?, size_bytes = ?, status = 'running', transcript_path = NULL,
+         SET source_path = ?, size_bytes = ?, status = 'running', attempt_id = ?, transcript_path = NULL,
              sentence_count = NULL, speaker_count = NULL, duration_ms = NULL,
              error = NULL, provider_code = NULL, provider_request_id = NULL,
              completed_at = NULL, updated_at = ?
          WHERE id = ?`,
-      ).run(input.sourcePath, input.sizeBytes, now, existing.id);
-      return getAudioTranscript(existing.id, db)!;
+      ).run(input.sourcePath, input.sizeBytes, attemptId, now, existing.id);
+      return { record: getAudioTranscript(existing.id, db)!, claimed: true, attemptId };
     }
 
     const id = uuidv4();
+    const attemptId = uuidv4();
     db.prepare(
       `INSERT INTO audio_transcripts
          (id, source_path, source_hash, size_bytes, provider, engine_type, diarization,
-          status, sensitivity, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
+          status, attempt_id, sensitivity, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`,
     ).run(
       id,
       input.sourcePath,
@@ -168,11 +186,12 @@ export function startAudioTranscript(
       input.provider ?? 'tencent-flash',
       input.engineType,
       input.diarization ? 1 : 0,
+      attemptId,
       input.sensitivity ?? 'sensitive',
       now,
       now,
     );
-    return getAudioTranscript(id, db)!;
+    return { record: getAudioTranscript(id, db)!, claimed: true, attemptId };
   });
 }
 
@@ -188,6 +207,7 @@ export interface CompleteAudioTranscriptInput {
 
 export function completeAudioTranscript(
   id: string,
+  attemptId: string,
   input: CompleteAudioTranscriptInput,
   db: AppDatabase = getDatabase(),
 ): AudioTranscriptInfo | null {
@@ -196,7 +216,7 @@ export function completeAudioTranscript(
     `UPDATE audio_transcripts
      SET status = 'succeeded', transcript_path = ?, duration_ms = ?, sentence_count = ?,
          speaker_count = ?, provider_request_id = ?, error = NULL, completed_at = ?, updated_at = ?
-     WHERE id = ?`,
+     WHERE id = ? AND status = 'running' AND attempt_id = ?`,
   ).run(
     input.transcriptPath,
     input.durationMs,
@@ -206,8 +226,10 @@ export function completeAudioTranscript(
     now,
     now,
     id,
+    attemptId,
   );
-  return getAudioTranscript(id, db);
+  const updated = getAudioTranscript(id, db);
+  return updated?.status === 'succeeded' && updated.attemptId === attemptId ? updated : null;
 }
 
 export interface FailAudioTranscriptInput {
@@ -221,6 +243,7 @@ export interface FailAudioTranscriptInput {
 
 export function failAudioTranscript(
   id: string,
+  attemptId: string,
   input: FailAudioTranscriptInput,
   db: AppDatabase = getDatabase(),
 ): AudioTranscriptInfo | null {
@@ -228,7 +251,7 @@ export function failAudioTranscript(
   db.prepare(
     `UPDATE audio_transcripts
      SET status = ?, error = ?, provider_code = ?, provider_request_id = ?, completed_at = ?, updated_at = ?
-     WHERE id = ?`,
+     WHERE id = ? AND status = 'running' AND attempt_id = ?`,
   ).run(
     input.cancelled ? 'cancelled' : 'failed',
     truncate(input.error),
@@ -237,8 +260,11 @@ export function failAudioTranscript(
     now,
     now,
     id,
+    attemptId,
   );
-  return getAudioTranscript(id, db);
+  const updated = getAudioTranscript(id, db);
+  const expectedStatus = input.cancelled ? 'cancelled' : 'failed';
+  return updated?.status === expectedStatus && updated.attemptId === attemptId ? updated : null;
 }
 
 export interface ListAudioTranscriptsOptions {

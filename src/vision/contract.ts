@@ -106,6 +106,8 @@ export interface SidecarRecord {
   mode: VisionMode;
   /** 本次一起看的图片（相对路径） */
   images: string[];
+  /** 生成答案时每张源图的 SHA-256；旧 sidecar 没有摘要时不得复用 */
+  imageHashes: Record<string, string>;
   at: string;
   promptTokens: number | null;
   completionTokens: number | null;
@@ -122,6 +124,7 @@ export function formatSidecar(record: SidecarRecord): string {
     question: record.question,
     mode: record.mode,
     images: record.images,
+    imageHashes: record.imageHashes,
     at: record.at,
     promptTokens: record.promptTokens,
     completionTokens: record.completionTokens,
@@ -146,6 +149,14 @@ export function parseSidecar(text: string): SidecarRecord | null {
       question: header.question,
       mode: header.mode as VisionMode,
       images: Array.isArray(header.images) ? header.images.filter((item): item is string => typeof item === 'string') : [],
+      imageHashes:
+        header.imageHashes && typeof header.imageHashes === 'object' && !Array.isArray(header.imageHashes)
+          ? Object.fromEntries(
+              Object.entries(header.imageHashes).filter(
+                (entry): entry is [string, string] => typeof entry[1] === 'string',
+              ),
+            )
+          : {},
       at: typeof header.at === 'string' ? header.at : '',
       promptTokens: typeof header.promptTokens === 'number' ? header.promptTokens : null,
       completionTokens: typeof header.completionTokens === 'number' ? header.completionTokens : null,
@@ -157,12 +168,20 @@ export function parseSidecar(text: string): SidecarRecord | null {
 }
 
 /** 同图同问同模式才算命中（§3.2） */
-export function sidecarMatches(record: SidecarRecord, args: LookAtImageArgs): boolean {
+export function sidecarMatches(
+  record: SidecarRecord,
+  args: LookAtImageArgs,
+  imageHashes: Record<string, string>,
+): boolean {
   if (record.mode !== args.mode) return false;
   if (record.question.trim() !== args.question.trim()) return false;
   const a = [...record.images].sort().join('\n');
   const b = [...args.paths].sort().join('\n');
-  return a === b;
+  if (a !== b) return false;
+  return args.paths.every((imagePath) => {
+    const expected = imageHashes[imagePath];
+    return typeof expected === 'string' && expected.length > 0 && record.imageHashes[imagePath] === expected;
+  });
 }
 
 /** 各模式的提示词：看图回答不要长推理，读文字要逐字、不确定标 ? */

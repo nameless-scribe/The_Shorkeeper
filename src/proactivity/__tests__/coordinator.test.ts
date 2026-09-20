@@ -50,14 +50,14 @@ describe('P3.1 proactivity coordinator', () => {
     expect(run).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(200);
     expect(run).toHaveBeenCalledTimes(1);
-    expect(run.mock.calls[0]).toEqual([null, 'startup']);
+    expect(run.mock.calls[0]?.slice(0, 2)).toEqual([null, 'startup']);
     coordinator.signal('task');
     coordinator.wake();
     await vi.advanceTimersByTimeAsync(5);
     expect(run).toHaveBeenCalledTimes(2);
-    expect(run.mock.calls[1]).toEqual([null, 'wake']);
+    expect(run.mock.calls[1]?.slice(0, 2)).toEqual([null, 'wake']);
     await vi.advanceTimersByTimeAsync(2_000);
-    expect(run.mock.calls.at(-1)).toEqual([null, 'sweep']);
+    expect(run.mock.calls.at(-1)?.slice(0, 2)).toEqual([null, 'sweep']);
     await coordinator.stop();
   });
 
@@ -86,5 +86,32 @@ describe('P3.1 proactivity coordinator', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(run).toHaveBeenCalledTimes(2);
     await coordinator.stop();
+  });
+
+  it('aborts the active cycle during shutdown and does not report cancellation as an error', async () => {
+    const errors: unknown[] = [];
+    const run = vi.fn((_domains, _trigger, signal: AbortSignal) => new Promise<void>((resolve) => {
+      signal.addEventListener('abort', () => resolve(), { once: true });
+    }));
+    const coordinator = createProactivityCoordinator({
+      run,
+      debounceMs: 0,
+      startupDelayMs: 10_000,
+      sweepIntervalMs: 60_000,
+      deferredCheckMs: 60_000,
+      onError: (error) => errors.push(error),
+    });
+
+    const pending = coordinator.requestFullCycle('manual');
+    await vi.advanceTimersByTimeAsync(1);
+    const signal = run.mock.calls[0]?.[2];
+    expect(signal?.aborted).toBe(false);
+
+    await coordinator.stop(100);
+    await pending;
+    expect(signal?.aborted).toBe(true);
+    expect(coordinator.isRunning()).toBe(false);
+    expect(errors).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -65,6 +65,21 @@ describe('look_at_image', () => {
     expect(requests).toHaveLength(3);
   });
 
+  it('invalidates the sidecar when the source image changes or disappears', async () => {
+    await lookAtImageTool.execute({ paths: ['a.png'], question: '这是什么？' }, ctx());
+    await fs.writeFile(path.join(workspace, 'a.png'), createCanvas(9, 9).toBuffer('image/png'));
+
+    const changed = await lookAtImageTool.execute({ paths: ['a.png'], question: '这是什么？' }, ctx('run-2'));
+    expect(changed).toMatchObject({ success: true, metadata: { cached: false } });
+    expect(requests).toHaveLength(2);
+
+    await fs.rm(path.join(workspace, 'a.png'));
+    const missing = await lookAtImageTool.execute({ paths: ['a.png'], question: '这是什么？' }, ctx('run-3'));
+    expect(missing).toMatchObject({ success: false, errorCategory: 'invalid_arguments' });
+    expect(missing.error).toContain('读不到图片');
+    expect(requests).toHaveLength(2);
+  });
+
   it('writes one sidecar per image for multi-image questions and uses the ocr suffix for read_text', async () => {
     const result = await lookAtImageTool.execute({ paths: ['a.png', 'b.png'], question: '抄录文字', mode: 'read_text' }, ctx());
     expect(result.artifacts?.map((item) => item.relativePath)).toEqual(['a.ocr.md', 'b.ocr.md']);

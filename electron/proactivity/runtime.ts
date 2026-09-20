@@ -40,14 +40,18 @@ function policySettings(settings: PerformanceSettings = getPerformanceSettings()
   };
 }
 
-async function runCycle(domains: ReadonlySet<ProactiveEventDomain> | null, trigger: ProactivityCycleTrigger): Promise<void> {
+async function runCycle(
+  domains: ReadonlySet<ProactiveEventDomain> | null,
+  trigger: ProactivityCycleTrigger,
+  signal: AbortSignal,
+): Promise<void> {
   if (!isDatabaseReady()) return;
   lastReport = await runProactivityCycle({
     getSettings: () => policySettings(),
     popup: (title, body) => showReminderPopup(title, body),
     onInboxChanged: () => broadcastInboxUpdated(),
     log: (message) => console.info(message),
-  }, { domains, trigger });
+  }, { domains, trigger, signal });
   if (lastReport.created || lastReport.popupsSent || lastReport.resolvedBySource) {
     console.info(
       `[proactivity] ${trigger}: 新事件 ${lastReport.created}，来源解决 ${lastReport.resolvedBySource}，弹窗 ${lastReport.popupsSent}，延后补发 ${lastReport.deferredReplayed}`,

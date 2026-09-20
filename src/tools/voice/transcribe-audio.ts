@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition, ToolResult, ToolSideEffectContract } from '../types';
-import { withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
+import { buildFileArtifact, withFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
 import { checkAsrConfig, resolveAsrSettings } from '../../config/asr';
 import { AUDIO_EXTENSIONS, MAX_AUDIO_BYTES, validateAudioSource } from '../../voice/asr-contract';
@@ -16,6 +16,7 @@ import {
 import {
   completeAudioTranscript,
   failAudioTranscript,
+  findAudioTranscriptByKey,
   findReusableTranscript,
   startAudioTranscript,
 } from '../../db/repositories/audio-transcripts';
@@ -124,7 +125,8 @@ export const transcribeAudioTool: ToolDefinition = {
         .readFile(resolveWorkspacePath(ctx.workspaceRoot, reusable.transcriptPath), 'utf8')
         .catch(() => null);
       if (stillThere !== null) {
-        return {
+        const artifact = await buildFileArtifact(ctx.workspaceRoot, reusable.transcriptPath);
+        return withFileArtifact({
           success: true,
           output: summarizeTranscript({
             transcriptPath: reusable.transcriptPath,
@@ -135,17 +137,49 @@ export const transcribeAudioTool: ToolDefinition = {
             plainText: '',
             reused: true,
           }),
-        };
+        }, artifact);
       }
     }
 
-    const record = startAudioTranscript({
+    const existing = findAudioTranscriptByKey(key);
+    const claim = startAudioTranscript({
       sourcePath: relativePath,
       sourceHash,
       sizeBytes: audio.byteLength,
       engineType: settings.engineType,
       diarization: useDiarization,
+      retrySucceededUpdatedAt: existing?.status === 'succeeded' ? existing.updatedAt : undefined,
     });
+    if (!claim.claimed || !claim.attemptId) {
+      if (claim.record.status === 'succeeded' && claim.record.transcriptPath) {
+        const stillThere = await fs
+          .readFile(resolveWorkspacePath(ctx.workspaceRoot, claim.record.transcriptPath), 'utf8')
+          .catch(() => null);
+        if (stillThere !== null) {
+          const artifact = await buildFileArtifact(ctx.workspaceRoot, claim.record.transcriptPath);
+          return withFileArtifact({
+            success: true,
+            output: summarizeTranscript({
+              transcriptPath: claim.record.transcriptPath,
+              durationMs: claim.record.durationMs ?? 0,
+              sentenceCount: claim.record.sentenceCount ?? 0,
+              speakerCount: claim.record.speakerCount ?? 0,
+              diarization: claim.record.diarization,
+              plainText: '',
+              reused: true,
+            }),
+          }, artifact);
+        }
+      }
+      return {
+        success: false,
+        output: '',
+        error: '同一音频正在转写，请等待当前转写完成后再试',
+        errorCategory: 'external_service_failure',
+      };
+    }
+    const record = claim.record;
+    const attemptId = claim.attemptId;
 
     try {
       const result = await transcribeAudio({
@@ -168,13 +202,14 @@ export const transcribeAudioTool: ToolDefinition = {
         await fs.writeFile(temporaryPath, markdown, 'utf8');
       });
 
-      completeAudioTranscript(record.id, {
+      const completed = completeAudioTranscript(record.id, attemptId, {
         transcriptPath,
         durationMs: result.durationMs,
         sentenceCount: result.sentences.length,
         speakerCount: result.speakerCount,
         providerRequestId: result.requestId,
       });
+      if (!completed) throw new Error('转写结果已过期，未覆盖较新的转写状态');
 
       return withFileArtifact(
         {
@@ -194,11 +229,11 @@ export const transcribeAudioTool: ToolDefinition = {
     } catch (error) {
       if (error instanceof TranscriptionCancelledError) {
         // 用户主动取消不是故障，单独记 cancelled，否则运行记录里会堆满并非错误的“失败”
-        failAudioTranscript(record.id, { error: error.message, cancelled: true });
+        failAudioTranscript(record.id, attemptId, { error: error.message, cancelled: true });
         return { success: false, output: '', error: '转写已取消' };
       }
       if (error instanceof TranscriptionFailedError) {
-        failAudioTranscript(record.id, {
+        failAudioTranscript(record.id, attemptId, {
           error: error.message,
           providerCode: error.code || null,
           providerRequestId: error.requestId,
@@ -210,7 +245,7 @@ export const transcribeAudioTool: ToolDefinition = {
         };
       }
       const message = error instanceof Error ? error.message : String(error);
-      failAudioTranscript(record.id, { error: message });
+      failAudioTranscript(record.id, attemptId, { error: message });
       return { success: false, output: '', error: `转写失败：${message}` };
     }
   },

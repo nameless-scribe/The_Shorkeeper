@@ -4,7 +4,7 @@
  * 自检不过、数据库报错、行数估计超阈值，都不给结果，把原因回给模型处理。
  * 执行部分抽成 executePreparedPlan，run_named_query（P7.5）复用。
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import type { ToolContext, ToolDefinition, ToolResult, ToolSideEffectContract } from '../types';
 import { buildFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
@@ -45,12 +45,13 @@ function slug(text: string): string {
   return [...cleaned].slice(0, 40).join('') || '查询';
 }
 
-/** 产物按日期命名（§4 P7.5）：查询/YYYY-MM-DD/HHmmss-摘要.csv */
-export function artifactPath(now: Date, subject: string): string {
+/** 产物按日期命名，并带查询运行唯一后缀，避免同秒同摘要覆盖旧证据。 */
+export function artifactPath(now: Date, subject: string, uniqueId: string): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  return `查询/${date}/${time}-${slug(subject)}.csv`;
+  const suffix = uniqueId.replace(/[^a-zA-Z0-9_-]+/g, '').slice(0, 16) || randomUUID().slice(0, 8);
+  return `查询/${date}/${time}-${slug(subject)}-${suffix}.csv`;
 }
 
 /** 结果列的业务名：指标列用指标名，字段与分组列查字典 */
@@ -165,7 +166,7 @@ export async function executePreparedPlan(
 
   const { result, checks, estimatedRows } = outcome;
   const columnNames = businessColumnNames(compiled, result.columns, dictionary);
-  const relativePath = artifactPath(deps.now(), summary.slice(0, 12));
+  const relativePath = artifactPath(deps.now(), summary.slice(0, 12), run?.id ?? randomUUID());
   const csv = toCsv(columnNames, result.rows);
   let artifact;
   try {

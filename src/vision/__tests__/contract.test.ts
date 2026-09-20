@@ -46,6 +46,7 @@ describe('sidecar', () => {
     question: '这是什么设备？',
     mode: 'answer',
     images: ['照片/a.jpg'],
+    imageHashes: { '照片/a.jpg': 'hash-a' },
     at: '2026-09-15T02:00:00.000Z',
     promptTokens: 1200,
     completionTokens: 80,
@@ -65,10 +66,12 @@ describe('sidecar', () => {
   });
 
   it('matches only the same images, question and mode', () => {
-    expect(sidecarMatches(record, { paths: ['照片/a.jpg'], question: '这是什么设备？', mode: 'answer', refresh: false })).toBe(true);
-    expect(sidecarMatches(record, { paths: ['照片/a.jpg'], question: '这是什么？', mode: 'answer', refresh: false })).toBe(false);
-    expect(sidecarMatches(record, { paths: ['照片/a.jpg'], question: '这是什么设备？', mode: 'describe', refresh: false })).toBe(false);
-    expect(sidecarMatches(record, { paths: ['照片/a.jpg', 'b.png'], question: '这是什么设备？', mode: 'answer', refresh: false })).toBe(false);
+    const hashes = { '照片/a.jpg': 'hash-a' };
+    expect(sidecarMatches(record, { paths: ['照片/a.jpg'], question: '这是什么设备？', mode: 'answer', refresh: false }, hashes)).toBe(true);
+    expect(sidecarMatches(record, { paths: ['照片/a.jpg'], question: '这是什么？', mode: 'answer', refresh: false }, hashes)).toBe(false);
+    expect(sidecarMatches(record, { paths: ['照片/a.jpg'], question: '这是什么设备？', mode: 'describe', refresh: false }, hashes)).toBe(false);
+    expect(sidecarMatches(record, { paths: ['照片/a.jpg', 'b.png'], question: '这是什么设备？', mode: 'answer', refresh: false }, hashes)).toBe(false);
+    expect(sidecarMatches(record, { paths: ['照片/a.jpg'], question: '这是什么设备？', mode: 'answer', refresh: false }, { '照片/a.jpg': 'changed' })).toBe(false);
   });
 });
 

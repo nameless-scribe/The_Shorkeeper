@@ -4,6 +4,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { ToolDefinition, ToolResult, ToolSideEffectContract } from '../types';
 import { buildFileArtifact, writeWorkspaceFileAtomically } from '../file/artifact';
 import { resolveWorkspacePath } from '../file/workspace-path';
@@ -76,7 +77,11 @@ function failure(error: string, errorCategory: ToolResult['errorCategory'], meta
   return { success: false, output: '', error, errorCategory, ...(metadata ? { metadata } : {}) };
 }
 
-async function readCached(workspaceRoot: string, args: LookAtImageArgs): Promise<{ answer: string; model: string; requestId: string | null; paths: string[] } | null> {
+async function readCached(
+  workspaceRoot: string,
+  args: LookAtImageArgs,
+  imageHashes: Record<string, string>,
+): Promise<{ answer: string; model: string; requestId: string | null; paths: string[] } | null> {
   const paths = args.paths.map((imagePath) => sidecarPathFor(imagePath, args.mode));
   let answer: string | null = null;
   let model = '';
@@ -89,7 +94,7 @@ async function readCached(workspaceRoot: string, args: LookAtImageArgs): Promise
       return null;
     }
     const record = parseSidecar(text);
-    if (!record || !sidecarMatches(record, args)) return null;
+    if (!record || !sidecarMatches(record, args, imageHashes)) return null;
     if (answer !== null && record.answer !== answer) return null;
     answer = record.answer;
     model = record.model;
@@ -121,8 +126,24 @@ export const lookAtImageTool: ToolDefinition = {
     if (!parsed.ok) return failure(parsed.error, 'invalid_arguments');
     const args = parsed.value;
 
+    const loaded: Array<{ path: string; buffer: Buffer }> = [];
+    const imageHashes: Record<string, string> = {};
+    for (const imagePath of args.paths) {
+      try {
+        const absolute = resolveWorkspacePath(ctx.workspaceRoot, imagePath);
+        const stat = await fs.stat(absolute);
+        if (!stat.isFile()) return failure(`${imagePath} 不是文件`, 'invalid_arguments');
+        if (stat.size > MAX_IMAGE_BYTES) return failure(`${imagePath} 超过 ${MAX_IMAGE_BYTES / 1024 / 1024} MB`, 'invalid_arguments');
+        const buffer = await fs.readFile(absolute);
+        loaded.push({ path: imagePath, buffer });
+        imageHashes[imagePath] = createHash('sha256').update(buffer).digest('hex');
+      } catch (error) {
+        return failure(`读不到图片 ${imagePath}：${error instanceof Error ? error.message : String(error)}`, 'invalid_arguments');
+      }
+    }
+
     if (!args.refresh) {
-      const cached = await readCached(ctx.workspaceRoot, args);
+      const cached = await readCached(ctx.workspaceRoot, args, imageHashes);
       if (cached) {
         const artifacts = await Promise.all(cached.paths.map((sidecarPath) => buildFileArtifact(ctx.workspaceRoot, sidecarPath)));
         return {
@@ -138,19 +159,10 @@ export const lookAtImageTool: ToolDefinition = {
     if (!config.ok) return failure(config.reason, config.disabled ? 'permission_denied' : 'invalid_arguments', { disabled: config.disabled });
 
     const prepared: Array<{ name: string; image: PreparedImage }> = [];
-    for (const imagePath of args.paths) {
-      let buffer: Buffer;
+    for (const loadedImage of loaded) {
+      const imagePath = loadedImage.path;
       try {
-        const absolute = resolveWorkspacePath(ctx.workspaceRoot, imagePath);
-        const stat = await fs.stat(absolute);
-        if (!stat.isFile()) return failure(`${imagePath} 不是文件`, 'invalid_arguments');
-        if (stat.size > MAX_IMAGE_BYTES) return failure(`${imagePath} 超过 ${MAX_IMAGE_BYTES / 1024 / 1024} MB`, 'invalid_arguments');
-        buffer = await fs.readFile(absolute);
-      } catch (error) {
-        return failure(`读不到图片 ${imagePath}：${error instanceof Error ? error.message : String(error)}`, 'invalid_arguments');
-      }
-      try {
-        prepared.push({ name: path.basename(imagePath), image: await deps.prepare(buffer, path.extname(imagePath)) });
+        prepared.push({ name: path.basename(imagePath), image: await deps.prepare(loadedImage.buffer, path.extname(imagePath)) });
       } catch (error) {
         if (error instanceof ImagePrepError) return failure(`${imagePath}：${error.message}`, 'invalid_arguments');
         throw error;
@@ -185,6 +197,7 @@ export const lookAtImageTool: ToolDefinition = {
       question: args.question,
       mode: args.mode,
       images: args.paths,
+      imageHashes,
       at,
       promptTokens: response.promptTokens,
       completionTokens: response.completionTokens,

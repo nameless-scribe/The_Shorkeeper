@@ -5,6 +5,7 @@ import type { WorkspaceAttachment } from '../../shared/types';
 import type { ToolResult } from '../types';
 import { resolveWorkspacePath } from './workspace-path';
 import { isImportantWorkspacePath, workspaceBackupPath } from '../../workspace/rules';
+import { getWorkspaceFileRevision } from './preview';
 
 export async function buildFileArtifact(
   workspaceRoot: string,
@@ -36,6 +37,34 @@ async function fileDigest(filePath: string): Promise<string> {
 export interface AtomicWriteOptions {
   /** Retain a durable copy under .shorekeeper-backups before replacing the file. */
   preserveBackup?: boolean;
+  /** Preview-time revision; rechecked under the target lock immediately before replacement. */
+  expectedRevision?: string;
+}
+
+export class StaleWorkspaceRevisionError extends Error {
+  constructor(readonly relativePath: string) {
+    super(`预览已过期：${relativePath} 在确认期间发生了变化，请重新发起操作`);
+    this.name = 'StaleWorkspaceRevisionError';
+  }
+}
+
+const targetWriteLocks = new Map<string, Promise<void>>();
+
+async function withTargetWriteLock<T>(absolutePath: string, operation: () => Promise<T>): Promise<T> {
+  const key = process.platform === 'win32' ? path.resolve(absolutePath).toLowerCase() : path.resolve(absolutePath);
+  const previous = targetWriteLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  targetWriteLocks.set(key, gate);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (targetWriteLocks.get(key) === gate) targetWriteLocks.delete(key);
+  }
 }
 
 /**
@@ -50,6 +79,22 @@ export async function writeWorkspaceFileAtomically(
   options?: AtomicWriteOptions,
 ): Promise<WorkspaceAttachment> {
   const absolute = resolveWorkspacePath(workspaceRoot, relativePath);
+  return withTargetWriteLock(absolute, () => writeWorkspaceFileAtomicallyLocked(
+    workspaceRoot,
+    relativePath,
+    absolute,
+    writer,
+    options,
+  ));
+}
+
+async function writeWorkspaceFileAtomicallyLocked(
+  workspaceRoot: string,
+  relativePath: string,
+  absolute: string,
+  writer: (temporaryPath: string) => Promise<void>,
+  options?: AtomicWriteOptions,
+): Promise<WorkspaceAttachment> {
   const directory = path.dirname(absolute);
   const basename = path.basename(absolute);
   // Keep the original extension: libraries such as ExcelJS select their
@@ -63,6 +108,23 @@ export async function writeWorkspaceFileAtomically(
 
   try {
     await fs.mkdir(directory, { recursive: true });
+    await writer(temporaryPath);
+
+    const temporaryStat = await fs.stat(temporaryPath);
+    if (!temporaryStat.isFile()) {
+      throw new Error('生成结果不是普通文件');
+    }
+    const temporaryDigest = await fileDigest(temporaryPath);
+
+    if (
+      options?.expectedRevision &&
+      (await getWorkspaceFileRevision(workspaceRoot, relativePath)) !== options.expectedRevision
+    ) {
+      throw new StaleWorkspaceRevisionError(relativePath);
+    }
+
+    // Only create a durable backup after the commit-time revision check. A stale
+    // preview must not leave behind a misleading backup for a write that never happened.
     if (options?.preserveBackup ?? isImportantWorkspacePath(relativePath)) {
       try {
         await fs.stat(absolute);
@@ -78,13 +140,6 @@ export async function writeWorkspaceFileAtomically(
         durableBackupPath = null;
       }
     }
-    await writer(temporaryPath);
-
-    const temporaryStat = await fs.stat(temporaryPath);
-    if (!temporaryStat.isFile()) {
-      throw new Error('生成结果不是普通文件');
-    }
-    const temporaryDigest = await fileDigest(temporaryPath);
 
     try {
       await fs.rename(absolute, backupPath);

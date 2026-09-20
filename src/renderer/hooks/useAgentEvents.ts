@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgUiEvent, AgentPlanItem, WorkspaceAttachment } from '@/shared/types';
 import { formatRunErrorForUser } from '../../agent/run-errors';
+import { sendAgentRequestSafely } from './agent-send';
 import {
   appendStreamPlaceholder,
   appendTextDelta,
@@ -9,6 +10,7 @@ import {
   finalizeStream,
   findLastPersistedAssistant,
   markThinking,
+  removeMessageById,
   startToolCall,
   streamIdForRun,
   stopStream,
@@ -259,13 +261,22 @@ export function useAgentEvents(
     applyMessages((prev) => [...prev, userMsg]);
     setError(null);
 
-    const result = await window.shorekeeper.agent.send({
-      sessionId: activeSessionId,
-      message: trimmed,
-      attachments,
-    });
+    const result = await sendAgentRequestSafely(
+      () => window.shorekeeper.agent.send({
+        sessionId: activeSessionId,
+        message: trimmed,
+        attachments,
+      }),
+      (message) => {
+        // IPC 自身失败时主进程没有机会持久化消息；撤回乐观消息，避免界面伪装成已发送。
+        applyMessages((prev) => removeMessageById(prev, userMsg.id));
+        setError(formatRunErrorForUser(message));
+        setIsRunning(false);
+      },
+    );
+    if (!result) return;
 
-    if (result && !result.ok && result.error) {
+    if (!result.ok && result.error) {
       setError(formatRunErrorForUser(result.error, result.runId ?? undefined));
       setIsRunning(false);
     }

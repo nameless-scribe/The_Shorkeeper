@@ -9,7 +9,7 @@ import { containsTechnicalTerms } from '../../../datasources/plan-render';
 import { JOIN_ORDERS_CUSTOMERS, sampleDictionary } from '../../../datasources/__tests__/fixtures';
 import { describeDataSourceTool, listDataSourcesTool } from '../data-source-tools';
 import { proposeQueryPlanTool } from '../propose-query-plan';
-import { runSqlQueryTool } from '../run-sql-query';
+import { artifactPath, runSqlQueryTool } from '../run-sql-query';
 import { updateDataDictionaryTool } from '../update-data-dictionary';
 import { saveNamedQueryTool } from '../save-named-query';
 import { findValuesTool } from '../find-values';
@@ -230,6 +230,11 @@ describe('propose_query_plan', () => {
 });
 
 describe('run_sql_query', () => {
+  it('uses a unique run suffix so same-second results cannot overwrite evidence', () => {
+    const now = new Date(2026, 8, 15, 10, 30, 0);
+    expect(artifactPath(now, '同一摘要', 'run-a')).not.toBe(artifactPath(now, '同一摘要', 'run-b'));
+  });
+
   it('previews with a business summary and folded SQL, then executes only against the same revision', async () => {
     const preview = await runSqlQueryTool.execute({ plan: aggregatePlan }, ctx({ preview: true }));
     expect(preview.success).toBe(true);

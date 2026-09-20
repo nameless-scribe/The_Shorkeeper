@@ -8,7 +8,11 @@ import type { ProactiveEventDomain } from '../shared/types';
 export type ProactivityCycleTrigger = 'startup' | 'signal' | 'wake' | 'sweep' | 'manual' | 'deferred';
 
 export interface ProactivityCoordinatorOptions {
-  run: (domains: ReadonlySet<ProactiveEventDomain> | null, trigger: ProactivityCycleTrigger) => Promise<void>;
+  run: (
+    domains: ReadonlySet<ProactiveEventDomain> | null,
+    trigger: ProactivityCycleTrigger,
+    signal: AbortSignal,
+  ) => Promise<void>;
   debounceMs?: number;
   startupDelayMs?: number;
   sweepIntervalMs?: number;
@@ -49,6 +53,7 @@ export function createProactivityCoordinator(options: ProactivityCoordinatorOpti
 
   let stopped = false;
   let running: Promise<void> | null = null;
+  let runningController: AbortController | null = null;
   let pendingDomains: Set<ProactiveEventDomain> | null = null;
   let pendingFull = false;
   let pendingTrigger: ProactivityCycleTrigger = 'signal';
@@ -67,10 +72,15 @@ export function createProactivityCoordinator(options: ProactivityCoordinatorOpti
     for (const resolve of waiters.splice(0)) resolve();
   };
 
-  async function execute(domains: ReadonlySet<ProactiveEventDomain> | null, trigger: ProactivityCycleTrigger): Promise<void> {
+  async function execute(
+    domains: ReadonlySet<ProactiveEventDomain> | null,
+    trigger: ProactivityCycleTrigger,
+    signal: AbortSignal,
+  ): Promise<void> {
     try {
-      await options.run(domains, trigger);
+      await options.run(domains, trigger, signal);
     } catch (error) {
+      if (signal.aborted) return;
       options.onError?.(error, trigger);
     }
   }
@@ -86,8 +96,11 @@ export function createProactivityCoordinator(options: ProactivityCoordinatorOpti
     pendingFull = false;
     pendingDomains = null;
     pendingTrigger = 'signal';
-    running = execute(domains, trigger).finally(() => {
+    runningController = new AbortController();
+    const controller = runningController;
+    running = execute(domains, trigger, controller.signal).finally(() => {
       running = null;
+      if (runningController === controller) runningController = null;
       // 运行期间又来了信号：紧接着再跑一轮，避免丢失变化。
       if (pendingFull || pendingDomains) {
         drain();
@@ -157,11 +170,15 @@ export function createProactivityCoordinator(options: ProactivityCoordinatorOpti
       pendingFull = false;
       pendingDomains = null;
       settleWaiters();
+      runningController?.abort();
       if (running) {
-        await Promise.race([
-          running,
-          new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
-        ]);
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(resolve, timeoutMs);
+          void running!.then(() => {
+            clearTimeout(timeout);
+            resolve();
+          });
+        });
       }
     },
     isRunning: () => running != null,
