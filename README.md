@@ -1,8 +1,10 @@
 # The Shorekeeper
 
-桌面 AI Agent：Electron + React + 流式对话 + 工具调用 + 记忆 / RAG + MCP / 技能 + 多窗伴侣 UI + 语音朗读 / 通话。
+本地优先的 Windows 桌面 AI 助理：Electron + React + 流式 Agent、工具调用、记忆 / RAG、MCP / 技能、多窗口与语音交互。
 
-核心能力：长期记忆与 Worldbook、混合 RAG 知识库、博查联网搜索、定时任务、Token 统计、好感度阶段、文档生成与生活类工具、百炼 CosyVoice TTS 与语音通话。
+核心能力包括：可追溯长期记忆与 Worldbook、混合 RAG 知识库、目标 / 承诺 / 待办闭环、主动收件箱与定时任务、办公文档读写、录音转写、图片理解、只读 MySQL 查询、博查搜索，以及百炼 CosyVoice TTS / 语音通话。
+
+当前 P0、P1、P3–P8 主体工程均已落地（P2 外部连接器已取消）；真实录音、真实视觉模型、真实业务数据库与长期主动性体验仍按各阶段计划持续验收。2026-09-20 全仓稳定性复审已收口并发写入、缓存失效、启动恢复和停机取消等问题，见 [稳定化计划](docs/STABILITY-PLAN.md#22-2026-09-20-全仓稳定性复审)。
 
 > 当前为个人项目。推送 GitHub 前请确认未提交 `.env`、数据库与真实 API Key（见下方「仓库安全」）。
 
@@ -84,8 +86,9 @@ pnpm dist
 3. **设置 → 外观** — 主题或背景 / 头像
 4. **设置 → 技能** — 按需开启（见 [使用说明.md](docs/使用说明.md#技能系统)）
 5. **设置 → 插件** — 联网搜索、多格式编写等
-6. **设置 → 语音** — TTS / 通话（可选）
+6. **设置 → 语音** — TTS、通话、录音转写与看图开关（可选）
 7. **设置 → 泰提斯终端** — 导入知识库（MD / TXT / PDF / DOCX）
+8. **设置 → 数据源** — 添加只读 MySQL、维护数据字典与指标（可选）
 
 自定义数据目录：环境变量 `SHOREKEEPER_DB_DIR` / `SHOREKEEPER_WORKSPACE_DIR`，或在安装目录旁放置 `.env`。
 
@@ -137,13 +140,18 @@ TheShorekeeper/
 │   ├── agent/                # 编排、工具循环、上下文
 │   ├── affection/            # 好感度
 │   ├── config/               # 路径、性能、插件、人设、外观、主题
+│   ├── datasources/          # MySQL 只读连接、字典、方案编译与查询
+│   ├── documents/            # Markdown / DOCX / PDF / 图表处理
 │   ├── models/               # OpenAI / Anthropic 适配、Embedding
-│   ├── tools/                # file / web / doc / memory / life / schedule
+│   ├── tools/                # 文件、文档、数据、视觉、语音等工具
 │   ├── memory/               # 长期记忆、Worldbook、摘要
+│   ├── proactivity/          # 本地主动事件、路由、投递与收件箱
 │   ├── rag/                  # 导入、分块、混合检索
+│   ├── runtime/              # 启动恢复、停机与电源生命周期
 │   ├── mcp/                  # MCP Client
 │   ├── skills/               # 技能加载与解析
-│   ├── voice/                # TTS / 通话会话
+│   ├── vision/               # 图片预处理、视觉客户端与缓存契约
+│   ├── voice/                # TTS、STT、录音转写与通话会话
 │   ├── db/                   # better-sqlite3 / sql.js adapter、schema、migrations
 │   └── renderer/             # React UI（?panel= 区分窗口）
 ├── skills/                   # 内置技能包（打入安装包）
@@ -160,9 +168,9 @@ TheShorekeeper/
 |------|------|------|
 | 能力 | 插件 / 技能 / MCP | 联网、文档工具、技能、外部 MCP |
 | 人格与记忆 | 人设 / 用户信息 / 记忆 / Worldbook | System Prompt、画像、RAG 调优 |
-| 个性化 | 外观 / 语音 | 主题、壁纸、头像；TTS 与通话 |
-| 数据与任务 | 泰提斯终端 / 定时任务 / 运行记录 | 知识库、周期与一次性任务；Agent 运行、审批与产物历史 |
-| 系统 | API 设置 / 关于 / 免责声明 | 模型、自动更新、协议 |
+| 个性化 | 外观 / 语音 | 主题、壁纸、头像；TTS、通话、转写与看图 |
+| 数据与任务 | 泰提斯终端 / 数据源 / 用户待办 / 定时任务 / 运行记录 | 知识库、只读查询、任务与 Agent 审计 |
+| 系统 | API 设置 / 关于与更新 / 免责声明 | 模型、自动更新、协议 |
 
 ### 多窗口
 
@@ -175,13 +183,24 @@ pnpm dev                      # 开发（Vite + Electron）
 pnpm test                     # Vitest
 pnpm typecheck                # TypeScript
 pnpm build                    # 生产构建（不打安装包）
+pnpm test:p0                  # 任务闭环、工具证据与恢复
+pnpm test:p1                  # 个人模型、记忆来源与新鲜度
+pnpm test:p3                  # 本地主动服务
+pnpm test:p4                  # 录音转写
+pnpm test:p5                  # 办公文档能力
+pnpm test:p6                  # 意图理解与追问
+pnpm test:p7                  # 数据源查询
+pnpm test:p8                  # 图片理解
 pnpm test:ui:strict           # 开发版 React 下跑 UI smoke（查 StrictMode 类问题，见下）
+pnpm test:electron            # Electron 运行时与窗口生命周期 smoke
 pnpm test:settings:scan       # 起真实应用（临时数据目录）逐页点设置页按钮：遮挡、console 错误、异常
 pnpm build:dev-react          # 仅产出开发版 React 的 dist/（供上一条使用）
 pnpm dist                     # Windows 安装包 → release/
 pnpm db:init                  # 初始化 DB + migration
 pnpm db:migrate               # 同 db:init
 pnpm db:seed                  # 人设 / Worldbook 种子
+pnpm db:health                # 只读数据库健康检查
+pnpm db:backup                # 数据库备份、校验与恢复入口
 pnpm db:cleanup-sessions      # 删除空会话
 pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 ```
@@ -195,6 +214,12 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | 文档 | 说明 |
 |------|------|
 | [DEVELOPMENT-CONTRACT.md](docs/DEVELOPMENT-CONTRACT.md) | 全仓库开发契约与完成标准 |
+| [使用说明.md](docs/使用说明.md) | 日常配置、技能、插件、工作区与待办 |
+| [DESIGN.md](docs/DESIGN.md) | 当前架构与模块边界 |
+| [DATABASE.md](docs/DATABASE.md) | 数据库、迁移、备份与原生 SQLite |
+| [MODELS.md](docs/MODELS.md) | 对话、Embedding 与视觉模型配置 |
+| [STABILITY-PLAN.md](docs/STABILITY-PLAN.md) | 稳定化阶段、复审方法与最新收口记录 |
+| [P0-TASK-LOOP.md](docs/P0-TASK-LOOP.md) | P0 任务闭环、运行记录与完成证据 |
 | [P1-PERSONAL-MODEL-PLAN.md](docs/P1-PERSONAL-MODEL-PLAN.md) | P1 可追溯个人模型实施计划与阶段出口 |
 | [P3-LOCAL-PROACTIVITY-PLAN.md](docs/P3-LOCAL-PROACTIVITY-PLAN.md) | P3 本地主动服务实施契约、路由规则与验收记录 |
 | [P4-AUDIO-TRANSCRIPTION-PLAN.md](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md) | P4 录音转写与会议纪要实施计划与实施记录 |
@@ -202,14 +227,8 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | [P6-INTENT-AND-INQUIRY-PLAN.md](docs/P6-INTENT-AND-INQUIRY-PLAN.md) | P6 意图理解与追问（`ask_user`）实施计划与实施记录 |
 | [P7-DATA-SOURCE-QUERY-PLAN.md](docs/P7-DATA-SOURCE-QUERY-PLAN.md) | P7 数据源查询实施计划与实施记录 |
 | [P8-VISION-PLAN.md](docs/P8-VISION-PLAN.md) | P8 图片理解与 OCR 实施记录（P8.0–P8.3 代码完成，待真实验收） |
-| [P5-P7-ROADMAP.md](docs/P5-P7-ROADMAP.md) | P5–P8 开工路线与准备事项 |
-| [使用说明.md](docs/使用说明.md) | 技能、插件、工作区、待办 |
-| [DESIGN.md](docs/DESIGN.md) | 架构设计 |
-| [DATABASE.md](docs/DATABASE.md) | 数据库与 migration |
-| [MODELS.md](docs/MODELS.md) | 模型与 API |
 | [UI-THEME.md](docs/UI-THEME.md) | 主题与外观 |
 | [RAG-OPTIMIZATION.md](docs/RAG-OPTIMIZATION.md) | 知识库检索优化 |
-| [STABILITY-PLAN.md](docs/STABILITY-PLAN.md) | 稳定化计划（S0–S5 已收口） |
 | [S2-ACCEPTANCE.md](docs/S2-ACCEPTANCE.md) | Agent 运行时验收集 |
 | [S3-ACCEPTANCE.md](docs/S3-ACCEPTANCE.md) | 工具 / 技能 / 权限验收集 |
 | [S5-ACCEPTANCE.md](docs/S5-ACCEPTANCE.md) | 私人助理验收集 |
@@ -219,6 +238,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 
 - **M1–M7**：已完成（脚手架、Agent、记忆、多窗、RAG、MCP/技能、工具与打包）
 - **稳定化 S0–S5**：已收口（原生 SQLite、Agent 运行时、工具权限、RAG 生命周期、私人助理契约）
+- **2026-09-20 全仓稳定性复审**：9 个已确认缺口已修复并加入回归，覆盖音频并发计费、视觉缓存、文件并发写、查询产物碰撞与启动恢复、一次性任务失败、主动服务停机和消息 IPC 失败
 - **P0**：任务闭环、目标/承诺与每日管家工程已完成；真实使用观察持续进行
 - **P1**：可追溯个人模型、冲突裁决、来源回链与知识新鲜度工程已完成
 - **P2**：外部连接器方向已取消，不接入邮箱、外部日历、联系人或云盘
