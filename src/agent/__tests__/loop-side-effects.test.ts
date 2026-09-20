@@ -67,7 +67,7 @@ async function collect(generator: AsyncGenerator<unknown>) {
 }
 
 function toolEnds(events: unknown[]) {
-  return events.filter((event): event is { type: 'tool_call_end'; callId: string; result: { success: boolean; output: string; error?: string; metadata?: Record<string, unknown> } } =>
+  return events.filter((event): event is { type: 'tool_call_end'; callId: string; result: { success: boolean; output: string; error?: string; errorCategory?: string; metadata?: Record<string, unknown> } } =>
     (event as { type?: string }).type === 'tool_call_end');
 }
 
@@ -146,6 +146,52 @@ describe('agent loop side-effect contract', () => {
 
     expect(listTool.execute).toHaveBeenCalledTimes(2);
     expect(toolEnds(events).every((end) => !end.result.metadata?.duplicateSuppressed)).toBe(true);
+  });
+
+  it('marks a timed-out side effect as outcome unknown and stops later calls', async () => {
+    const timedOutWrite: ToolDefinition = {
+      name: 'slow_write',
+      description: 'test',
+      parameters: { type: 'object' },
+      category: 'file',
+      requiresPermission: [],
+      sideEffects: WORKSPACE_WRITE_CONTRACT,
+      execute: vi.fn((): Promise<never> => new Promise(() => undefined)),
+    };
+    const laterWrite: ToolDefinition = {
+      name: 'later_write',
+      description: 'test',
+      parameters: { type: 'object' },
+      category: 'file',
+      requiresPermission: [],
+      sideEffects: WORKSPACE_WRITE_CONTRACT,
+      execute: vi.fn(async () => ({ success: true, output: '不应执行' })),
+    };
+    streamChatMock
+      .mockReturnValueOnce(toolRound([
+        { id: 'c1', name: 'slow_write' },
+        { id: 'c2', name: 'later_write' },
+      ]))
+      .mockReturnValueOnce(textRound('已停止并等待核对'));
+
+    const registry = new ToolRegistry();
+    registry.register(timedOutWrite);
+    registry.register(laterWrite);
+    const events = await collect(runAgentLoop({
+      sessionId: 's', runId: 'r', messages: [{ role: 'user', content: '写入' }], registry, policy,
+      toolTimeoutMs: 10,
+    }));
+
+    expect(timedOutWrite.execute).toHaveBeenCalledOnce();
+    expect(laterWrite.execute).not.toHaveBeenCalled();
+    expect(toolEnds(events)[0].result).toMatchObject({
+      success: false,
+      errorCategory: 'outcome_unknown',
+    });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'run_error',
+      reason: 'outcome_unknown',
+    }));
   });
 
   it('uses the per-call contract so read actions of a mixed tool are never served stale results', async () => {

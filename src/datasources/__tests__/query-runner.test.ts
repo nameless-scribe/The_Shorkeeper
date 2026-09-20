@@ -51,6 +51,7 @@ describe('evaluateSelfChecks', () => {
       { label: '日期覆盖', result: result(['最早', '最晚'], [['2026-08-02 10:00:00', '2026-08-30 09:00:00']]) },
     ]);
     expect(report.failed).toBe(false);
+    expect(report.incomplete).toBe(false);
     expect(report.items[0]).toMatchObject({ ok: true, detail: '1 个指标的分组合计与整体一致' });
     expect(report.notes).toEqual(['实际有数据的时间是 2026-08-02 到 2026-08-30']);
   });
@@ -63,7 +64,7 @@ describe('evaluateSelfChecks', () => {
     expect(report.items[0]).toMatchObject({ ok: false, detail: '销售额：分组相加 200，整体 100' });
   });
 
-  it('skips the total check for truncated results and reports failed check queries without failing', () => {
+  it('marks truncated totals and failed check queries as incomplete without claiming verification', () => {
     const compiled = compileSample();
     const main = result(['name', '销售额', '订单数'], [['A', 100, 3]], true);
     const report = evaluateSelfChecks(compiled, metrics, main, [
@@ -71,9 +72,11 @@ describe('evaluateSelfChecks', () => {
       { label: '日期覆盖', error: 'timeout' },
     ]);
     expect(report.failed).toBe(false);
+    expect(report.incomplete).toBe(true);
     expect(report.items[0].ok).toBeNull();
     expect(report.items[1]).toMatchObject({ ok: null, detail: '自检没跑成：timeout' });
     expect(report.notes[0]).toContain('只列了前 1 条');
+    expect(report.notes[1]).toContain('日期覆盖自动核对未完成');
   });
 
   it('explains list-mode row counts and empty date coverage', () => {
@@ -84,6 +87,7 @@ describe('evaluateSelfChecks', () => {
       { label: '日期覆盖', result: result(['最早', '最晚'], [[null, null]]) },
     ]);
     expect(report.failed).toBe(false);
+    expect(report.incomplete).toBe(false);
     expect(report.notes).toEqual(['符合条件的共 7 条，这里只列了前 2 条', '这段时间里没有任何记录']);
   });
 });

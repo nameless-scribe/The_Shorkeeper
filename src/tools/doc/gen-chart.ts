@@ -70,13 +70,19 @@ export const genChartTool: ToolDefinition = {
     try {
       const svgArtifact = await writeWorkspaceFileAtomically(ctx.workspaceRoot, outputPath, (temporaryPath) =>
         fs.writeFile(temporaryPath, svg, 'utf-8'),
+        { signal: ctx.signal },
       );
       const artifacts = [svgArtifact];
       const pngPath = `${outputPath.slice(0, -4)}.png`;
       let pngNote = '';
       try {
         const png = await rasterizeSvgToPng(svg);
-        await writeWorkspaceFileAtomically(ctx.workspaceRoot, pngPath, (temporaryPath) => fs.writeFile(temporaryPath, png));
+        await writeWorkspaceFileAtomically(
+          ctx.workspaceRoot,
+          pngPath,
+          (temporaryPath) => fs.writeFile(temporaryPath, png),
+          { signal: ctx.signal },
+        );
         artifacts.push(await buildFileArtifact(ctx.workspaceRoot, pngPath));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

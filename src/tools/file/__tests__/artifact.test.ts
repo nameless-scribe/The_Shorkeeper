@@ -2,7 +2,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StaleWorkspaceRevisionError, writeWorkspaceFileAtomically } from '../artifact';
+import {
+  StaleWorkspaceRevisionError,
+  WorkspaceWriteCancelledError,
+  writeWorkspaceFileAtomically,
+} from '../artifact';
 import { getWorkspaceFileRevision } from '../preview';
 
 describe('writeWorkspaceFileAtomically', () => {
@@ -40,6 +44,39 @@ describe('writeWorkspaceFileAtomically', () => {
     expect(artifact.relativePath).toBe('report.md');
     expect(artifact.size).toBe(Buffer.byteLength('new content'));
     await expect(fs.readFile(target, 'utf8')).resolves.toBe('new content');
+    await expect(fs.readdir(root)).resolves.toEqual(['report.md']);
+  });
+
+  it('does not commit a generator result that finishes after cancellation', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sk-atomic-'));
+    const target = path.join(root, 'report.md');
+    await fs.writeFile(target, 'old content', 'utf8');
+    const controller = new AbortController();
+    let releaseWriter!: () => void;
+    const writerMayFinish = new Promise<void>((resolve) => {
+      releaseWriter = resolve;
+    });
+    let writerStarted!: () => void;
+    const writerDidStart = new Promise<void>((resolve) => {
+      writerStarted = resolve;
+    });
+
+    const pending = writeWorkspaceFileAtomically(
+      root,
+      'report.md',
+      async (temporaryPath) => {
+        await fs.writeFile(temporaryPath, 'late content', 'utf8');
+        writerStarted();
+        await writerMayFinish;
+      },
+      { signal: controller.signal },
+    );
+    await writerDidStart;
+    controller.abort();
+    releaseWriter();
+
+    await expect(pending).rejects.toBeInstanceOf(WorkspaceWriteCancelledError);
+    await expect(fs.readFile(target, 'utf8')).resolves.toBe('old content');
     await expect(fs.readdir(root)).resolves.toEqual(['report.md']);
   });
 

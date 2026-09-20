@@ -8,6 +8,7 @@ const TOOL_ERROR_CATEGORIES = new Set<ToolErrorCategory>([
   'external_service_failure',
   'timeout',
   'cancelled',
+  'outcome_unknown',
   'internal_error',
 ]);
 

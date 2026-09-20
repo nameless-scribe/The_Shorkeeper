@@ -216,6 +216,9 @@ app.whenReady().then(async () => {
     show: true,
     // 与真实聊天窗口一致；系统边框的最小宽度会干扰 360px 验收。
     frame: false,
+    transparent: false,
+    roundedCorners: true,
+    backgroundColor: '#0A1128',
     width: 1200,
     height: 820,
     webPreferences: {
@@ -243,6 +246,25 @@ app.whenReady().then(async () => {
     await window.loadFile(indexPath);
     setStage('open settings');
     await waitFor(window, `Boolean(document.querySelector('button[title="设置"]'))`, '设置按钮');
+    const outerFrame = await window.webContents.executeJavaScript(`(() => {
+      const shell = document.querySelector('.keeper-panel-shell');
+      const background = shell?.querySelector('.pointer-events-none.absolute.inset-0');
+      const titlebar = shell?.querySelector('header');
+      const read = (node) => {
+        if (!node) return null;
+        const style = getComputedStyle(node);
+        return {
+          borderRadius: style.borderRadius,
+          borderTopWidth: style.borderTopWidth,
+          inset: [style.top, style.right, style.bottom, style.left],
+        };
+      };
+      return { shell: read(shell), background: read(background), titlebar: read(titlebar) };
+    })()`);
+    assert(outerFrame.shell?.borderRadius === '0px', `主窗口仍叠加 CSS 外圆角: ${JSON.stringify(outerFrame)}`);
+    assert(outerFrame.shell?.borderTopWidth === '0px', `主窗口仍有装饰外边框: ${JSON.stringify(outerFrame)}`);
+    assert(outerFrame.background?.borderRadius === '0px', `背景仍在四角裁切: ${JSON.stringify(outerFrame)}`);
+    assert(outerFrame.titlebar?.borderRadius === '0px', `标题栏仍在四角裁切: ${JSON.stringify(outerFrame)}`);
     // 预算耗尽走现有 error 终态，但必须保留阶段摘要；开发 React 下同时验证订阅不重复。
     setStage('controlled stop keeps partial reply');
     await waitFor(window, `document.body.innerText.includes('预算测试已就绪')`, '会话消息加载完成');

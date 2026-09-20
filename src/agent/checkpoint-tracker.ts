@@ -56,7 +56,7 @@ export class CheckpointTracker {
   }
 
   async after(name: string, rawArgs: string, result: ToolResult, nonIdempotent: boolean, sideEffecting = nonIdempotent): Promise<void> {
-    if (result.errorCategory === 'timeout' || result.errorCategory === 'cancelled') this.issue = '有工具超时或取消，需先人工核对执行结果';
+    if (result.errorCategory === 'timeout' || result.errorCategory === 'cancelled' || result.errorCategory === 'outcome_unknown') this.issue = '有工具超时、取消或结果未知，需先人工核对执行结果';
     if (sideEffecting && !result.success) this.issue = '有副作用步骤失败，需先核对是否部分执行';
     if (nonIdempotent && result.success) this.effects.add(callDigest(name, rawArgs));
     if (name === 'ask_user' && result.success) this.answers.push(result.output);

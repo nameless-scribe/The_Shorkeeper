@@ -69,7 +69,7 @@ export function formatRowsTable(columns: string[], rows: unknown[][], max = PREV
   const cell = (value: unknown) => (value == null ? '' : String(value).replace(/\|/g, '\\|').replace(/\r?\n/g, ' '));
   const lines = [`| ${columns.map(cell).join(' | ')} |`, `| ${columns.map(() => '---').join(' | ')} |`];
   for (const row of rows.slice(0, max)) lines.push(`| ${row.map(cell).join(' | ')} |`);
-  if (rows.length > max) lines.push(`（共 ${rows.length} 条，只显示前 ${max} 条；完整结果在产物文件里）`);
+  if (rows.length > max) lines.push(`（本次返回 ${rows.length} 条，这里只显示前 ${max} 条；当前返回结果在产物文件里）`);
   return lines.join('\n');
 }
 
@@ -170,7 +170,12 @@ export async function executePreparedPlan(
   const csv = toCsv(columnNames, result.rows);
   let artifact;
   try {
-    await writeWorkspaceFileAtomically(ctx.workspaceRoot, relativePath, (temporaryPath) => fs.writeFile(temporaryPath, csv, 'utf-8'));
+    await writeWorkspaceFileAtomically(
+      ctx.workspaceRoot,
+      relativePath,
+      (temporaryPath) => fs.writeFile(temporaryPath, csv, 'utf-8'),
+      { signal: ctx.signal },
+    );
     artifact = await buildFileArtifact(ctx.workspaceRoot, relativePath);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -182,9 +187,16 @@ export async function executePreparedPlan(
 
   const notes = [...prepared.notes, ...checks.notes, ...(options.extraNotes ?? [])];
   if (result.truncated && !checks.notes.some((note) => note.includes('只列了'))) notes.push(`结果超过 ${options.maxRows} 条，只取了前 ${options.maxRows} 条`);
+  const fileStatus = result.truncated
+    ? `部分结果文件在 ${relativePath}（只包含本次返回的前 ${result.rows.length} 条，不是完整结果）`
+    : `完整结果在 ${relativePath}`;
+  const verificationStatus = checks.incomplete
+    ? '核验状态：未完全核验；回复用户时必须在结论第一句说明，不能把结果称为已核验。'
+    : '核验状态：自动核对已完成。';
   const output = [
     `方案：${summary}`,
-    `结果：${result.rows.length} 条${result.truncated ? '（已截断）' : ''}，完整结果在 ${relativePath}`,
+    `结果：${result.rows.length} 条${result.truncated ? '（已截断）' : ''}，${fileStatus}`,
+    verificationStatus,
     formatRowsTable(columnNames, result.rows),
     ...(notes.length ? [`说明：${notes.join('；')}`] : []),
     '回复要求：先一两句话说结论，再给表或要点，最后一句说文件在哪；不要出现表名、列名、SQL；用了默认口径要说明。要 Excel 或图表就用 export_query_result 处理这个文件。',
@@ -196,6 +208,8 @@ export async function executePreparedPlan(
       sourceId: source.id,
       rowCount: result.rows.length,
       truncated: result.truncated,
+      complete: !result.truncated,
+      verification: checks.incomplete ? 'incomplete' : 'passed',
       durationMs: result.durationMs,
       estimatedRows,
       checks,
@@ -223,7 +237,7 @@ export function attemptNumber(value: unknown): number {
 export const runSqlQueryTool: ToolDefinition = {
   name: 'run_sql_query',
   description:
-    '执行一份已确认的查询方案（propose_query_plan 返回的 plan 原样传入）：只读，先估算代价再执行并自动核对，完整结果落成工作区 CSV，返回前 20 行与业务语言摘要。回复里不要出现 SQL、表名、列名',
+    '执行一份已确认的查询方案（propose_query_plan 返回的 plan 原样传入）：只读，先估算代价再执行并自动核对，当前返回结果落成工作区 CSV；若发生截断或核对未完成会明确标记。回复里不要出现 SQL、表名、列名',
   category: 'doc',
   requiresPermission: ['filesystem:write'],
   sideEffects: RUN_SQL_QUERY_CONTRACT,

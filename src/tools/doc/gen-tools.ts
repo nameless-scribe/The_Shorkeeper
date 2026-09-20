@@ -16,12 +16,12 @@ import { renderPrintableHtmlDocument } from '../../documents/markdown-to-html';
 import { hasPdfRenderer, renderHtmlToPdf } from '../../documents/pdf-renderer';
 
 async function writeWorkspaceFile(
-  ctx: { workspaceRoot: string },
+  ctx: { workspaceRoot: string; signal: AbortSignal },
   filePath: string,
   write: (absolute: string) => Promise<void>,
 ) {
   try {
-    const artifact = await writeWorkspaceFileAtomically(ctx.workspaceRoot, filePath, write);
+    const artifact = await writeWorkspaceFileAtomically(ctx.workspaceRoot, filePath, write, { signal: ctx.signal });
     return withFileArtifact({ success: true, output: `已生成 ${filePath}` }, artifact);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -318,7 +318,7 @@ export const updateXlsxCellsTool: ToolDefinition = {
         ctx.workspaceRoot,
         outputPath,
         (temporaryPath) => workbook.xlsx.writeFile(temporaryPath),
-        { preserveBackup: overwritesSource },
+        { preserveBackup: overwritesSource, signal: ctx.signal },
       );
       return withFileArtifact(
         {

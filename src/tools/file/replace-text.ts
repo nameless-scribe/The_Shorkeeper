@@ -92,7 +92,7 @@ export const replaceTextTool: ToolDefinition = {
         ctx.workspaceRoot,
         filePath,
         (temporaryPath) => fs.writeFile(temporaryPath, next, 'utf-8'),
-        { preserveBackup: true, expectedRevision: currentRevision },
+        { preserveBackup: true, expectedRevision: currentRevision, signal: ctx.signal },
       );
       const digest = createHash('sha256').update(next).digest('hex');
       return withFileArtifact(

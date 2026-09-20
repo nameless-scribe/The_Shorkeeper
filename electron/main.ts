@@ -83,6 +83,7 @@ import { reloadScheduler, startScheduler, stopScheduler } from './scheduler/cron
 import { broadcastTasksUpdated } from './tasks/events';
 import { coordinateRuntimeShutdown } from '../src/runtime/shutdown-coordinator';
 import { bindPowerLifecycle } from '../src/runtime/power-lifecycle';
+import { installSingleInstanceGuard } from '../src/runtime/single-instance';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -120,6 +121,23 @@ let shutdownPromise: Promise<void> | null = null;
 let startupSplashFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 let startupVisibilityTimer: ReturnType<typeof setTimeout> | null = null;
 let removePowerLifecycle: (() => void) | null = null;
+let primaryStartupComplete = false;
+let revealChatAfterStartup = false;
+
+function revealPrimaryChatWindow(): void {
+  if (!primaryStartupComplete) {
+    revealChatAfterStartup = true;
+    return;
+  }
+  if (isAppQuitting()) return;
+  getWindowManager().show('chat');
+}
+
+const ownsSingleInstanceLock = installSingleInstanceGuard({
+  requestLock: () => app.requestSingleInstanceLock(),
+  onSecondInstance: (handler) => app.on('second-instance', handler),
+  quit: () => app.quit(),
+}, revealPrimaryChatWindow);
 
 function clearStartupTimers(): void {
   if (startupSplashFallbackTimer) clearTimeout(startupSplashFallbackTimer);
@@ -180,7 +198,7 @@ function attachTrayCloseBehavior(win: BrowserWindow): void {
   });
 }
 
-app.whenReady().then(async () => {
+if (ownsSingleInstanceLock) app.whenReady().then(async () => {
   registerAppearanceAssetProtocol();
   showSplashWindow();
   const splashStartedAt = Date.now();
@@ -370,9 +388,14 @@ app.whenReady().then(async () => {
 
   emitInitialState();
   initAutoUpdater();
+  primaryStartupComplete = true;
+  if (revealChatAfterStartup) {
+    revealChatAfterStartup = false;
+    manager.show('chat');
+  }
 });
 
-app.on('window-all-closed', () => {
+if (ownsSingleInstanceLock) app.on('window-all-closed', () => {
   if (shouldMinimizeToTray()) {
     hideAllWindowsToTray();
     return;
@@ -382,7 +405,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', (event) => {
+if (ownsSingleInstanceLock) app.on('before-quit', (event) => {
   setAppQuitting();
   stopScheduler();
   if (shutdownReady) return;
@@ -401,7 +424,7 @@ app.on('before-quit', (event) => {
     });
 });
 
-app.on('activate', () => {
+if (ownsSingleInstanceLock) app.on('activate', () => {
   if (managerHasVisibleWindows()) {
     return;
   }

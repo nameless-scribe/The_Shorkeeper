@@ -10,7 +10,7 @@ export function PanelTitleBar({ title, subtitle }: PanelTitleBarProps) {
 
   return (
     <header
-      className="keeper-glass-panel flex shrink-0 items-center justify-between rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3"
+      className="keeper-glass-panel flex shrink-0 items-center justify-between border-b border-keeper-cyan/15 px-4 py-3"
       {...drag}
     >
       <div className="min-w-0">

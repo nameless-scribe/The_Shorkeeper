@@ -46,6 +46,7 @@ interface FakeState {
   totals: unknown[];
   explainRows: number;
   queryError?: Error;
+  selfCheckError?: Error;
   named: NamedQueryCandidate[];
   embedding: Float32Array | null;
 }
@@ -60,6 +61,7 @@ function fakeDeps(state: FakeState, sources: DataSourceInfo[] = [SOURCE]): Parti
       query: async (sql: string) => {
         state.queries.push(sql);
         if (state.queryError && !sql.includes('COUNT(*)') && !sql.includes('MIN(') && !/AS `销售额` FROM/.test(sql)) throw state.queryError;
+        if (state.selfCheckError && sql.includes('MIN(')) throw state.selfCheckError;
         if (sql.startsWith('WITH')) return result(['name', '销售额', '订单数'], [['星泓科技', 120, 3], ['岸边工作室', 30, 1]]);
         if (sql.includes('COUNT(*)')) return result(['总行数'], [[9]]);
         if (sql.includes('MIN(')) return result(['最早', '最晚'], [['2026-08-01 09:00:00', '2026-08-30 18:00:00']]);
@@ -273,6 +275,15 @@ describe('run_sql_query', () => {
     expect(state.runs[0].outcome).toMatchObject({ status: 'failed' });
   });
 
+  it('surfaces an incomplete self-check in the model-visible output and metadata', async () => {
+    state.selfCheckError = new Error('timeout');
+    const executed = await runSqlQueryTool.execute({ plan: aggregatePlan }, ctx());
+    expect(executed.success).toBe(true);
+    expect(executed.output).toContain('核验状态：未完全核验');
+    expect(executed.output).toContain('日期覆盖自动核对未完成');
+    expect(executed.metadata).toMatchObject({ complete: true, verification: 'incomplete' });
+  });
+
   it('returns the database error for a rewrite with attempt tracking, and stops after three attempts', async () => {
     state.queryError = Object.assign(new Error("Unknown column 'f.ghost'"), { code: 'ER_BAD_FIELD_ERROR' });
     const first = await runSqlQueryTool.execute({ plan: aggregatePlan }, ctx());
@@ -312,7 +323,9 @@ describe('run_sql_query', () => {
     expect(executed.success).toBe(true);
     expect(executed.output).toContain('| 订单号 | 客户名称 |');
     expect(executed.output).toContain('符合条件的共 9 条，这里只列了前 2 条');
-    expect(executed.metadata).toMatchObject({ list: true, truncated: true });
+    expect(executed.output).toContain('部分结果文件');
+    expect(executed.output).toContain('不是完整结果');
+    expect(executed.metadata).toMatchObject({ list: true, truncated: true, complete: false, verification: 'passed' });
   });
 });
 

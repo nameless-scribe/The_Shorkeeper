@@ -200,7 +200,7 @@ export const transcribeAudioTool: ToolDefinition = {
       });
       const artifact = await writeWorkspaceFileAtomically(ctx.workspaceRoot, transcriptPath, async (temporaryPath) => {
         await fs.writeFile(temporaryPath, markdown, 'utf8');
-      });
+      }, { signal: ctx.signal });
 
       const completed = completeAudioTranscript(record.id, attemptId, {
         transcriptPath,

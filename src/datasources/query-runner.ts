@@ -20,6 +20,8 @@ export interface SelfCheckItem {
 export interface SelfCheckReport {
   items: SelfCheckItem[];
   failed: boolean;
+  /** true = 至少一项本应执行的核对没有得到结论，交付时必须明确提示 */
+  incomplete: boolean;
   /** 给回复用的业务语言说明（覆盖范围、只列了前 N 条等） */
   notes: string[];
 }
@@ -76,11 +78,14 @@ export function evaluateSelfChecks(
   const items: SelfCheckItem[] = [];
   const notes: string[] = [];
   let failed = false;
+  let incomplete = false;
   const compareMode = compiled.columns.some((column) => column.kind === 'compare');
 
   for (const check of checkResults) {
     if (!check.result) {
       items.push({ label: check.label, ok: null, detail: `自检没跑成：${check.error ?? '未知原因'}` });
+      incomplete = true;
+      notes.push(`${check.label}自动核对未完成，当前结果未完全核验`);
       continue;
     }
     const row = check.result.rows[0] ?? [];
@@ -93,6 +98,7 @@ export function evaluateSelfChecks(
       }
       if (result.truncated) {
         items.push({ label: check.label, ok: null, detail: `只取了前 ${result.rows.length} 条，合计核对跳过` });
+        incomplete = true;
         notes.push(`结果超过 ${result.rows.length} 条，只列了前 ${result.rows.length} 条`);
         continue;
       }
@@ -125,6 +131,8 @@ export function evaluateSelfChecks(
       const total = toNumber(row[columnIndex('总行数')]);
       if (total === null) {
         items.push({ label: check.label, ok: null, detail: '没拿到总行数' });
+        incomplete = true;
+        notes.push('总行数自动核对未完成，当前结果未完全核验');
       } else if (total > result.rows.length) {
         items.push({ label: check.label, ok: true, detail: `共 ${total} 条，列了前 ${result.rows.length} 条` });
         notes.push(`符合条件的共 ${total} 条，这里只列了前 ${result.rows.length} 条`);
@@ -148,10 +156,15 @@ export function evaluateSelfChecks(
     }
 
     items.push({ label: check.label, ok: null, detail: '未知的自检' });
+    incomplete = true;
+    notes.push(`${check.label}自动核对未完成，当前结果未完全核验`);
   }
 
-  if (compiled.raw) notes.push('这个结果未经自动核对');
-  return { items, failed, notes };
+  if (compiled.raw) {
+    incomplete = true;
+    notes.push('这个结果未经自动核对');
+  }
+  return { items, failed, incomplete, notes };
 }
 
 export async function runCompiledQuery(

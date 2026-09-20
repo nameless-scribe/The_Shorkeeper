@@ -8,7 +8,7 @@ import { ev } from './events';
 import type { ModelEvent } from '../shared/types';
 
 export interface StopSummary {
-  reason: 'budget_exhausted' | 'awaiting_input' | 'repeated_failure';
+  reason: 'budget_exhausted' | 'awaiting_input' | 'repeated_failure' | 'outcome_unknown';
   message: string;
   facts: string[];
   pending: string[];

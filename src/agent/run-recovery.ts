@@ -14,19 +14,14 @@ import { findInterruptedQuestion } from '../db/repositories/user-questions';
  * 应用启动时调用一次：进程内此时没有任何活动 run，所有仍处于非终态的记录
  * 都来自上一次进程，一律收口为 interrupted，避免 "已完成" 状态来自猜测。
  */
-export function reconcileInterruptedRuns(): InterruptedRunSummary | null {
-  try {
-    const summary = markInterruptedRuns();
-    if (summary.runIds.length) {
-      console.info(
-        `[run-recovery] 已将 ${summary.runIds.length} 个上次未收口的 run 标记为中断（步骤 ${summary.steps}，审批 ${summary.approvals}，问题 ${summary.questions}）`,
-      );
-    }
-    return summary;
-  } catch (error) {
-    console.error('[run-recovery] 中断 run 收口失败:', error);
-    return null;
+export function reconcileInterruptedRuns(): InterruptedRunSummary {
+  const summary = markInterruptedRuns();
+  if (summary.runIds.length) {
+    console.info(
+      `[run-recovery] 已将 ${summary.runIds.length} 个上次未收口的 run 标记为中断（步骤 ${summary.steps}，审批 ${summary.approvals}，问题 ${summary.questions}）`,
+    );
   }
+  return summary;
 }
 
 function formatTime(timestamp: number): string {

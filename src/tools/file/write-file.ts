@@ -65,7 +65,7 @@ export const writeFileTool: ToolDefinition = {
         ctx.workspaceRoot,
         filePath,
         (temporaryPath) => fs.writeFile(temporaryPath, content, 'utf-8'),
-        { expectedRevision: ctx.previewRevision },
+        { expectedRevision: ctx.previewRevision, signal: ctx.signal },
       );
       return withFileArtifact(
         {

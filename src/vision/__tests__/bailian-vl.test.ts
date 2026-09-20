@@ -46,6 +46,19 @@ describe('askVisionModel', () => {
     expect(response.promptTokens).toBeNull();
   });
 
+  it('rejects length-truncated answers even when the provider returned partial text', async () => {
+    const fetchImpl: typeof fetch = async () => jsonResponse({
+      id: 'truncated-1',
+      choices: [{ message: { content: '只返回了一半' }, finish_reason: 'length' }],
+    });
+    await expect(askVisionModel({ images, question: '抄录全部文字', mode: 'read_text', endpoint, fetchImpl }))
+      .rejects.toMatchObject({
+        kind: 'truncated',
+        requestId: 'truncated-1',
+        message: expect.stringContaining('回答不完整'),
+      });
+  });
+
   it('turns 4xx into an http error with status, code and request id', async () => {
     const fetchImpl: typeof fetch = async () => jsonResponse({ error: { message: 'model not found', code: 'InvalidParameter' }, id: 'err-1' }, { status: 404 });
     await expect(askVisionModel({ images, question: 'q', mode: 'answer', endpoint, fetchImpl })).rejects.toMatchObject({ kind: 'http', status: 404, requestId: 'err-1', message: expect.stringContaining('InvalidParameter') });

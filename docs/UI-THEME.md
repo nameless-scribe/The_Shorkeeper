@@ -44,6 +44,8 @@ DB 仅存文件名；路径相对于 `appearance/` 目录。备份时拷贝整�
 
 **Dock** 不铺全屏壁纸（保持透明），仅同步主题色与头像。
 
+主聊天、状态、日程和通话窗口保持不透明，外轮廓使用 Electron / Windows 原生圆角。最外层 renderer 内容铺满窗口，不额外叠加 CSS 圆角或装饰边框，避免两种圆角半径不一致时在四角露出深色底块。
+
 ## 开发者
 
 - `src/config/themes/` — 主题预设定义（`listThemePresets()`）

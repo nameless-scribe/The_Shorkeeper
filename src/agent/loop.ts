@@ -599,19 +599,28 @@ export async function* runAgentLoop(
               toolTimeout.signal,
             );
           } catch (error) {
+            const sideEffecting = registeredTool
+              ? resolveCallContract(registeredTool, parsedArgs.args).risk !== 'read'
+              : true;
+            const timedOutOrCancelled = toolTimeout.didTimeout() || Boolean(signal?.aborted);
+            const outcomeUnknown = sideEffecting && timedOutOrCancelled;
             result = createToolError(
-              toolTimeout.didTimeout()
-                ? '工具执行超时'
-                : signal?.aborted
-                  ? '已取消'
-                  : error instanceof Error
-                    ? error.message
-                    : String(error),
-              toolTimeout.didTimeout()
-                ? 'timeout'
-                : signal?.aborted
-                  ? 'cancelled'
-                  : undefined,
+              outcomeUnknown
+                ? '副作用工具已启动，但在超时或取消后仍未可靠收口，当前结果未知；请先核对目标状态，暂勿重试同一操作'
+                : toolTimeout.didTimeout()
+                  ? '工具执行超时'
+                  : signal?.aborted
+                    ? '已取消'
+                    : error instanceof Error
+                      ? error.message
+                      : String(error),
+              outcomeUnknown
+                ? 'outcome_unknown'
+                : toolTimeout.didTimeout()
+                  ? 'timeout'
+                  : signal?.aborted
+                    ? 'cancelled'
+                    : undefined,
             );
           } finally {
             toolTimeout.dispose();
@@ -650,8 +659,19 @@ export async function* runAgentLoop(
       }
 
       if (signal?.aborted) {
-        yield ev.runError(runId, '已取消', sessionId);
+        if (result.errorCategory === 'outcome_unknown') {
+          yield ev.runError(runId, result.error ?? '副作用结果未知，请先核对目标状态', sessionId);
+        } else {
+          yield ev.runError(runId, '已取消', sessionId);
+        }
         return;
+      }
+
+      if (result.errorCategory === 'outcome_unknown') {
+        summary.reason = 'outcome_unknown';
+        summary.message = '有副作用工具在超时或取消后无法确认最终结果，已停止后续操作以避免重复执行';
+        summary.pending.push(`先核对 ${toolName} 的目标状态，再决定是否重试`);
+        break work;
       }
 
       if (toolName === ASK_USER_TOOL_NAME && !result.success) {

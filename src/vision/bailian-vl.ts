@@ -34,7 +34,7 @@ export interface VisionResponse {
 export class VisionRequestError extends Error {
   constructor(
     message: string,
-    readonly kind: 'http' | 'timeout' | 'cancelled' | 'malformed' | 'network',
+    readonly kind: 'http' | 'timeout' | 'cancelled' | 'malformed' | 'network' | 'truncated',
     readonly status?: number,
     readonly requestId?: string | null,
   ) {
@@ -62,7 +62,7 @@ function normalizeBaseUrl(baseUrl: string): string {
 
 interface ChatCompletionLike {
   id?: unknown;
-  choices?: Array<{ message?: { content?: unknown } }>;
+  choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
   usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
   error?: { message?: unknown; code?: unknown };
 }
@@ -111,7 +111,25 @@ export async function askVisionModel(request: VisionRequest): Promise<VisionResp
       const code = typeof data.error?.code === 'string' ? `（${data.error.code}）` : '';
       throw new VisionRequestError(`视觉模型返回 ${response.status}${code}：${message}`, 'http', response.status, requestId ?? bodyId);
     }
-    const answer = textFromContent(data.choices?.[0]?.message?.content).trim();
+    const choice = data.choices?.[0];
+    const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : null;
+    if (finishReason === 'length') {
+      throw new VisionRequestError(
+        '视觉模型输出达到长度上限，当前回答不完整；请缩小问题范围后重试',
+        'truncated',
+        response.status,
+        requestId ?? bodyId,
+      );
+    }
+    if (finishReason && finishReason !== 'stop') {
+      throw new VisionRequestError(
+        `视觉模型未正常完成回答（finish_reason=${finishReason}）`,
+        'malformed',
+        response.status,
+        requestId ?? bodyId,
+      );
+    }
+    const answer = textFromContent(choice?.message?.content).trim();
     if (!answer) throw new VisionRequestError('视觉模型没有返回文字', 'malformed', response.status, requestId ?? bodyId);
     const prompt = Number(data.usage?.prompt_tokens);
     const completion = Number(data.usage?.completion_tokens);

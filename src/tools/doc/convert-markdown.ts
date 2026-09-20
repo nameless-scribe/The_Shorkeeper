@@ -258,6 +258,7 @@ export const convertToMarkdownTool: ToolDefinition = {
         ctx.workspaceRoot,
         outPath,
         (temporaryPath) => fs.writeFile(temporaryPath, markdown, 'utf-8'),
+        { signal: ctx.signal },
       );
       return withFileArtifact(
         {

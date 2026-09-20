@@ -286,7 +286,7 @@ sidecar 落工作区，由现有 artifact 机制记录；请求 ID 与 token 用
 |---|---|---|
 | 契约 | `src/vision/contract.ts` | 参数校验（1–6 张、必须有问题、三种模式）、token 公式 宽×高/1024+2、超像素上限缩到最长边 3600（不再低）、sidecar 路径（`.vision.md` / `.ocr.md`）与头部 JSON 的写读（含每张源图 SHA-256）、三种模式的提示词（读文字：逐字、表格按行、图纸先标题栏、认不清写「?」） |
 | 预处理 | `src/vision/image-prep.ts` | PNG / JPEG / WebP 且像素不超时**原样送**（不重编码）；BMP / GIF 转 PNG；超限等比缩后转 PNG |
-| 客户端 | `src/vision/bailian-vl.ts` | OpenAI 兼容 `chat/completions`，`content[]` 混排文字与 data URL，`enable_thinking: false`、不流式；30 秒超时、取消传播；错误分四类（http / timeout / cancelled / network / malformed）带状态码与请求 ID |
+| 客户端 | `src/vision/bailian-vl.ts` | OpenAI 兼容 `chat/completions`，`content[]` 混排文字与 data URL，`enable_thinking: false`、不流式；30 秒超时、取消传播；错误按 http / timeout / cancelled / network / malformed / truncated 分类并带状态码与请求 ID；`finish_reason=length` 即使已有部分文字也拒绝交付与缓存 |
 | 设置 | `src/config/vision.ts`、`electron/ipc/vision.ts`、`VisionSettingsSection.tsx` | 开关默认关；模型 ID 默认 `qwen3-vl-plus`；接入点与 Key 留空复用 API 设置里的百炼配置（对话协议不是 OpenAI 兼容时要求单独填）；Key 加密存、只回传掩码；单张最大像素可调（下限 100 万） |
 | 工具 | `src/tools/vision/look-at-image.ts` | `risk: low`、幂等、`evidence: artifact`；顺序：参数 → sidecar 命中（不调接口）→ 开关与凭证 → 读文件（≤ 20 MB）→ 预处理 → 预算 → 请求 → sidecar；失败按类别映射 `errorCategory`，不留半成品 |
 | 附件 | `allowed-extensions.ts`、`import.ts`、`read-file.ts`、`ipc-validation.ts` | `image` 分类（6 种扩展名，20 MB，不并入文本白名单）；介绍行"这是图片，需要内容时用 look_at_image 提问，不要用 read_file 读取"（不含技能触发词）；对话框"图片"分组；`read_file` 读图片时拒绝并指路。聊天卡片缩略图沿用 P5.3 的内联预览 |

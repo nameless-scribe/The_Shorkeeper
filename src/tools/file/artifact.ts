@@ -39,6 +39,19 @@ export interface AtomicWriteOptions {
   preserveBackup?: boolean;
   /** Preview-time revision; rechecked under the target lock immediately before replacement. */
   expectedRevision?: string;
+  /** Cancellation is checked at generation and commit boundaries so observed aborts roll back the target. */
+  signal?: AbortSignal;
+}
+
+export class WorkspaceWriteCancelledError extends Error {
+  constructor(readonly relativePath: string) {
+    super(`已取消写入：${relativePath}`);
+    this.name = 'WorkspaceWriteCancelledError';
+  }
+}
+
+function throwIfWriteCancelled(signal: AbortSignal | undefined, relativePath: string): void {
+  if (signal?.aborted) throw new WorkspaceWriteCancelledError(relativePath);
 }
 
 export class StaleWorkspaceRevisionError extends Error {
@@ -79,6 +92,7 @@ export async function writeWorkspaceFileAtomically(
   options?: AtomicWriteOptions,
 ): Promise<WorkspaceAttachment> {
   const absolute = resolveWorkspacePath(workspaceRoot, relativePath);
+  throwIfWriteCancelled(options?.signal, relativePath);
   return withTargetWriteLock(absolute, () => writeWorkspaceFileAtomicallyLocked(
     workspaceRoot,
     relativePath,
@@ -107,14 +121,18 @@ async function writeWorkspaceFileAtomicallyLocked(
   let durableBackupPath: string | null = null;
 
   try {
+    throwIfWriteCancelled(options?.signal, relativePath);
     await fs.mkdir(directory, { recursive: true });
+    throwIfWriteCancelled(options?.signal, relativePath);
     await writer(temporaryPath);
+    throwIfWriteCancelled(options?.signal, relativePath);
 
     const temporaryStat = await fs.stat(temporaryPath);
     if (!temporaryStat.isFile()) {
       throw new Error('生成结果不是普通文件');
     }
     const temporaryDigest = await fileDigest(temporaryPath);
+    throwIfWriteCancelled(options?.signal, relativePath);
 
     if (
       options?.expectedRevision &&
@@ -122,6 +140,7 @@ async function writeWorkspaceFileAtomicallyLocked(
     ) {
       throw new StaleWorkspaceRevisionError(relativePath);
     }
+    throwIfWriteCancelled(options?.signal, relativePath);
 
     // Only create a durable backup after the commit-time revision check. A stale
     // preview must not leave behind a misleading backup for a write that never happened.
@@ -135,6 +154,7 @@ async function writeWorkspaceFileAtomicallyLocked(
         );
         await fs.mkdir(path.dirname(durableBackupPath), { recursive: true });
         await fs.copyFile(absolute, durableBackupPath);
+        throwIfWriteCancelled(options?.signal, relativePath);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         durableBackupPath = null;
@@ -142,12 +162,14 @@ async function writeWorkspaceFileAtomicallyLocked(
     }
 
     try {
+      throwIfWriteCancelled(options?.signal, relativePath);
       await fs.rename(absolute, backupPath);
       backupCreated = true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
 
+    throwIfWriteCancelled(options?.signal, relativePath);
     await fs.rename(temporaryPath, absolute);
     committed = true;
     const readBackDigest = await fileDigest(absolute);
@@ -159,6 +181,7 @@ async function writeWorkspaceFileAtomicallyLocked(
     if (readBackDigest !== temporaryDigest) {
       throw new Error('生成文件校验失败：写入后读回内容不一致');
     }
+    throwIfWriteCancelled(options?.signal, relativePath);
     if (backupCreated) await fs.rm(backupPath, { force: true });
     return artifact;
   } catch (error) {

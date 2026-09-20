@@ -360,12 +360,12 @@ export function CallStage() {
   const drag = useWindowDrag();
 
   return (
-    <div className="keeper-panel-shell border border-keeper-silver/25 shadow-cyanSm">
+    <div className="keeper-panel-shell">
       <AppBackground variant="chat" />
 
       <div className="relative z-10 flex h-full min-h-0 flex-col">
         <header
-          className="keeper-glass-panel flex shrink-0 flex-col gap-2 rounded-t-3xl border-b border-keeper-cyan/15 px-4 py-3"
+          className="keeper-glass-panel flex shrink-0 flex-col gap-2 border-b border-keeper-cyan/15 px-4 py-3"
           {...drag}
         >
           <div className="flex items-center justify-between">

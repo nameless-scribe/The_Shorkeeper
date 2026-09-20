@@ -38,6 +38,7 @@ describe('checkpoint evidence and replay guard', () => {
   it('does not enable continuation after unknown outcome or a failed idempotent write', async () => {
     for (const [result, sideEffecting] of [
       [{ success: false, output: '', errorCategory: 'timeout' as const }, false],
+      [{ success: false, output: '', errorCategory: 'outcome_unknown' as const }, true],
       [{ success: false, output: '', errorCategory: 'internal_error' as const }, true],
     ] as const) {
       const tracker = new CheckpointTracker(root);

@@ -28,6 +28,7 @@ export type ToolErrorCategory =
   | 'external_service_failure'
   | 'timeout'
   | 'cancelled'
+  | 'outcome_unknown'
   | 'internal_error';
 
 export interface ToolContext {

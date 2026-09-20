@@ -105,6 +105,7 @@ export const travelPlanTool: ToolDefinition = {
         ctx.workspaceRoot,
         filePath,
         (temporaryPath) => fs.writeFile(temporaryPath, content, 'utf-8'),
+        { signal: ctx.signal },
       );
       return withFileArtifact(
         {

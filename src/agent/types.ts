@@ -24,7 +24,7 @@ export type CallState = 'idle' | 'listening' | 'thinking' | 'speaking';
 export type AgUiEvent =
   | { type: 'run_started'; runId: string; sessionId: string }
   | { type: 'run_finished'; runId: string }
-  | { type: 'run_error'; runId: string; message: string; sessionId?: string; reason?: 'budget_exhausted' | 'awaiting_input' | 'repeated_failure' }
+  | { type: 'run_error'; runId: string; message: string; sessionId?: string; reason?: 'budget_exhausted' | 'awaiting_input' | 'repeated_failure' | 'outcome_unknown' }
   | { type: 'text_delta'; runId: string; delta: string }
   | { type: 'reasoning_delta'; runId: string; delta: string }
   | { type: 'tool_call_start'; runId: string; callId: string; name: string; args: unknown }

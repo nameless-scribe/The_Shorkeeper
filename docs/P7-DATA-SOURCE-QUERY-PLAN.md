@@ -655,4 +655,6 @@ interface QueryPlan {
 
 - 查询 CSV 文件名加入 `query_runs.id` 的安全短后缀，消除同一秒内相同摘要互相覆盖的窗口。
 - 应用启动恢复统一调用 `markInterruptedQueryRuns()`，上次进程遗留的 `running` 查询改为 `cancelled` 并记录中断原因；恢复失败会阻止数据库依赖功能继续启动。
+- 查询被 `maxRows` 截断时，CSV 与模型正文统一标为“部分结果”，不再声称产物包含完整结果；metadata 同步返回 `complete: false`。
+- 自检查询超时或失败时仍可交付主查询结果，但模型正文必须先声明“未完全核验”，metadata 返回 `verification: incomplete`；合计不一致仍按失败拦截，不交付结果。
 - 回归覆盖同秒路径唯一性、Repository 收口与启动恢复编排。

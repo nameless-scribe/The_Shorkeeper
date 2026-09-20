@@ -6,6 +6,7 @@ export type RunTerminalReason =
   | 'budget_exhausted'
   | 'awaiting_input'
   | 'repeated_failure'
+  | 'outcome_unknown'
   | 'empty_response';
 
 export interface RunFinalizeContext {

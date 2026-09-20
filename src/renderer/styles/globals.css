@@ -57,7 +57,7 @@ body {
   background: rgb(var(--sk-navy-deep-rgb));
 }
 
-/* 主面板窗：铺满窗口底色，圆角由 .keeper-panel-shell 负责 */
+/* 主面板窗保持不透明；外轮廓由 Electron / Windows 原生窗口圆角负责。 */
 html.keeper-window,
 html.keeper-window body,
 html.keeper-window #root {
@@ -193,7 +193,7 @@ html.panel-transparent #root {
 
 @layer components {
   .keeper-panel-shell {
-    @apply relative h-screen overflow-hidden rounded-3xl bg-keeper-navyDeep;
+    @apply relative h-screen overflow-hidden bg-keeper-navyDeep;
   }
 
   .keeper-glass-panel {

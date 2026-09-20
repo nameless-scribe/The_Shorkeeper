@@ -104,6 +104,14 @@ describe('look_at_image', () => {
     expect((await lookAtImageTool.execute({ paths: ['a.png'], question: 'q' }, ctx('run-2'))).errorCategory).toBe('timeout');
     setVisionToolDeps({ checkConfig: okConfig, ask: async () => { throw new VisionRequestError('已取消', 'cancelled'); } });
     expect((await lookAtImageTool.execute({ paths: ['a.png'], question: 'q' }, ctx('run-3'))).errorCategory).toBe('cancelled');
+    setVisionToolDeps({ checkConfig: okConfig, ask: async () => { throw new VisionRequestError('回答不完整', 'truncated', 200, 'req-length'); } });
+    const truncated = await lookAtImageTool.execute({ paths: ['a.png'], question: 'q' }, ctx('run-4'));
+    expect(truncated).toMatchObject({
+      success: false,
+      error: '回答不完整',
+      errorCategory: 'external_service_failure',
+      metadata: { requestId: 'req-length' },
+    });
     await expect(fs.access(path.join(workspace, 'a.vision.md'))).rejects.toBeTruthy();
   });
 

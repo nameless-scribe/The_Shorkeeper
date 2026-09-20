@@ -153,7 +153,7 @@ export const updateDocxTextTool: ToolDefinition = {
         ctx.workspaceRoot,
         outputPath,
         (temporaryPath) => fs.writeFile(temporaryPath, packed),
-        { preserveBackup: overwritesSource },
+        { preserveBackup: overwritesSource, signal: ctx.signal },
       );
       return withFileArtifact(
         {

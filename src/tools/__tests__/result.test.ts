@@ -76,4 +76,13 @@ describe('tool result contract', () => {
       errorCategory: 'internal_error',
     });
   });
+
+  it('preserves the outcome-unknown category for side effects that did not settle', () => {
+    expect(normalizeToolResult({
+      success: false,
+      output: '',
+      error: '结果未知',
+      errorCategory: 'outcome_unknown',
+    })).toMatchObject({ errorCategory: 'outcome_unknown' });
+  });
 });

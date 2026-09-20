@@ -15,7 +15,7 @@ export function AppBackground({ variant = 'chat' }: AppBackgroundProps) {
   const useBuiltinCompose = !hasCustomBg;
 
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <div
         className={[
           'keeper-scene absolute inset-0',

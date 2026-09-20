@@ -206,7 +206,12 @@ export const lookAtImageTool: ToolDefinition = {
     const artifacts = [];
     for (const imagePath of args.paths) {
       const sidecarPath = sidecarPathFor(imagePath, args.mode);
-      await writeWorkspaceFileAtomically(ctx.workspaceRoot, sidecarPath, (temporaryPath) => fs.writeFile(temporaryPath, sidecar, 'utf-8'));
+      await writeWorkspaceFileAtomically(
+        ctx.workspaceRoot,
+        sidecarPath,
+        (temporaryPath) => fs.writeFile(temporaryPath, sidecar, 'utf-8'),
+        { signal: ctx.signal },
+      );
       artifacts.push(await buildFileArtifact(ctx.workspaceRoot, sidecarPath));
     }
     const notes = prepared

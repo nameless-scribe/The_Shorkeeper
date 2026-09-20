@@ -78,8 +78,10 @@ function baseOptions(kind: WindowKind): BrowserWindowConstructorOptions {
     height: bounds.height,
     show: false,
     frame: false,
-    // 不透明窗 + 与主题一致的底色：透明窗在 Windows 圆角抗锯齿处易露黑边
+    // 保持不透明，避免 Windows 透明窗在抗锯齿边缘露黑；外轮廓交给系统原生圆角，
+    // renderer 不再叠加一层更大的 CSS 圆角，以免两种半径之间露出窗口底色。
     transparent: false,
+    roundedCorners: true,
     resizable: true,
     backgroundColor: '#0A1128',
     ...(iconPath ? { icon: iconPath } : {}),

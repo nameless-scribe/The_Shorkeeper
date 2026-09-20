@@ -144,35 +144,40 @@ export const exportQueryResultTool: ToolDefinition = {
     if (!target.toLowerCase().endsWith('.xlsx')) return invalid('output_path 须以 .xlsx 结尾');
     const kinds = columnKinds(columns, rows);
     try {
-      await writeWorkspaceFileAtomically(ctx.workspaceRoot, target, async (temporaryPath) => {
-        const ExcelJS = await loadExcelJS();
-        const workbook = new ExcelJS.Workbook();
-        const sheet = workbook.addWorksheet((title?.trim() || '结果').slice(0, 31));
-        sheet.addRow(columns);
-        sheet.getRow(1).font = { bold: true };
-        for (const row of rows) {
-          const cells = columns.map((_column, index) => {
-            const raw = row[index] ?? '';
-            if (raw === '') return null;
-            if (kinds[index] === 'number') return Number(raw);
-            if (kinds[index] === 'datetime') return isoToExcelDate(raw) ?? raw;
-            return raw;
+      await writeWorkspaceFileAtomically(
+        ctx.workspaceRoot,
+        target,
+        async (temporaryPath) => {
+          const ExcelJS = await loadExcelJS();
+          const workbook = new ExcelJS.Workbook();
+          const sheet = workbook.addWorksheet((title?.trim() || '结果').slice(0, 31));
+          sheet.addRow(columns);
+          sheet.getRow(1).font = { bold: true };
+          for (const row of rows) {
+            const cells = columns.map((_column, index) => {
+              const raw = row[index] ?? '';
+              if (raw === '') return null;
+              if (kinds[index] === 'number') return Number(raw);
+              if (kinds[index] === 'datetime') return isoToExcelDate(raw) ?? raw;
+              return raw;
+            });
+            sheet.addRow(cells);
+          }
+          kinds.forEach((kind, index) => {
+            const column = sheet.getColumn(index + 1);
+            column.width = Math.min(60, Math.max(12, ...[columns[index], ...rows.map((row) => row[index] ?? '')].map((value) => [...value].length + 2)));
+            if (kind === 'datetime') column.numFmt = 'yyyy-mm-dd hh:mm:ss';
           });
-          sheet.addRow(cells);
-        }
-        kinds.forEach((kind, index) => {
-          const column = sheet.getColumn(index + 1);
-          column.width = Math.min(60, Math.max(12, ...[columns[index], ...rows.map((row) => row[index] ?? '')].map((value) => [...value].length + 2)));
-          if (kind === 'datetime') column.numFmt = 'yyyy-mm-dd hh:mm:ss';
-        });
-        const about = workbook.addWorksheet('来源');
-        about.addRow(['项', '值']);
-        about.getRow(1).font = { bold: true };
-        for (const pair of sourceSheetRows(info)) about.addRow(pair);
-        about.getColumn(1).width = 12;
-        about.getColumn(2).width = 100;
-        await workbook.xlsx.writeFile(temporaryPath);
-      });
+          const about = workbook.addWorksheet('来源');
+          about.addRow(['项', '值']);
+          about.getRow(1).font = { bold: true };
+          for (const pair of sourceSheetRows(info)) about.addRow(pair);
+          about.getColumn(1).width = 12;
+          about.getColumn(2).width = 100;
+          await workbook.xlsx.writeFile(temporaryPath);
+        },
+        { signal: ctx.signal },
+      );
       const artifact = await buildFileArtifact(ctx.workspaceRoot, target);
       return {
         success: true,
