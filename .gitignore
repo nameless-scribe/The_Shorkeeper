@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-electron/
 release/
+release-erp-smoke*/
 .vite/
 
 # 环境变量（含 API Key，切勿提交）

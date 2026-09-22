@@ -1,4 +1,22 @@
-import type { TaskRunInfo, TaskRunKind, TaskRunPhase } from '@/shared/types';
+import type { ErpRunReportInfo, TaskRunInfo, TaskRunKind, TaskRunPhase } from '@/shared/types';
+
+export const ERP_BATCH_STATUS_LABELS: Record<ErpRunReportInfo['status'], string> = {
+  approved: '已确认', running: '提交中', verified: '全部核验', partially_verified: '部分核验',
+  cancelled: '已取消', failed: '失败', unknown: '待核验',
+};
+
+export const ERP_ITEM_STATE_LABELS: Record<ErpRunReportInfo['items'][number]['state'], string> = {
+  not_started: '未发送', prepared: '准备中', dispatching: '发送中', verifying: '核验中',
+  verified: '已核验', known_not_written: '确认未写入', unknown: '结果待核验', cancelled: '已取消',
+};
+
+export function erpReportTone(state: ErpRunReportInfo['status'] | ErpRunReportInfo['items'][number]['state']):
+  'green' | 'amber' | 'cyan' | 'muted' {
+  if (state === 'verified') return 'green';
+  if (state === 'unknown' || state === 'partially_verified' || state === 'failed') return 'amber';
+  if (state === 'running' || state === 'dispatching' || state === 'verifying' || state === 'prepared') return 'cyan';
+  return 'muted';
+}
 
 export const RUN_KIND_LABELS: Record<TaskRunKind, string> = {
   chat: '对话',

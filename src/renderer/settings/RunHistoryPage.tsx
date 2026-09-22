@@ -44,6 +44,9 @@ import {
   formatRunIssue,
   formatRiskLevel,
   formatRunTime,
+  ERP_BATCH_STATUS_LABELS,
+  ERP_ITEM_STATE_LABELS,
+  erpReportTone,
   RUN_KIND_LABELS,
   RUN_PHASE_LABELS,
   runMatchesFilter,
@@ -154,6 +157,7 @@ function ContextSourcesList({ sources }: { sources: TaskRunContextSourceInfo[] }
 
 function RunDetailView({ detail, onBack }: { detail: TaskRunDetail; onBack: () => void }) {
   const { run, steps, approvals, artifacts } = detail;
+  const erpReports = detail.erpReports ?? [];
   const [checkpoint, setCheckpoint] = useState(detail.checkpoint);
   const [confirmContinue, setConfirmContinue] = useState(false);
   const [continuing, setContinuing] = useState(false);
@@ -232,6 +236,37 @@ function RunDetailView({ detail, onBack }: { detail: TaskRunDetail; onBack: () =
       <SettingsSection title="工具步骤" hint={`${steps.length} 项`}>
         <StepList steps={steps} />
       </SettingsSection>
+
+      {erpReports.length > 0 && <SettingsSection title="ERP 报工明细" hint={`${erpReports.length} 个批次`}>
+        <div className="space-y-3">
+          {erpReports.map((report) => (
+            <SettingsPanel
+              key={report.batchId}
+              title={`报工日期 ${report.workDate}`}
+              subtitle={`账号 ${report.erpUserId} · 批次 ${shortId(report.batchId)}`}
+              badge={<SettingsBadge tone={erpReportTone(report.status)}>当前：{ERP_BATCH_STATUS_LABELS[report.status]}</SettingsBadge>}
+            >
+              <div className="space-y-2">
+                {report.items.map((item) => (
+                  <div key={item.itemId} className="rounded-xl border border-keeper-cyan/15 bg-keeper-navyDeep/30 px-3 py-2 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="min-w-0 break-words font-medium text-keeper-ice">
+                        {item.projectName ? `${item.projectName} · ` : ''}{item.taskName} · {item.workMinutes / 60} 小时
+                      </p>
+                      <SettingsBadge tone={erpReportTone(item.state)}>{ERP_ITEM_STATE_LABELS[item.state]}</SettingsBadge>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-keeper-ice/65">{item.workContent}</p>
+                    <p className="mt-1 break-all text-[11px] text-keeper-ice/45">
+                      {item.attemptedInRun ? '本次运行尝试过' : '本次运行未发送'}
+                      {item.remoteTimeEntryId ? ` · ERP 记录 ID：${item.remoteTimeEntryId}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </SettingsPanel>
+          ))}
+        </div>
+      </SettingsSection>}
 
       <SettingsSection title="使用的上下文" hint={`${contextSources.length} 项`}>
         <ContextSourcesList sources={contextSources} />

@@ -147,6 +147,10 @@ pnpm db:seed
 | `erp_report_drafts` | 从对话整理出的报工草稿，按 revision 乐观更新；保存任务、日期、工时、工作内容及来源消息引用 |
 | `erp_report_batches` | 用户批准后冻结的不可变报工 payload 与摘要；保存批准/运行绑定和同 ERP 用户同日期的活动认领 |
 | `erp_report_submissions` | 每条 ERP 写入的 attempt 账本；保存发送前基线、请求摘要、远端记录标识、核验证据与不确定状态 |
+
+ERP 启动恢复会把遗留的发送中/核验中 attempt 标为待核验、尚未发送的 attempt 标为取消，并清除中断批次的活动认领。只要同账号同日期还有待核验 attempt，新批次不能领取该日期；先按获批时冻结的批次快照只读回查并取得唯一记录证据，不自动重放新增。
+部分完成的批次接续沿用原批次和逻辑操作 ID，只为剩余未核验条目新增 attempt；新 attempt 保存新的 run、step、call 与审批 ID，已产生 attempt 的审批不得复用。原批次的首次审批和不可变 payload 不被覆盖。专用 ERP 浏览器同一时刻只允许一个批次处于活动认领状态，即使目标日期不同也不并行提交。
+运行历史按初次授权 run 或逐条 attempt 的 run 查找批次，读取冻结条目与每条最新 attempt 状态；详情同时标明该次运行是否实际尝试该条目。此查询只读现有表，不保存第二份业务内容。
 | `user_questions` | P6.2 `ask_user` 提问账本：问题、原因、选项 JSON、回答与选项 id；状态 `pending / answered / expired / cancelled / interrupted`，决定方式 `user / timeout / abort / window_closed / startup`；启动收口把 `pending` 改为 `interrupted`，下一轮对话带出问题原文 |
 | `data_sources` | P7 数据源（本版仅 MySQL）：主机、库名、账号、`protectSecret` 加密的密码、`options_json`（ssl / 时区 / 样例值开关 / 关注表）、最近连通与错误、`writable_account` 写权限探测结果 |
 | `data_dictionary` | P7 数据字典：按 `(data_source_id, object_key)` 唯一，`auto_json` 骨架整份替换、`manual_json` 人工层刷新时保留；样例值与取值表只在这里，不进日志与运行记录 |

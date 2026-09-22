@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseToolDraftItems } from '../erp-tools';
+import { parseSubmissionRequest, parseToolDraftItems } from '../erp-tools';
 
 describe('ERP Agent tools', () => {
   it('normalizes decimal hours and records the real source message id', () => {
@@ -24,5 +24,12 @@ describe('ERP Agent tools', () => {
     expect(() => parseToolDraftItems([{
       task_name: 'APS', work_hours: 0.51, work_content: '测试',
     }], 'message-1')).toThrow('最多保留一位小数');
+  });
+
+  it('accepts a batch id only as a separate resume request', () => {
+    const batchId = '12345678-1234-1234-1234-123456789abc';
+    expect(parseSubmissionRequest({ batch_id: batchId })).toEqual({ batchId, allowPossibleDuplicate: false });
+    expect(() => parseSubmissionRequest({ batch_id: batchId, draft_revision: 1 })).toThrow('不能与草稿参数同时使用');
+    expect(() => parseSubmissionRequest({})).toThrow('draft_id 无效');
   });
 });

@@ -1,23 +1,27 @@
 import { reconcileInterruptedRuns } from '../agent/run-recovery';
 import { failStaleRunningTranscripts } from '../db/repositories/audio-transcripts';
 import { markInterruptedQueryRuns } from '../db/repositories/datasources';
+import { recoverInterruptedErpReportBatches } from '../db/repositories/erp-work-reports';
 
 export interface StartupRecoveryReport {
   agentRuns: ReturnType<typeof reconcileInterruptedRuns>;
   audioTranscripts: number;
   queryRuns: number;
+  erpBatches: ReturnType<typeof recoverInterruptedErpReportBatches>;
 }
 
 interface StartupRecoveryDependencies {
   reconcileAgentRuns: () => ReturnType<typeof reconcileInterruptedRuns>;
   failAudioTranscripts: () => number;
   interruptQueryRuns: () => number;
+  interruptErpBatches: () => ReturnType<typeof recoverInterruptedErpReportBatches>;
 }
 
 const defaultDependencies: StartupRecoveryDependencies = {
   reconcileAgentRuns: reconcileInterruptedRuns,
   failAudioTranscripts: failStaleRunningTranscripts,
   interruptQueryRuns: markInterruptedQueryRuns,
+  interruptErpBatches: recoverInterruptedErpReportBatches,
 };
 
 /**
@@ -31,5 +35,6 @@ export function recoverInterruptedRuntimeState(
     agentRuns: dependencies.reconcileAgentRuns(),
     audioTranscripts: dependencies.failAudioTranscripts(),
     queryRuns: dependencies.interruptQueryRuns(),
+    erpBatches: dependencies.interruptErpBatches(),
   };
 }

@@ -106,8 +106,24 @@ app.whenReady().then(async () => {
     assert(previewLayout.documentWidth <= previewLayout.viewport, `ERP 预览最小窗口出现横向溢出: ${previewLayout.documentWidth} > ${previewLayout.viewport}`);
     assert(previewLayout.hasConfirm, 'ERP 预览最小窗口缺少确认操作');
     const previewMinimumShot = await capture(win, outputDirectory, 'erp_permission_minimum_verified.png');
+    await win.webContents.executeJavaScript(`[...document.querySelectorAll('[role="dialog"] button')].find((item) => item.textContent.trim() === '拒绝').click()`);
+    await waitFor(win, `!document.querySelector('[role="dialog"]')`, '关闭首轮报工预览');
+    win.setSize(760, 720); win.webContents.send('appearance:changed', defaultAppearance);
+    win.webContents.send('permission:request', {
+      requestId: 'erp-resume-preview-smoke', toolName: 'submit_erp_report', args: { batch_id: 'batch-smoke' }, risk: 'high',
+      preview: {
+        kind: 'erp-work-report', target: '批次 batch-smoke · 剩余条目',
+        summary: '已核验 1 条；本次将新增剩余 1 条，共 2 小时', revision: 'resume-preview-smoke',
+        erpWorkReport: { accountName: '苏运来（7）', workDate: '2026-09-21', existingMinutes: 270,
+          batchMinutes: 120, totalMinutes: 390, remainingMinutes: 90,
+          items: [{ itemId: 'purchase', projectName: '新希望订单系统', taskName: '采购列表筛选优化',
+            workMinutes: 120, workContent: '修改采购列表筛选功能。' }] },
+      },
+    });
+    await waitFor(win, `document.body.innerText.includes('已核验 1 条；本次将新增剩余 1 条')`, 'ERP 剩余条目接续预览');
+    const resumeShot = await capture(win, outputDirectory, 'erp_permission_resume_verified.png');
     assert(rendererErrors.length === 0, `renderer console errors: ${rendererErrors.join(' | ')}`);
-    console.log(JSON.stringify({ ok: true, screenshots: [defaultShot, violetShot, minimumShot, previewDefaultShot, previewVioletShot, previewMinimumShot] }));
+    console.log(JSON.stringify({ ok: true, screenshots: [defaultShot, violetShot, minimumShot, previewDefaultShot, previewVioletShot, previewMinimumShot, resumeShot] }));
   } catch (error) { console.error(error); process.exitCode = 1; }
   finally { if (!win.isDestroyed()) win.destroy(); app.quit(); }
 }).catch((error) => { console.error(error); process.exitCode = 1; app.quit(); });

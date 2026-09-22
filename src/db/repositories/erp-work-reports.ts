@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, type AppDatabase } from '../index';
 import type { ErpReportBatchRow, ErpReportDraftRow, ErpReportSubmissionRow } from '../schema';
+import type { ErpRunReportInfo } from '../../shared/types';
 import { getApproval, getTaskRunStep, stepRecordId } from './task-runs';
 import {
   canonicalJson,
@@ -255,17 +256,167 @@ export function getErpReportBatch(id: string, db: AppDatabase = getDatabase()): 
   return row ? batchFromRow(row) : null;
 }
 
-export function claimErpReportBatch(id: string, claimKey: string, runId: string, db: AppDatabase = getDatabase(), now = Date.now()): boolean {
-  return db.transaction(() => {
-    const occupied = db.prepare(`SELECT id FROM erp_report_batches WHERE active_claim_key = ? AND id <> ? LIMIT 1`)
-      .get(claimKey, id) as { id?: unknown } | undefined;
-    if (occupied) return false;
-    db.prepare(`UPDATE erp_report_batches SET execution_status = 'running', active_claim_key = ?, claim_run_id = ?, updated_at = ?
-      WHERE id = ? AND execution_status IN ('approved', 'partially_verified') AND active_claim_key IS NULL`)
-      .run(claimKey, runId, now, id);
-    const row = getErpReportBatch(id, db);
-    return row?.activeClaimKey === claimKey && row.claimRunId === runId;
+/** Read-only business details for the existing run history; all item text comes from the frozen batch. */
+export function listErpRunReports(runId: string, db: AppDatabase = getDatabase()): ErpRunReportInfo[] {
+  const rows = db.prepare(`SELECT b.id FROM erp_report_batches b
+    WHERE b.authorized_run_id = ? OR EXISTS (
+      SELECT 1 FROM erp_report_submissions s WHERE s.batch_id = b.id AND s.run_id = ?
+    ) ORDER BY b.created_at DESC LIMIT 120`).all(runId, runId) as Array<{ id: string }>;
+  return rows.map(({ id }) => {
+    const batch = getErpReportBatch(id, db)!;
+    if (digestErpPayload(batch.payload) !== batch.payloadDigest) throw new Error('ERP 报工批次快照校验失败');
+    const userId = batch.payload.erpUserId;
+    const workDate = batch.payload.workDate;
+    if (typeof userId !== 'string' || !userId || typeof workDate !== 'string' || !isIsoDate(workDate)) {
+      throw new Error('ERP 报工批次快照已损坏');
+    }
+    const items = parseDraftItems(batch.payload.items);
+    const latestRows = db.prepare(`SELECT s.item_id, s.state, s.remote_time_entry_id
+      FROM erp_report_submissions s WHERE s.batch_id = ? AND s.attempt_no = (
+        SELECT MAX(next.attempt_no) FROM erp_report_submissions next
+        WHERE next.logical_operation_id = s.logical_operation_id
+      )`).all(id) as Array<{ item_id: string; state: ErpReportSubmissionState; remote_time_entry_id: string | null }>;
+    const latest = new Map(latestRows.map((row) => [row.item_id, row]));
+    const currentRunRows = db.prepare(`SELECT DISTINCT item_id FROM erp_report_submissions
+      WHERE batch_id = ? AND run_id = ?`).all(id, runId) as Array<{ item_id: string }>;
+    const attemptedInRun = new Set(currentRunRows.map((row) => row.item_id));
+    return {
+      batchId: batch.id, workDate, erpUserId: userId, status: batch.executionStatus,
+      items: items.map((item) => ({
+        itemId: item.itemId, taskName: item.taskName, projectName: item.projectName,
+        workMinutes: item.workMinutes!, workContent: item.workContent,
+        state: latest.get(item.itemId)?.state ?? 'not_started',
+        attemptedInRun: attemptedInRun.has(item.itemId),
+        remoteTimeEntryId: latest.get(item.itemId)?.remote_time_entry_id ?? null,
+      })),
+    };
   });
+}
+
+function claimErpReportBatchInTransaction(
+  id: string, claimKey: string, runId: string, allowedStatuses: ErpReportBatchStatus[], db: AppDatabase, now: number,
+): boolean {
+  const batch = getErpReportBatch(id, db);
+  if (!batch || batch.activeClaimKey !== null || !allowedStatuses.includes(batch.executionStatus)) return false;
+  const draft = getErpReportDraft(batch.draftId, db);
+  if (!draft?.erpUserId || claimKey !== `${draft.connectionKey}|${draft.erpUserId}|${draft.workDate}`) return false;
+  const occupied = db.prepare(`SELECT id FROM erp_report_batches WHERE active_claim_key IS NOT NULL AND id <> ? LIMIT 1`)
+    .get(id) as { id?: unknown } | undefined;
+  if (occupied) return false;
+  const unresolved = db.prepare(`SELECT s.id FROM erp_report_submissions s
+      JOIN erp_report_batches b ON b.id = s.batch_id
+      JOIN erp_report_drafts d ON d.id = b.draft_id
+      WHERE d.connection_key = ? AND d.erp_user_id = ? AND d.work_date = ?
+        AND s.state IN ('dispatching', 'verifying', 'unknown') LIMIT 1`)
+    .get(draft.connectionKey, draft.erpUserId, draft.workDate) as { id?: unknown } | undefined;
+  if (unresolved) return false;
+  db.prepare(`UPDATE erp_report_batches SET execution_status = 'running', active_claim_key = ?, claim_run_id = ?, updated_at = ?
+      WHERE id = ? AND execution_status = ? AND active_claim_key IS NULL`)
+    .run(claimKey, runId, now, id, batch.executionStatus);
+  const row = getErpReportBatch(id, db);
+  return row?.activeClaimKey === claimKey && row.claimRunId === runId;
+}
+
+export function claimErpReportBatch(id: string, claimKey: string, runId: string, db: AppDatabase = getDatabase(), now = Date.now()): boolean {
+  return db.transaction(() => claimErpReportBatchInTransaction(id, claimKey, runId, ['approved'], db, now));
+}
+
+export interface ErpResumeAuthorization {
+  sessionId: string;
+  runId: string;
+  callId: string;
+  toolName: string;
+  approvalId: string;
+  argsDigest: string;
+  previewRevision: string;
+}
+
+export function claimErpReportBatchForResume(
+  id: string,
+  claimKey: string,
+  authorization: ErpResumeAuthorization,
+  db: AppDatabase = getDatabase(),
+  now = Date.now(),
+): boolean {
+  return db.transaction(() => {
+    const batch = getErpReportBatch(id, db);
+    if (!batch || !['partially_verified', 'cancelled', 'failed'].includes(batch.executionStatus)) return false;
+    const draft = getErpReportDraft(batch.draftId, db);
+    if (!draft || draft.sessionId !== authorization.sessionId) throw new Error('报工批次不属于当前会话');
+    const approval = getApproval(authorization.approvalId, db);
+    const step = getTaskRunStep(stepRecordId(authorization.runId, authorization.callId), db);
+    if (!approval || approval.id === batch.approvalId
+        || approval.status !== 'approved' || approval.decidedBy !== 'user'
+        || approval.runId !== authorization.runId || approval.sessionId !== authorization.sessionId
+        || approval.callId !== authorization.callId || approval.toolName !== authorization.toolName
+        || approval.argsDigest !== authorization.argsDigest || approval.previewRevision !== authorization.previewRevision
+        || !step || step.status !== 'running' || step.runId !== authorization.runId
+        || step.callId !== authorization.callId || step.toolName !== authorization.toolName) {
+      throw new Error('报工接续审批凭据与当前调用不一致');
+    }
+    const usedApproval = db.prepare(`SELECT id FROM erp_report_submissions
+      WHERE batch_id = ? AND approval_id = ? LIMIT 1`)
+      .get(id, authorization.approvalId) as { id?: unknown } | undefined;
+    if (usedApproval) throw new Error('报工接续审批已使用，请重新预览并确认');
+    return claimErpReportBatchInTransaction(id, claimKey, authorization.runId,
+      ['partially_verified', 'cancelled', 'failed'], db, now);
+  });
+}
+
+export interface InterruptedErpReportBatches {
+  batches: number;
+  unknownSubmissions: number;
+  cancelledSubmissions: number;
+}
+
+/** A stopped process cannot know whether an in-flight browser request reached ERP. */
+export function interruptErpReportBatch(
+  id: string,
+  expectedClaimKey: string | null = null,
+  db: AppDatabase = getDatabase(),
+  now = Date.now(),
+): InterruptedErpReportBatches | null {
+  return db.transaction(() => {
+    const batch = getErpReportBatch(id, db);
+    if (!batch || batch.executionStatus !== 'running'
+        || (expectedClaimKey !== null && batch.activeClaimKey !== expectedClaimKey)) return null;
+    const states = db.prepare(`SELECT state FROM erp_report_submissions WHERE batch_id = ?`)
+      .all(id) as { state: ErpReportSubmissionState }[];
+    const unknownSubmissions = states.filter((row) => row.state === 'dispatching' || row.state === 'verifying').length;
+    const cancelledSubmissions = states.filter((row) => row.state === 'prepared').length;
+    const hasUnknown = unknownSubmissions > 0 || states.some((row) => row.state === 'unknown');
+    const hasVerified = states.some((row) => row.state === 'verified');
+    const status: ErpReportBatchStatus = hasUnknown ? 'unknown' : hasVerified ? 'partially_verified' : 'cancelled';
+    db.prepare(`UPDATE erp_report_submissions SET state = 'unknown', error_code = 'interrupted_after_dispatch', updated_at = ?
+      WHERE batch_id = ? AND state IN ('dispatching', 'verifying')`).run(now, id);
+    db.prepare(`UPDATE erp_report_submissions SET state = 'cancelled', error_code = 'interrupted_before_dispatch', updated_at = ?
+      WHERE batch_id = ? AND state = 'prepared'`).run(now, id);
+    db.prepare(`UPDATE erp_report_batches SET execution_status = ?, active_claim_key = NULL,
+      claim_run_id = NULL, updated_at = ? WHERE id = ? AND execution_status = 'running'`)
+      .run(status, now, id);
+    const updated = getErpReportBatch(id, db);
+    if (updated?.executionStatus !== status || updated.activeClaimKey !== null) {
+      throw new Error('ERP 中断批次账本未能安全收口');
+    }
+    return { batches: 1, unknownSubmissions, cancelledSubmissions };
+  });
+}
+
+export function recoverInterruptedErpReportBatches(
+  db: AppDatabase = getDatabase(),
+  now = Date.now(),
+): InterruptedErpReportBatches {
+  const running = db.prepare(`SELECT id FROM erp_report_batches WHERE execution_status = 'running'`)
+    .all() as { id: string }[];
+  const report = { batches: 0, unknownSubmissions: 0, cancelledSubmissions: 0 };
+  for (const row of running) {
+    const interrupted = interruptErpReportBatch(row.id, null, db, now);
+    if (!interrupted) throw new Error('ERP 中断批次在恢复期间发生变化');
+    report.batches += interrupted.batches;
+    report.unknownSubmissions += interrupted.unknownSubmissions;
+    report.cancelledSubmissions += interrupted.cancelledSubmissions;
+  }
+  return report;
 }
 
 export interface StartErpSubmissionInput {

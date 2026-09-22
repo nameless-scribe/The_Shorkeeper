@@ -48,7 +48,7 @@ function runWorker(modulePath) {
 
 function runController() {
   const root = path.resolve(__dirname, '..');
-  const unpackedRoot = path.join(root, 'release', 'win-unpacked');
+  const unpackedRoot = path.resolve(process.argv[2] || path.join(root, 'release', 'win-unpacked'));
   const executable = path.join(unpackedRoot, 'The Shorekeeper.exe');
   const resources = path.join(unpackedRoot, 'resources');
   const appAsar = path.join(resources, 'app.asar');

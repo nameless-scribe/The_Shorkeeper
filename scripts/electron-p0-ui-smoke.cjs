@@ -95,7 +95,18 @@ function registerMocks() {
     acknowledgedAt: null,
   };
   const detail = {
-  contextSources: [],
+    contextSources: [],
+    erpReports: [{
+      batchId: 'batch-erp-ui-smoke', workDate: '2026-09-21', erpUserId: '7', status: 'partially_verified',
+      items: [
+        { itemId: 'aps', projectName: '光拓智能日常', taskName: 'APS 自动排产系统调整',
+          workMinutes: 210, workContent: '调整排产算法，修复扫描问题。', state: 'verified',
+          attemptedInRun: true, remoteTimeEntryId: 'remote-aps-1' },
+        { itemId: 'purchase', projectName: '新希望订单系统', taskName: '采购列表筛选优化',
+          workMinutes: 120, workContent: '修改采购列表筛选功能。', state: 'unknown',
+          attemptedInRun: true, remoteTimeEntryId: null },
+      ],
+    }],
     checkpoint: { id: 'checkpoint-ui', runId, rootRunId: runId, expiresAt: now + 86400000, claimedRunId: null, available: true,
       totals: { rounds: 20, toolCalls: 30, tokens: 300000, activeMs: 5000, segments: 1 } },
     run,
@@ -317,6 +328,21 @@ app.whenReady().then(async () => {
     setStage('capture run detail');
     const detailScreenshot = await capture(window, screenshotDirectory, 'run-detail.png');
 
+    setStage('capture ERP run details');
+    await waitFor(window, `document.body.innerText.includes('ERP 报工明细') && document.body.innerText.includes('结果待核验')`, 'ERP 运行明细');
+    await window.webContents.executeJavaScript(`[...document.querySelectorAll('h3')].find((h) => h.textContent === 'ERP 报工明细').scrollIntoView({block:'start'})`);
+    const erpDetailDefaultScreenshot = await capture(window, screenshotDirectory, 'erp-run-detail-default.png');
+    window.webContents.send('appearance:changed', { ...appearance, colors: { ...appearance.colors,
+      navyDeep: '#1b1326', navy: '#2b1d3b', cyan: '#dfa8ed', cyanDim: '#9165a0',
+      ice: '#fff2ff', iceDeep: '#ddbbeb' } });
+    window.setSize(360, 520);
+    await waitFor(window, 'window.innerWidth <= 360', 'ERP 运行明细最小窗口');
+    await window.webContents.executeJavaScript(`[...document.querySelectorAll('h3')].find((h) => h.textContent === 'ERP 报工明细').scrollIntoView({block:'start'})`);
+    assert(await window.webContents.executeJavaScript('document.documentElement.scrollWidth <= window.innerWidth'), 'ERP 运行明细产生横向溢出');
+    const erpDetailMinimumScreenshot = await capture(window, screenshotDirectory, 'erp-run-detail-violet-min.png');
+    window.setSize(1200, 820);
+    window.webContents.send('appearance:changed', appearance);
+
     setStage('checkpoint confirmation and duplicate submit guard');
     await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((b) => b.textContent === '继续一段').click()`);
     await waitFor(window, `document.body.innerText.includes('确认新增最多 20 次')`, '继续额度确认');
@@ -434,7 +460,7 @@ app.whenReady().then(async () => {
       ok: true,
       rendererDomVerified: true,
       rendererConsoleClean: true,
-      screenshots: [historyScreenshot, detailScreenshot, previewScreenshot, xlsxPreviewScreenshot, questionScreenshot, budgetDefaultScreenshot, budgetAlternateScreenshot, checkpointDefaultScreenshot, checkpointMinimumScreenshot],
+      screenshots: [historyScreenshot, detailScreenshot, erpDetailDefaultScreenshot, erpDetailMinimumScreenshot, previewScreenshot, xlsxPreviewScreenshot, questionScreenshot, budgetDefaultScreenshot, budgetAlternateScreenshot, checkpointDefaultScreenshot, checkpointMinimumScreenshot],
       ...result,
     }, null, 2));
   } catch (error) {

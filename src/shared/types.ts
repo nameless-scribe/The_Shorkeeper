@@ -141,7 +141,25 @@ export interface TaskRunDetail {
   artifacts: ArtifactInfo[];
   approvals: ApprovalInfo[];
   contextSources: TaskRunContextSourceInfo[];
+  erpReports?: ErpRunReportInfo[];
   checkpoint?: RunCheckpointInfo | null;
+}
+
+export interface ErpRunReportInfo {
+  batchId: string;
+  workDate: string;
+  erpUserId: string;
+  status: 'approved' | 'running' | 'verified' | 'partially_verified' | 'cancelled' | 'failed' | 'unknown';
+  items: Array<{
+    itemId: string;
+    taskName: string;
+    projectName: string | null;
+    workMinutes: number;
+    workContent: string;
+    state: 'not_started' | 'prepared' | 'dispatching' | 'verifying' | 'verified' | 'known_not_written' | 'unknown' | 'cancelled';
+    attemptedInRun: boolean;
+    remoteTimeEntryId: string | null;
+  }>;
 }
 
 export interface RunCheckpointInfo {

@@ -181,23 +181,30 @@ export const prepareErpReportTool: ToolDefinition = {
   },
 };
 
-function parseSubmissionRequest(args: unknown): ErpSubmissionRequest {
+export function parseSubmissionRequest(args: unknown): ErpSubmissionRequest {
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('提交参数必须是对象');
   const input = args as Record<string, unknown>;
-  const extra = Object.keys(input).filter((key) => !['draft_id', 'draft_revision', 'allow_possible_duplicate'].includes(key));
+  const extra = Object.keys(input).filter((key) => !['draft_id', 'draft_revision', 'batch_id', 'allow_possible_duplicate'].includes(key));
   if (extra.length) throw new Error(`提交参数包含不支持的字段：${extra.join(', ')}`);
-  const draftId = typeof input.draft_id === 'string' ? input.draft_id.trim() : '';
-  if (!/^[0-9a-f-]{36}$/i.test(draftId)) throw new Error('draft_id 无效');
-  if (!Number.isInteger(input.draft_revision) || Number(input.draft_revision) < 1) throw new Error('draft_revision 必须是正整数');
   if (input.allow_possible_duplicate !== undefined && typeof input.allow_possible_duplicate !== 'boolean') {
     throw new Error('allow_possible_duplicate 必须是布尔值');
   }
-  return { draftId, draftRevision: Number(input.draft_revision), allowPossibleDuplicate: input.allow_possible_duplicate === true };
+  const allowPossibleDuplicate = input.allow_possible_duplicate === true;
+  if (input.batch_id !== undefined) {
+    if (input.draft_id !== undefined || input.draft_revision !== undefined) throw new Error('batch_id 不能与草稿参数同时使用');
+    const batchId = typeof input.batch_id === 'string' ? input.batch_id.trim() : '';
+    if (!/^[0-9a-f-]{36}$/i.test(batchId)) throw new Error('batch_id 无效');
+    return { batchId, allowPossibleDuplicate };
+  }
+  const draftId = typeof input.draft_id === 'string' ? input.draft_id.trim() : '';
+  if (!/^[0-9a-f-]{36}$/i.test(draftId)) throw new Error('draft_id 无效');
+  if (!Number.isInteger(input.draft_revision) || Number(input.draft_revision) < 1) throw new Error('draft_revision 必须是正整数');
+  return { draftId, draftRevision: Number(input.draft_revision), allowPossibleDuplicate };
 }
 
 export const submitErpReportTool: ToolDefinition = {
   name: 'submit_erp_report',
-  description: '预览并提交一个已就绪的 ERP 报工草稿。执行前必须向用户展示账号、日期、任务、内容和工时，并取得与本次调用绑定的持久化审批；逐条保存后回查记录',
+  description: '预览并提交已就绪的 ERP 报工草稿，或在回查无结果未知后接续已有批次的剩余条目。两种模式都须展示具体报工并取得新的持久化审批；逐条保存后回查记录',
   category: 'skill',
   requiresPermission: ['network', 'automation'],
   sideEffects: SUBMIT_CONTRACT,
@@ -206,9 +213,9 @@ export const submitErpReportTool: ToolDefinition = {
     properties: {
       draft_id: { type: 'string', description: 'prepare_erp_report 返回的草稿 ID' },
       draft_revision: { type: 'integer', description: '用户最终确认的草稿版本' },
+      batch_id: { type: 'string', description: '接续部分完成批次时的批次 ID；与 draft_id/draft_revision 二选一' },
       allow_possible_duplicate: { type: 'boolean', description: '只有用户看过已有相同记录并明确仍要新增时设为 true' },
     },
-    required: ['draft_id', 'draft_revision'],
     additionalProperties: false,
   },
   async execute(args, ctx) {

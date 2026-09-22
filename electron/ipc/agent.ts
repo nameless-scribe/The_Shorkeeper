@@ -15,6 +15,7 @@ import { formatAttachmentsForMessage } from '../../src/workspace/import';
 import { enrichAttachmentsMessage } from '../../src/workspace/attachment-preparse';
 import { runOrchestrator } from '../../src/agent/orchestrator';
 import { getRunCheckpointInfo } from '../../src/db/repositories/run-checkpoints';
+import { listErpRunReports } from '../../src/db/repositories/erp-work-reports';
 import {
   getRunDiagnostic,
   listRunDiagnostics,
@@ -167,6 +168,7 @@ export function registerAgentIpc() {
       artifacts: listRunArtifacts(runId),
       approvals: listApprovals({ runId }),
       contextSources: listTaskRunContextSources(runId),
+      erpReports: listErpRunReports(runId),
       checkpoint: getRunCheckpointInfo(runId),
     };
   });

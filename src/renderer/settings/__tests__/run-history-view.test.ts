@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { TaskRunInfo } from '@/shared/types';
 import {
   formatApprovalDecider,
+  ERP_BATCH_STATUS_LABELS,
+  ERP_ITEM_STATE_LABELS,
+  erpReportTone,
   formatErrorCategory,
   formatRiskLevel,
   formatRunDuration,
@@ -65,5 +68,9 @@ describe('run history view helpers', () => {
     expect(formatRiskLevel('medium')).toBe('中');
     expect(formatApprovalDecider('user')).toBe('用户');
     expect(formatErrorCategory('path_out_of_scope')).toBe('路径超出工作区');
+    expect(ERP_BATCH_STATUS_LABELS.partially_verified).toBe('部分核验');
+    expect(ERP_ITEM_STATE_LABELS.unknown).toBe('结果待核验');
+    expect(erpReportTone('verified')).toBe('green');
+    expect(erpReportTone('unknown')).toBe('amber');
   });
 });

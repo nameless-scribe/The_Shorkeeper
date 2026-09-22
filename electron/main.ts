@@ -235,6 +235,9 @@ if (ownsSingleInstanceLock) app.whenReady().then(async () => {
     if (recovered.queryRuns) {
       console.log(`[startup] 收口 ${recovered.queryRuns} 条中断的数据源查询记录`);
     }
+    if (recovered.erpBatches.batches) {
+      console.log(`[startup] 收口 ${recovered.erpBatches.batches} 个中断的 ERP 报工批次，其中 ${recovered.erpBatches.unknownSubmissions} 条结果待核验`);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('数据库初始化失败:', err);

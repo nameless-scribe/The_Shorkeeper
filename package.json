@@ -52,6 +52,7 @@
     "test:erp": "vitest run src/erp/__tests__ src/tools/erp/__tests__ src/db/__tests__/erp-work-reports.test.ts",
     "erp:probe": "tsx scripts/erp-browser-probe.ts",
     "test:erp:ui": "electron scripts/electron-erp-ui-smoke.cjs",
+    "test:erp:packaged": "node scripts/packaged-erp-browser-smoke.cjs",
     "build:dev-react": "node scripts/build-dev-react.mjs",
     "test:ui:strict": "pnpm build:dev-react && electron scripts/electron-p3-ui-smoke.cjs && electron scripts/electron-p1-ui-smoke.cjs && electron scripts/electron-p0-ui-smoke.cjs",
     "test:skills": "vitest run src/skills/__tests__ src/tools/__tests__/tools.test.ts src/tools/__tests__/progress-skill-validation.test.ts src/tools/__tests__/agent-registry.test.ts src/agent/__tests__/context-builder-skills.test.ts",
