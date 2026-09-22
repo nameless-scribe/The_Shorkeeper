@@ -10,9 +10,9 @@ vi.mock('../../db/state', () => ({
 }));
 
 import { closeDatabase, initDatabase } from '../../db';
-import { createTaskRun, listApprovals } from '../../db/repositories/task-runs';
+import { createTaskRun, listApprovals, startTaskRunStep } from '../../db/repositories/task-runs';
 import type { ToolDefinition } from '../../tools/types';
-import { checkPermission, confirmPermission, setPermissionConfirmer } from '../permissions';
+import { checkPermission, confirmPermission, confirmPermissionStrict, digestPermissionArgs, setPermissionConfirmer } from '../permissions';
 
 describe('permission approvals', () => {
   let tempDir: string;
@@ -89,6 +89,45 @@ describe('permission approvals', () => {
     expect(await confirmPermission('gen_pdf', {}, undefined, { runId: 'run-1' })).toBe(true);
     state.ready = true;
     expect(listApprovals({ runId: 'run-1' })).toEqual([]);
+  });
+
+  it('binds a strict approval to the recorded call, canonical args and preview revision', async () => {
+    startTaskRunStep({ runId: 'run-1', callId: 'call-1', toolName: 'submit_erp_report', riskLevel: 'high' });
+    setPermissionConfirmer(async () => true);
+    const args = { revision: 2, draft_id: 'draft-1' };
+    const receipt = await confirmPermissionStrict('submit_erp_report', args, undefined, {
+      runId: 'run-1', sessionId: 'session-1', callId: 'call-1', risk: 'high',
+      preview: { kind: 'erp-work-report', target: 'draft-1', summary: '1 条报工', revision: 'preview-2' },
+    });
+
+    expect(receipt).toEqual({
+      approved: true,
+      approvalId: expect.any(String),
+      argsDigest: digestPermissionArgs({ draft_id: 'draft-1', revision: 2 }),
+      previewRevision: 'preview-2',
+    });
+    expect(listApprovals({ runId: 'run-1' })[0]).toMatchObject({
+      id: receipt?.approvalId,
+      callId: 'call-1',
+      argsDigest: receipt?.argsDigest,
+      previewRevision: 'preview-2',
+      status: 'approved',
+    });
+  });
+
+  it('fails closed before prompting when strict approval cannot be persisted or the step is missing', async () => {
+    const confirmer = vi.fn(async () => true);
+    setPermissionConfirmer(confirmer);
+    await expect(confirmPermissionStrict('submit_erp_report', {}, undefined, {
+      runId: 'run-1', sessionId: 'session-1', callId: 'missing', risk: 'high',
+    })).rejects.toThrow('步骤尚未可靠记录');
+    expect(confirmer).not.toHaveBeenCalled();
+
+    state.ready = false;
+    await expect(confirmPermissionStrict('submit_erp_report', {}, undefined, {
+      runId: 'run-1', sessionId: 'session-1', callId: 'call-1', risk: 'high',
+    })).rejects.toThrow('无法可靠记录本次审批');
+    expect(confirmer).not.toHaveBeenCalled();
   });
 
   it('forces confirmation for high-risk tools even when policy would allow them', () => {

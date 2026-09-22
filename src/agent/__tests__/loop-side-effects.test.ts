@@ -452,7 +452,7 @@ describe('agent loop side-effect contract', () => {
       policy: { ...policy, automation: { allowed: true, requireConfirm: true } },
     }));
 
-    expect(received).toEqual([{ runId: 'run-ctx', sessionId: 'session-ctx', risk: 'medium' }]);
+    expect(received).toEqual([{ runId: 'run-ctx', sessionId: 'session-ctx', callId: 'c1', risk: 'medium' }]);
     expect(automationTool.execute).toHaveBeenCalledOnce();
   });
 });

@@ -53,6 +53,7 @@ import {
 import { manageGoalsTool } from './tasks/goal-tools';
 import { manageCommitmentsTool } from './tasks/commitment-tools';
 import { buildDailyBriefTool, buildEveningReviewTool } from './tasks/steward-tools';
+import { connectErpTool, prepareErpReportTool, readErpContextTool, reconcileErpReportTool, submitErpReportTool } from './erp/erp-tools';
 
 let defaultRegistry: ToolRegistry | null = null;
 
@@ -106,6 +107,11 @@ export function createBuiltinRegistry(): ToolRegistry {
   registry.register(runNamedQueryTool);
   registry.register(scheduleNamedQueryTool);
   registry.register(lookAtImageTool);
+  registry.register(connectErpTool);
+  registry.register(readErpContextTool);
+  registry.register(prepareErpReportTool);
+  registry.register(submitErpReportTool);
+  registry.register(reconcileErpReportTool);
   return registry;
 }
 

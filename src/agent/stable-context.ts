@@ -38,6 +38,11 @@ const TOOL_SUMMARY: Record<string, string> = {
   build_daily_brief: '聚合早间简报数据（每天一次）',
   build_evening_review: '聚合晚间复盘数据并标记错过的承诺（每天一次）',
   ask_user: '证据不足时向用户提一个问题并等待回答（暂停运行）',
+  connect_erp: '打开专用 ERP 浏览器并检测登录状态（不提交报工）',
+  read_erp_context: '读取本人 ERP 身份、任务候选和指定日期报工',
+  prepare_erp_report: '保存或修订本地 ERP 报工草稿（不提交 ERP）',
+  submit_erp_report: '经最终业务预览确认后新增 ERP 报工并回查核验',
+  reconcile_erp_report: '只读回查结果未知的 ERP 报工批次（绝不重复新增）',
 };
 
 const SCHEDULE_TOOL_HINT =
@@ -65,6 +70,11 @@ export function formatToolGuideForPrompt(
   }
   if (tools.some((t) => t.name === 'ask_user')) {
     sections.push(ASK_USER_TOOL_HINT);
+  }
+  if (tools.some((t) => t.name === 'prepare_erp_report') && !tools.some((t) => t.name === 'submit_erp_report')) {
+    sections.push('【ERP 报工】当前工具只能连接、读取和整理本地草稿；没有 submit_erp_report 时禁止声称已提交或已写入 ERP。');
+  } else if (tools.some((t) => t.name === 'submit_erp_report')) {
+    sections.push('【ERP 报工】整理草稿不等于提交。只有用户明确要求提交时才调用 submit_erp_report；只有该工具返回成功且说明已回查核验，才能声称报工完成。返回结果未知时先核对 ERP，禁止自动重试。');
   }
   if (
     tools.some((t) => t.name === 'update_agent_plan') &&

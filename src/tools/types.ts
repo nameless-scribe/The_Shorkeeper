@@ -36,6 +36,14 @@ export interface ToolContext {
   workspaceRoot: string;
   signal: AbortSignal;
   runId?: string;
+  /** 当前模型工具调用 ID；由 Agent 循环注入，工具参数不能伪造。 */
+  callId?: string;
+  /** 当前持久化步骤 ID；由 runId 与 callId 派生并在执行前验证。 */
+  stepId?: string;
+  /** 严格审批工具执行时携带的已批准记录 ID。 */
+  approvalId?: string;
+  /** 当前调用规范化参数的 SHA-256，用于审批与执行绑定。 */
+  approvalArgsDigest?: string;
   /** 为 true 时工具只应描述将要发生的变更，不得产生副作用（需 sideEffects.supportsPreview）。 */
   preview?: boolean;
   /** 用户确认时看到的版本；执行前必须与当前目标版本一致。 */
@@ -65,6 +73,8 @@ export interface ToolSideEffectContract {
   supportsPreview: boolean;
   reversible: ToolReversibility;
   evidence: ToolEvidenceKind;
+  /** 外部不可逆写入可要求审批请求、结论及调用绑定全部可靠落库；任一步失败即不执行。 */
+  requiresPersistentApproval?: boolean;
 }
 
 export interface ToolDefinition {

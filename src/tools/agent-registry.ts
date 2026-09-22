@@ -31,6 +31,11 @@ const CORE_TOOL_NAMES = new Set([
   'search_worldbook',
   'search_knowledge',
   'ask_user',
+  'connect_erp',
+  'read_erp_context',
+  'prepare_erp_report',
+  'submit_erp_report',
+  'reconcile_erp_report',
   // P7：即使技能未被关键词激活，模型也能发现有数据源可查（计划 §11.5）
   'list_data_sources',
   'describe_data_source',

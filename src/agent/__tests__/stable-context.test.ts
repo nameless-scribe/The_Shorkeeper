@@ -14,6 +14,7 @@ import {
 import { readFileTool } from '../../tools/file/read-file';
 import { createScheduledTaskTool } from '../../tools/schedule/schedule-tools';
 import { updateAgentPlanTool } from '../../tools/plan/plan-tools';
+import { prepareErpReportTool, submitErpReportTool } from '../../tools/erp/erp-tools';
 
 describe('stable context', () => {
   beforeEach(() => {
@@ -81,5 +82,16 @@ describe('stable context', () => {
     const guide = formatToolGuideForPrompt([readFileTool], ['workspace-doc-edit']);
     expect(guide).toContain('工作区文档维护');
     expect(guide).not.toContain('不可只在回复文字中描述已修改');
+  });
+
+  it('does not let draft-only ERP tools claim a submission', () => {
+    const guide = formatToolGuideForPrompt([prepareErpReportTool], ['erp-work-report']);
+    expect(guide).toContain('禁止声称已提交或已写入 ERP');
+  });
+
+  it('requires verified submit evidence when the ERP write tool is available', () => {
+    const guide = formatToolGuideForPrompt([prepareErpReportTool, submitErpReportTool], ['erp-work-report']);
+    expect(guide).toContain('只有该工具返回成功且说明已回查核验');
+    expect(guide).toContain('禁止自动重试');
   });
 });

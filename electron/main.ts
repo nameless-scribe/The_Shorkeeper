@@ -62,6 +62,8 @@ import { registerVoiceIpc, shutdownVoiceRuntime } from './ipc/voice';
 import { registerAsrIpc } from './ipc/asr';
 import { registerDataSourcesIpc, shutdownDataSourceConnectors } from './ipc/datasources';
 import { registerVisionIpc } from './ipc/vision';
+import { registerErpIpc } from './ipc/erp';
+import { configureErpConnectionService, shutdownErpConnectionService } from './erp/service';
 import { registerPermissionIpc, requestPermissionConfirm } from './ipc/permission';
 import { cancelAllPendingQuestions, registerAskIpc, requestUserAnswerViaWindow } from './ipc/ask';
 import { setUserQuestionResponder } from '../src/agent/user-questions';
@@ -150,6 +152,11 @@ function clearStartupTimers(): void {
 
 async function settleRuntimeForShutdown(): Promise<void> {
   try {
+    await shutdownErpConnectionService();
+  } catch (error) {
+    console.error('[shutdown] ERP 浏览器停止失败:', error instanceof Error ? error.message : error);
+  }
+  try {
     // 先停主动服务：取消定时器并等待当前采集周期结束，避免关库后仍有写入。
     await shutdownProactivityRuntime(SHUTDOWN_GRACE_MS);
   } catch (error) {
@@ -205,6 +212,7 @@ if (ownsSingleInstanceLock) app.whenReady().then(async () => {
 
   loadEnvFiles();
   const layout = bootstrapDataLayout(app.getPath('userData'));
+  configureErpConnectionService(app.getPath('userData'));
   if (layout.usedFallback) {
     console.warn(
       `[data] 无法在首选数据目录创建文件（${layout.fallbackReason ?? '未知原因'}），已改用 ${layout.databaseDir}`,
@@ -275,6 +283,7 @@ if (ownsSingleInstanceLock) app.whenReady().then(async () => {
     registerAsrIpc();
     registerDataSourcesIpc();
     registerVisionIpc();
+    registerErpIpc();
     registerPermissionIpc();
     setPermissionConfirmer(requestPermissionConfirm);
     // ask_user 弹窗（P6.1）：与权限确认同一注入方式

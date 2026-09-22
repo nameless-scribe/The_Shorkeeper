@@ -7,7 +7,7 @@ metadata:
     version: 1.2.0
     trigger: auto
     kind: workflow
-    matchKeywords: [查一下, 查询, 查数据, 数据库, 报表, 统计一下, 汇总一下, 看看数据, 报工, 工时, 尾款, 有哪些项目, 有什么项目, 卖得怎么样, 买得最多]
+    matchKeywords: [查一下, 查询, 查数据, 数据库, 报表, 统计一下, 汇总一下, 看看数据, 尾款, 有哪些项目, 有什么项目, 卖得怎么样, 买得最多]
     priority: 16
     allowedTools: [list_data_sources, describe_data_source, propose_query_plan, run_sql_query, update_data_dictionary, save_named_query, find_values, export_query_result, run_named_query, schedule_named_query, ask_user, recall_memory, save_memory, gen_chart, gen_xlsx, read_file]
     requiredTools: [describe_data_source, propose_query_plan, run_sql_query]

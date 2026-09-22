@@ -98,6 +98,9 @@ import type {
   UpdateDataSourcePatch,
   VisionSettingsInfo,
   VisionSettingsPatch,
+  ErpConnectionInfo,
+  ErpSettingsInfo,
+  ErpSettingsPatch,
 } from '../src/shared/types';
 import type { RunTelemetrySnapshot } from '../src/agent/run-observability';
 
@@ -480,6 +483,15 @@ const shorekeeperApi = {
   vision: {
     getSettings: (): Promise<VisionSettingsInfo> => ipcRenderer.invoke('vision:getSettings'),
     saveSettings: (patch: VisionSettingsPatch): Promise<VisionSettingsInfo> => ipcRenderer.invoke('vision:saveSettings', patch),
+  },
+  erp: {
+    getSettings: (): Promise<ErpSettingsInfo> => ipcRenderer.invoke('erp:getSettings'),
+    saveSettings: (patch: ErpSettingsPatch): Promise<ErpSettingsInfo> => ipcRenderer.invoke('erp:saveSettings', patch),
+    connect: (): Promise<ErpConnectionInfo> => ipcRenderer.invoke('erp:connect'),
+    refresh: (): Promise<ErpConnectionInfo> => ipcRenderer.invoke('erp:refresh'),
+    bringToFront: (): Promise<ErpConnectionInfo> => ipcRenderer.invoke('erp:bringToFront'),
+    disconnect: (): Promise<ErpConnectionInfo> => ipcRenderer.invoke('erp:disconnect'),
+    status: (): Promise<ErpConnectionInfo> => ipcRenderer.invoke('erp:status'),
   },
   asr: {
     getSettings: (): Promise<AsrSettingsInfo> => ipcRenderer.invoke('asr:getSettings'),

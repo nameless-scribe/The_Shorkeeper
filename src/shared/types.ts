@@ -125,6 +125,9 @@ export interface ApprovalInfo {
   sessionId: string | null;
   toolName: string;
   argsSummary: string;
+  argsDigest: string | null;
+  previewRevision: string | null;
+  callId: string | null;
   riskLevel: string;
   status: ApprovalStatus;
   decidedBy: ApprovalDecider | null;
@@ -897,9 +900,27 @@ export interface ToolPreviewChange {
   after: string;
 }
 
+export interface ErpWorkReportPreviewItem {
+  itemId: string;
+  projectName: string | null;
+  taskName: string;
+  workMinutes: number;
+  workContent: string;
+}
+
+export interface ErpWorkReportPreviewData {
+  accountName: string;
+  workDate: string;
+  existingMinutes: number;
+  batchMinutes: number;
+  totalMinutes: number;
+  remainingMinutes: number;
+  items: ErpWorkReportPreviewItem[];
+}
+
 /** 用户确认前展示的无副作用工具预览；revision 仅用于确认后防止执行过期预览。 */
 export interface ToolPreviewInfo {
-  kind: 'text-diff' | 'cell-changes' | 'query-plan';
+  kind: 'text-diff' | 'cell-changes' | 'query-plan' | 'erp-work-report';
   target: string;
   summary: string;
   revision: string;
@@ -911,6 +932,7 @@ export interface ToolPreviewInfo {
   beforeTruncated?: boolean;
   afterTruncated?: boolean;
   changes?: ToolPreviewChange[];
+  erpWorkReport?: ErpWorkReportPreviewData;
 }
 
 export interface PermissionRequestPayload {
@@ -1241,4 +1263,42 @@ export interface VisionSettingsPatch {
   maxPixels?: number;
   /** 删除单独保存的接入点与 Key，改回复用 */
   clearCredentials?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// ERP 对话报工设置（密码明文永不返回 renderer）
+// ---------------------------------------------------------------------------
+
+export type ErpBrowserChannel = 'msedge' | 'chrome';
+
+export interface ErpSettingsInfo {
+  enabled: boolean;
+  origin: string;
+  apiPrefix: string;
+  browserChannel: ErpBrowserChannel;
+  username: string;
+  passwordConfigured: boolean;
+  configured: boolean;
+  reason: string | null;
+}
+
+export interface ErpSettingsPatch {
+  enabled?: boolean;
+  origin?: string;
+  apiPrefix?: string;
+  browserChannel?: ErpBrowserChannel;
+  username?: string;
+  /** 留空或省略表示不修改；保存时要求 Electron safeStorage 可用。 */
+  password?: string;
+  clearCredentials?: boolean;
+}
+
+export interface ErpConnectionInfo {
+  state: 'disconnected' | 'browser_open' | 'authenticated';
+  origin: string | null;
+  browserChannel: ErpBrowserChannel | null;
+  pageUrl: string | null;
+  userId: string | null;
+  userName: string | null;
+  message: string;
 }

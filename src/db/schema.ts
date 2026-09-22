@@ -269,6 +269,9 @@ export interface ApprovalRow {
   session_id: string | null;
   tool_name: string;
   args_summary: string;
+  args_digest: string | null;
+  preview_revision: string | null;
+  call_id: string | null;
   risk_level: string;
   status: string;
   decided_by: string | null;
@@ -458,6 +461,59 @@ export interface TaskRunCheckpointRow {
   created_at: number;
   expires_at: number;
   claimed_run_id: string | null;
+}
+
+export interface ErpReportDraftRow {
+  id: string;
+  session_id: string;
+  connection_key: string;
+  erp_origin: string;
+  erp_user_id: string | null;
+  work_date: string;
+  revision: number;
+  status: string;
+  items_json: string;
+  source_message_ids_json: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ErpReportBatchRow {
+  id: string;
+  draft_id: string;
+  draft_revision: number;
+  payload_json: string;
+  payload_digest: string;
+  preview_revision: string;
+  approval_id: string;
+  authorized_run_id: string;
+  execution_status: string;
+  active_claim_key: string | null;
+  claim_run_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ErpReportSubmissionRow {
+  id: string;
+  logical_operation_id: string;
+  batch_id: string;
+  item_id: string;
+  attempt_no: number;
+  previous_attempt_id: string | null;
+  run_id: string;
+  step_id: string;
+  call_id: string;
+  approval_id: string;
+  state: string;
+  request_digest: string;
+  before_entries_json: string;
+  remote_time_entry_id: string | null;
+  evidence_json: string | null;
+  error_code: string | null;
+  created_at: number;
+  sent_at: number | null;
+  updated_at: number;
 }
 
 export const INIT_SQL = `

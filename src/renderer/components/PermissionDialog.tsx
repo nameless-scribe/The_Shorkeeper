@@ -202,6 +202,45 @@ function ToolPreviewPanel({ preview }: { preview: ToolPreviewInfo }) {
         </div>
       )}
 
+      {preview.kind === 'erp-work-report' && preview.erpWorkReport && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              ['报工账号', preview.erpWorkReport.accountName],
+              ['日期', preview.erpWorkReport.workDate],
+              ['当天已报', `${preview.erpWorkReport.existingMinutes / 60} 小时`],
+              ['提交后合计', `${preview.erpWorkReport.totalMinutes / 60} 小时`],
+            ].map(([label, value]) => (
+              <div key={label} className="min-w-0 rounded-xl border border-keeper-ice/10 bg-black/20 px-3 py-2">
+                <p className="text-[10px] text-keeper-ice/45">{label}</p>
+                <p className="mt-1 break-words text-xs font-medium text-keeper-ice">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+            {preview.erpWorkReport.items.map((item) => (
+              <article key={item.itemId} className="rounded-xl border border-keeper-cyan/20 bg-keeper-navy/20 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    {item.projectName && <p className="truncate text-[10px] text-keeper-cyan/70">{item.projectName}</p>}
+                    <p className="break-words text-sm font-medium text-keeper-ice">{item.taskName}</p>
+                  </div>
+                  <span className="shrink-0 rounded-lg bg-keeper-cyan/12 px-2 py-1 text-xs font-semibold text-keeper-cyan">
+                    {item.workMinutes / 60} 小时
+                  </span>
+                </div>
+                <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-keeper-ice/65">
+                  {item.workContent}
+                </p>
+              </article>
+            ))}
+          </div>
+          <p className="rounded-xl border border-amber-300/20 bg-amber-300/8 px-3 py-2 text-[11px] leading-relaxed text-amber-100/80">
+            确认后将逐条新增到 ERP；已成功提交的记录无法自动撤回。
+          </p>
+        </div>
+      )}
+
       <p className="text-[11px] leading-relaxed text-keeper-ice/45">
         当前仅为预览，尚未写入。确认后会再次校验目标版本；内容已变化时将拒绝执行。
       </p>

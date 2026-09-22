@@ -42,6 +42,15 @@ export function protectSecret(value: string): string {
   return `${SAFE_STORAGE_PREFIX}${safeStorage.encryptString(value).toString('base64')}`;
 }
 
+/** 用于不允许明文回退的新敏感配置；系统加密不可用时直接停止保存。 */
+export function protectSecretStrict(value: string): string {
+  if (!value) throw new Error('凭据不能为空');
+  if (isProtectedSecret(value)) return value;
+  const safeStorage = getSafeStorage();
+  if (!safeStorage) throw new Error('系统凭据存储不可用，未保存 ERP 密码；你仍可选择人工登录');
+  return `${SAFE_STORAGE_PREFIX}${safeStorage.encryptString(value).toString('base64')}`;
+}
+
 export function revealSecret(value: string): string {
   if (!isProtectedSecret(value)) return value;
   const safeStorage = getSafeStorage();

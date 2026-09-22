@@ -30,6 +30,7 @@ const AboutPage = lazyPage(() => import('./AboutPage'), 'AboutPage');
 const VoicePage = lazyPage(() => import('./VoicePage'), 'VoicePage');
 const RunHistoryPage = lazyPage(() => import('./RunHistoryPage'), 'RunHistoryPage');
 const DataSourcesPage = lazyPage(() => import('./DataSourcesPage'), 'DataSourcesPage');
+const ErpPage = lazyPage(() => import('./ErpPage'), 'ErpPage');
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -99,6 +100,7 @@ export function SettingsDrawer({ open, onClose, onConfigChange, requestedTab }: 
               {tab === 'runs' && <RunHistoryPage />}
               {tab === 'documents' && <DocumentsPage />}
               {tab === 'datasources' && <DataSourcesPage />}
+              {tab === 'erp' && <ErpPage />}
               {tab === 'skills' && <SkillsPage />}
               {tab === 'mcp' && <McpPage />}
               {tab === 'model' && <ModelPage onConfigChange={onConfigChange} />}

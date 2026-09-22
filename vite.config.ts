@@ -28,6 +28,8 @@ const isExternal = (id: string) =>
   id === 'pdf-lib' ||
   id === 'mysql2' ||
   id.startsWith('mysql2/') ||
+  id === 'playwright-core' ||
+  id.startsWith('playwright-core/') ||
   id.startsWith('@modelcontextprotocol/') ||
   id.startsWith('node:') ||
   id.startsWith('sql.js/');

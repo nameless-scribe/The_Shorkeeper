@@ -15,6 +15,7 @@ describe('product skill contracts', () => {
       'data-query',
       'doc-compose',
       'doc-to-markdown',
+      'erp-work-report',
       'excel',
       'image-qa',
       'meeting-notes',
@@ -31,6 +32,14 @@ describe('product skill contracts', () => {
         expect(tools.has(tool), `${skill.id} allows missing tool ${tool}`).toBe(true);
       }
     }
+  });
+
+  it('activates ERP reporting only for reporting intent', () => {
+    const skills = discoverSkills().filter((skill) => skill.kind !== 'internal');
+    const ids = (message: string) => resolveActiveSkills(message, skills).map((skill) => skill.id);
+    expect(ids('今天 APS 做了三个半小时，帮我整理报工')).toContain('erp-work-report');
+    expect(ids('今天 APS 做了三个半小时，帮我整理报工')).not.toContain('data-query');
+    expect(ids('今天做了晚饭，味道不错')).not.toContain('erp-work-report');
   });
 
   it('does not activate task tracking for an unrelated spreadsheet attachment', () => {

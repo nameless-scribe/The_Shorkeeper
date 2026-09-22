@@ -92,6 +92,8 @@ pnpm db:seed
 | `0029_datasources.sql` | P7 数据源查询：`data_sources`、`data_dictionary`、`metrics`、`named_queries`、`query_runs` |
 | `0030_run_checkpoints.sql` | 聊天预算检查点 `task_run_checkpoints`：加密快照、到期时间、单次认领与续跑关联；删除会话联动清理 |
 | `0031_audio_transcript_attempts.sql` | 录音转写 attempt 原子认领，阻止同一幂等键并发计费与旧请求覆盖新状态 |
+| `0032_erp_work_reports.sql` | ERP 报工草稿、审批后冻结批次与逐条提交 attempt 账本；提供日期级并发认领和外部写入幂等状态机 |
+| `0033_strict_approval_binding.sql` | 为严格审批增加规范化参数摘要、预览版本和工具调用 ID；旧审批保留空值，只有声明严格审批的外部写入要求字段齐全 |
 | `0026_proactive_events.sql` | P3 本地主动服务：`proactive_events`、`proactivity_decisions`、`proactivity_deliveries`、`proactivity_feedback`，以及 `scheduled_tasks` 的失败真源列（`last_error`、`last_error_at`、`failure_count`） |
 
 打包时 migration 以 `extraResources/db-migrations/` 形式随安装包分发；开发态直接读 `src/db/migrations/`。
@@ -141,7 +143,10 @@ pnpm db:seed
 | `task_runs` | 每次 Agent run 的持久化记录：来源、阶段、终态、模型、回复消息 id、步骤统计 |
 | `task_run_steps` | run 内每次工具调用：顺序、工具名、风险等级、幂等声明、状态与错误分类 |
 | `artifacts` | 工具产物证据：工作区相对路径、大小、SHA-256，关联 run 与步骤 |
-| `approvals` | 权限确认记录：工具、参数摘要、风险等级、结论与决定方式（用户/超时/中止/窗口关闭/启动收口） |
+| `approvals` | 权限确认记录：工具、参数摘要、SHA-256 参数摘要、预览版本、调用 ID、风险等级、结论与决定方式；严格外部写入会在执行前读回并验证 run/session/call/preview 绑定 |
+| `erp_report_drafts` | 从对话整理出的报工草稿，按 revision 乐观更新；保存任务、日期、工时、工作内容及来源消息引用 |
+| `erp_report_batches` | 用户批准后冻结的不可变报工 payload 与摘要；保存批准/运行绑定和同 ERP 用户同日期的活动认领 |
+| `erp_report_submissions` | 每条 ERP 写入的 attempt 账本；保存发送前基线、请求摘要、远端记录标识、核验证据与不确定状态 |
 | `user_questions` | P6.2 `ask_user` 提问账本：问题、原因、选项 JSON、回答与选项 id；状态 `pending / answered / expired / cancelled / interrupted`，决定方式 `user / timeout / abort / window_closed / startup`；启动收口把 `pending` 改为 `interrupted`，下一轮对话带出问题原文 |
 | `data_sources` | P7 数据源（本版仅 MySQL）：主机、库名、账号、`protectSecret` 加密的密码、`options_json`（ssl / 时区 / 样例值开关 / 关注表）、最近连通与错误、`writable_account` 写权限探测结果 |
 | `data_dictionary` | P7 数据字典：按 `(data_source_id, object_key)` 唯一，`auto_json` 骨架整份替换、`manual_json` 人工层刷新时保留；样例值与取值表只在这里，不进日志与运行记录 |

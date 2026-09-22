@@ -5,6 +5,7 @@ import { ASK_USER_TOOL_NAME } from '../tools/interaction/ask-user';
 import {
   checkPermission,
   confirmPermission,
+  confirmPermissionStrict,
   defaultPermissionPolicy,
   ensureWorkspaceDir,
 } from './permissions';
@@ -156,6 +157,9 @@ interface AuthorizedToolCall {
   args: unknown;
   contract: ToolSideEffectContract;
   previewRevision?: string;
+  approvalId?: string;
+  approvalArgsDigest?: string;
+  callId: string;
 }
 
 function isToolResult(value: AuthorizedToolCall | ToolResult): value is ToolResult {
@@ -190,6 +194,8 @@ async function authorizeToolCall(
   const decision = hooks?.requireFreshApproval && contract.risk !== 'read' && policyDecision !== 'deny'
     ? 'confirm' : policyDecision;
   let previewRevision: string | undefined;
+  let approvalId: string | undefined;
+  let approvalArgsDigest: string | undefined;
 
   if (decision === 'deny') {
     return createToolError(
@@ -262,12 +268,21 @@ async function authorizeToolCall(
     let approved: boolean;
     const waitStartedAt = Date.now();
     try {
-      approved = await confirmPermission(tool.name, args, ctx.signal, {
+      const confirmContext = {
         runId: ctx.runId,
         sessionId: ctx.sessionId,
+        callId: toolCall.id,
         risk: contract.risk,
-        preview,
-      });
+        ...(preview ? { preview } : {}),
+      };
+      if (contract.requiresPersistentApproval) {
+        const receipt = await confirmPermissionStrict(tool.name, args, ctx.signal, confirmContext);
+        approved = Boolean(receipt);
+        approvalId = receipt?.approvalId;
+        approvalArgsDigest = receipt?.argsDigest;
+      } else {
+        approved = await confirmPermission(tool.name, args, ctx.signal, confirmContext);
+      }
     } catch (error) {
       if (activityId) {
         hooks?.onPermissionEnd?.(
@@ -295,7 +310,7 @@ async function authorizeToolCall(
     }
   }
 
-  return { tool, args, contract, previewRevision };
+  return { tool, args, contract, previewRevision, approvalId, approvalArgsDigest, callId: toolCall.id };
 }
 
 async function executeAuthorizedTool(
@@ -306,6 +321,10 @@ async function executeAuthorizedTool(
     ...ctx,
     preview: false,
     previewRevision: call.previewRevision,
+    callId: call.callId,
+    stepId: ctx.runId ? `${ctx.runId}:${call.callId}` : undefined,
+    approvalId: call.approvalId,
+    approvalArgsDigest: call.approvalArgsDigest,
   }));
   // 闭环第 5 步"验证"：声明产生文件产物的工具必须能读回产物，否则不算完成。
   return enforceToolEvidence(result, call.contract, ctx.workspaceRoot, { verifyDigest: true });

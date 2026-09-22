@@ -151,6 +151,9 @@ function rowToApproval(row: ApprovalRow): ApprovalInfo {
     sessionId: row.session_id == null ? null : String(row.session_id),
     toolName: String(row.tool_name),
     argsSummary: String(row.args_summary),
+    argsDigest: row.args_digest == null ? null : String(row.args_digest),
+    previewRevision: row.preview_revision == null ? null : String(row.preview_revision),
+    callId: row.call_id == null ? null : String(row.call_id),
     riskLevel: String(row.risk_level),
     status: normalizeApprovalStatus(String(row.status)),
     decidedBy: normalizeDecider(row.decided_by == null ? null : String(row.decided_by)),
@@ -172,7 +175,8 @@ const ARTIFACT_SELECT = `SELECT id, run_id, step_id, session_id, tool_name, rela
     size, sha256, created_at
   FROM artifacts`;
 
-const APPROVAL_SELECT = `SELECT id, run_id, session_id, tool_name, args_summary, risk_level, status,
+const APPROVAL_SELECT = `SELECT id, run_id, session_id, tool_name, args_summary, args_digest,
+    preview_revision, call_id, risk_level, status,
     decided_by, requested_at, decided_at
   FROM approvals`;
 
@@ -600,6 +604,9 @@ export interface CreateApprovalInput {
   sessionId?: string | null;
   toolName: string;
   args: unknown;
+  argsDigest?: string | null;
+  previewRevision?: string | null;
+  callId?: string | null;
   riskLevel: string;
   requestedAt?: number;
 }
@@ -622,14 +629,18 @@ export function createApproval(
   const now = input.requestedAt ?? Date.now();
   db.prepare(
     `INSERT INTO approvals
-       (id, run_id, session_id, tool_name, args_summary, risk_level, status, requested_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+       (id, run_id, session_id, tool_name, args_summary, args_digest, preview_revision, call_id,
+        risk_level, status, requested_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
   ).run(
     id,
     input.runId ?? null,
     input.sessionId ?? null,
     input.toolName,
     summarizeApprovalArgs(input.args),
+    input.argsDigest ?? null,
+    input.previewRevision ?? null,
+    input.callId ?? null,
     input.riskLevel,
     now,
   );

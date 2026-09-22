@@ -63,7 +63,7 @@ describe('tool side-effect contract', () => {
       .filter((tool) => resolveToolContract(tool).supportsPreview)
       .map((tool) => tool.name)
       .sort();
-    expect(previewable).toEqual(['replace_text', 'run_named_query', 'run_sql_query', 'update_docx_text', 'update_xlsx_cells', 'write_file']);
+    expect(previewable).toEqual(['replace_text', 'run_named_query', 'run_sql_query', 'submit_erp_report', 'update_docx_text', 'update_xlsx_cells', 'write_file']);
   });
 
   it('suppresses duplicate calls only for non-idempotent side-effect tools', () => {
@@ -132,11 +132,11 @@ describe('tool side-effect contract', () => {
   it('only high-risk tools require confirmation regardless of policy', () => {
     expect(requiresMandatoryConfirmation({ risk: 'high', idempotent: false, supportsPreview: false, reversible: 'none', evidence: 'output' })).toBe(true);
     expect(requiresMandatoryConfirmation({ risk: 'medium', idempotent: false, supportsPreview: false, reversible: 'none', evidence: 'output' })).toBe(false);
-    // transcribe_audio 是第一个 high 风险的内置工具：它把录音发给第三方识别服务
-    // 并按时长计费，属于契约里"发送外部数据、难以撤回"那一类，因此无论权限策略
-    // 如何都必须确认。清单式断言优于"为空"，新增 high 风险工具时会在此处显形。
+    // 录音转写与 ERP 新增报工都会把数据发送到外部且难以自动撤回，
+    // 因此无论权限策略如何都必须确认。清单式断言让新增 high 风险工具显式进入审查。
     expect(tools.filter((tool) => resolveToolContract(tool).risk === 'high').map((tool) => tool.name)).toEqual([
       'transcribe_audio',
+      'submit_erp_report',
     ]);
   });
 });
