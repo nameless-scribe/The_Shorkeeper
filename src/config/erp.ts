@@ -1,4 +1,5 @@
 import { deleteSetting, getSetting, setSetting } from '../db/app-settings';
+import { getDatabase } from '../db';
 import { normalizeErpOrigin } from '../erp/contracts';
 import { isProtectedSecret, protectSecretStrict, revealSecret } from '../security/secret-storage';
 import type { ErpBrowserChannel, ErpSettingsInfo, ErpSettingsPatch } from '../shared/types';
@@ -21,7 +22,7 @@ export interface ErpRuntimeSettings {
 }
 
 function setting(key: string): string {
-  try { return getSetting(key)?.trim() ?? ''; } catch { return ''; }
+  return getSetting(key)?.trim() ?? '';
 }
 
 function parseEnabled(value: string): boolean {
@@ -78,31 +79,35 @@ export function getErpSettingsInfo(): ErpSettingsInfo {
 }
 
 export function saveErpSettings(patch: ErpSettingsPatch): ErpSettingsInfo {
-  if (patch.clearCredentials) {
-    deleteSetting(ERP_SETTING_KEYS.username);
-    deleteSetting(ERP_SETTING_KEYS.password);
+  const origin = patch.origin?.trim();
+  const normalizedOrigin = origin ? normalizeErpOrigin(origin) : '';
+  const apiPrefix = patch.apiPrefix === undefined ? undefined : normalizeErpApiPrefix(patch.apiPrefix || DEFAULT_API_PREFIX);
+  if (patch.browserChannel !== undefined && patch.browserChannel !== 'msedge' && patch.browserChannel !== 'chrome') {
+    throw new Error('不支持的 ERP 浏览器');
   }
-  if (patch.enabled !== undefined) setSetting(ERP_SETTING_KEYS.enabled, patch.enabled ? '1' : '0');
-  if (patch.origin !== undefined) {
-    const origin = patch.origin.trim();
-    if (origin) setSetting(ERP_SETTING_KEYS.origin, normalizeErpOrigin(origin));
-    else deleteSetting(ERP_SETTING_KEYS.origin);
-  }
-  if (patch.apiPrefix !== undefined) setSetting(ERP_SETTING_KEYS.apiPrefix, normalizeErpApiPrefix(patch.apiPrefix || DEFAULT_API_PREFIX));
-  if (patch.browserChannel !== undefined) {
-    if (patch.browserChannel !== 'msedge' && patch.browserChannel !== 'chrome') throw new Error('不支持的 ERP 浏览器');
-    setSetting(ERP_SETTING_KEYS.browserChannel, patch.browserChannel);
-  }
-  if (patch.username !== undefined) {
-    const username = patch.username.trim();
-    if ([...username].length > 200) throw new Error('ERP 账号过长');
-    if (username) setSetting(ERP_SETTING_KEYS.username, username);
-    else deleteSetting(ERP_SETTING_KEYS.username);
-  }
+  const username = patch.username?.trim();
+  if (username !== undefined && [...username].length > 200) throw new Error('ERP 账号过长');
   const password = patch.password?.trim();
-  if (password) {
-    if ([...password].length > 1_000) throw new Error('ERP 密码过长');
-    setSetting(ERP_SETTING_KEYS.password, protectSecretStrict(password));
-  }
+  if (password && [...password].length > 1_000) throw new Error('ERP 密码过长');
+  const protectedPassword = password ? protectSecretStrict(password) : '';
+
+  getDatabase().transaction(() => {
+    if (patch.clearCredentials) {
+      deleteSetting(ERP_SETTING_KEYS.username);
+      deleteSetting(ERP_SETTING_KEYS.password);
+    }
+    if (patch.enabled !== undefined) setSetting(ERP_SETTING_KEYS.enabled, patch.enabled ? '1' : '0');
+    if (origin !== undefined) {
+      if (normalizedOrigin) setSetting(ERP_SETTING_KEYS.origin, normalizedOrigin);
+      else deleteSetting(ERP_SETTING_KEYS.origin);
+    }
+    if (apiPrefix !== undefined) setSetting(ERP_SETTING_KEYS.apiPrefix, apiPrefix);
+    if (patch.browserChannel !== undefined) setSetting(ERP_SETTING_KEYS.browserChannel, patch.browserChannel);
+    if (username !== undefined) {
+      if (username) setSetting(ERP_SETTING_KEYS.username, username);
+      else deleteSetting(ERP_SETTING_KEYS.username);
+    }
+    if (protectedPassword) setSetting(ERP_SETTING_KEYS.password, protectedPassword);
+  });
   return getErpSettingsInfo();
 }

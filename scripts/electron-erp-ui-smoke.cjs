@@ -70,7 +70,9 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: true, width: 1200, height: 820, webPreferences: { preload: path.resolve('dist-electron/preload.mjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   const rendererErrors = [];
   win.webContents.on('console-message', (_event, level, message) => { if (level >= 2) rendererErrors.push(`[${level}] ${message}`); });
+  let exitCode = 0;
   try {
+    if (process.env.SHOREKEEPER_SMOKE_FORCE_FAILURE === '1') throw new Error('ERP UI smoke intentional failure');
     await win.loadFile(path.resolve('dist/index.html'));
     await waitFor(win, `Boolean(document.querySelector('button[title="设置"]'))`, '设置按钮');
     await win.webContents.executeJavaScript(`document.querySelector('button[title="设置"]').click()`);
@@ -124,6 +126,6 @@ app.whenReady().then(async () => {
     const resumeShot = await capture(win, outputDirectory, 'erp_permission_resume_verified.png');
     assert(rendererErrors.length === 0, `renderer console errors: ${rendererErrors.join(' | ')}`);
     console.log(JSON.stringify({ ok: true, screenshots: [defaultShot, violetShot, minimumShot, previewDefaultShot, previewVioletShot, previewMinimumShot, resumeShot] }));
-  } catch (error) { console.error(error); process.exitCode = 1; }
-  finally { if (!win.isDestroyed()) win.destroy(); app.quit(); }
-}).catch((error) => { console.error(error); process.exitCode = 1; app.quit(); });
+  } catch (error) { console.error(error); exitCode = 1; }
+  finally { if (!win.isDestroyed()) win.destroy(); app.exit(exitCode); }
+}).catch((error) => { console.error(error); app.exit(1); });

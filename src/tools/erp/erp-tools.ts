@@ -145,7 +145,12 @@ export const prepareErpReportTool: ToolDefinition = {
       const current = draftId ? getErpReportDraft(draftId) : null;
       if (draftId && (!current || current.sessionId !== ctx.sessionId)) return invalid('未找到当前会话的 ERP 草稿');
       if (current && current.workDate !== workDate) return invalid('不能在原草稿中静默更换报工日期，请新建草稿');
+      if (current && current.erpOrigin !== settings.origin) return invalid('ERP 站点已变化，原草稿不能用于当前站点，请新建草稿');
       if (current && (!Number.isInteger(input.expected_revision) || Number(input.expected_revision) < 1)) return invalid('修改草稿必须提供有效的 expected_revision');
+      const connection = getErpRuntime().status();
+      if (connection.state !== 'authenticated' || connection.origin !== settings.origin) {
+        return invalid('ERP 当前连接与配置站点不一致，请重新连接并核对站点');
+      }
       const items = parseToolDraftItems(input.items, latestUser.id, current?.items ?? []);
       if (input.allow_possible_duplicate !== undefined && typeof input.allow_possible_duplicate !== 'boolean') return invalid('allow_possible_duplicate 必须是布尔值');
       const remote = await getErpRuntime().readContext(workDate);

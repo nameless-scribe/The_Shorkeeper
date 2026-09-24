@@ -80,6 +80,13 @@ function entryBaselineDigest(entries: ErpTimeEntrySummary[]): string {
   })).sort((left, right) => left.id.localeCompare(right.id)));
 }
 
+function assertConnectedOrigin(expectedOrigin: string): void {
+  const connection = getErpRuntime().status();
+  if (connection.state !== 'authenticated' || connection.origin !== expectedOrigin) {
+    throw new Error('ERP 当前登录站点与报工草稿或批次不一致，请重新连接并核对站点');
+  }
+}
+
 function validateSnapshot(
   request: Extract<ErpSubmissionRequest, { draftId: string }>,
   sessionId: string,
@@ -140,6 +147,7 @@ function validateSnapshot(
 async function loadSnapshot(request: Extract<ErpSubmissionRequest, { draftId: string }>, sessionId: string): Promise<SubmissionSnapshot> {
   const draft = getErpReportDraft(request.draftId);
   if (!draft || draft.sessionId !== sessionId) throw new Error('未找到当前会话的 ERP 报工草稿');
+  assertConnectedOrigin(draft.erpOrigin);
   const context = await getErpRuntime().readContext(draft.workDate);
   return validateSnapshot(request, sessionId, draft, context);
 }
@@ -160,6 +168,7 @@ async function loadResumeSnapshot(
       || typeof erpUserId !== 'string' || !erpUserId || typeof workDate !== 'string' || !isIsoDate(workDate)) {
     throw new Error('ERP 报工批次快照已损坏');
   }
+  assertConnectedOrigin(erpOrigin);
   const frozenItems = parseDraftItems(batch.payload.items);
   const attempts = listErpReportSubmissions(batch.id);
   if (attempts.some((row) => ['prepared', 'dispatching', 'verifying', 'unknown'].includes(row.state))) {
@@ -439,6 +448,8 @@ export async function reconcileErpSubmission(batchId: string, sessionId: string)
   const frozenDate = batch.payload.workDate;
   if (typeof frozenUserId !== 'string' || !frozenUserId
       || typeof frozenDate !== 'string' || !isIsoDate(frozenDate)) throw new Error('ERP 报工批次快照已损坏');
+  if (typeof batch.payload.erpOrigin !== 'string') throw new Error('ERP 报工批次站点无效');
+  assertConnectedOrigin(batch.payload.erpOrigin);
   const frozenItems = parseDraftItems(batch.payload.items);
   const items = new Map(frozenItems.map((item) => [item.itemId, item]));
   const before = listErpReportSubmissions(batch.id);

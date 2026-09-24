@@ -65,4 +65,23 @@ describe('prepare_erp_report integration', () => {
     expect(result).toMatchObject({ success: false });
     expect(result.error).toContain('已有未完成草稿');
   });
+
+  it('does not revise an old-site draft after the configured ERP site changes', async () => {
+    context = baseContext;
+    const args = { work_date: '2026-09-24', items: [{ item_id: 'aps-site', task_id: '1001', task_name: 'APS 自动排产系统调整',
+      project_name: '光拓智能日常', work_hours: 1, work_content: '整理跨站点验证。' }] };
+    const toolContext = { sessionId, workspaceRoot: tempDir, signal: new AbortController().signal };
+    const created = await prepareErpReportTool.execute(args, toolContext);
+    expect(created.success).toBe(true);
+    setSetting('erp.origin', 'http://another-erp.test');
+    try {
+      const revised = await prepareErpReportTool.execute({ ...args, draft_id: created.metadata?.draftId,
+        expected_revision: 1 }, toolContext);
+      expect(revised).toMatchObject({ success: false });
+      expect(revised.error).toContain('站点已变化');
+      expect(getErpReportDraft(String(created.metadata?.draftId))?.revision).toBe(1);
+    } finally {
+      setSetting('erp.origin', 'http://erp.test');
+    }
+  });
 });

@@ -51,4 +51,13 @@ describe('ERP connection dispatch result', () => {
     expect(result).toEqual({ status: 'known_not_written', message: '无法定位任务' });
     expect(adapter.submit).not.toHaveBeenCalled();
   });
+
+  it('keeps the result unknown when clicking may have sent the form before Playwright rejects', async () => {
+    adapter.open.mockResolvedValue({ ...input });
+    adapter.submit.mockRejectedValue(new Error('点击后页面关闭'));
+
+    const result = await connectedService().submitTimeEntry(input);
+    expect(result).toEqual({ status: 'outcome_unknown', message: '点击后页面关闭' });
+    expect(adapter.submit).toHaveBeenCalledOnce();
+  });
 });

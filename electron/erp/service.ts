@@ -3,7 +3,7 @@ import { ErpReadClient, PlaywrightErpApiTransport, type ErpReadContext } from '.
 import type { ErpConnectionInfo } from '../../src/shared/types';
 import { setErpRuntime, type ErpSubmitDispatchResult, type ErpTimeEntryInput } from '../../src/erp/runtime';
 import { ErpBrowserRuntime } from './browser-runtime';
-import { cancelErpTimeEntryForm, closeErpTimeEntryList, ErpTimeEntrySubmissionError, openAndFillErpTimeEntryForm, submitFilledErpTimeEntryForm } from './taskboard-adapter';
+import { cancelErpTimeEntryForm, closeErpTimeEntryList, openAndFillErpTimeEntryForm, submitFilledErpTimeEntryForm } from './taskboard-adapter';
 import { tryAutomatedErpLogin } from './login-automation';
 
 export class ErpConnectionService {
@@ -91,7 +91,7 @@ export class ErpConnectionService {
     }
     if (input.origin !== this.connection.origin) throw new Error('ERP 报工站点与当前连接不一致');
     return this.runtime.runExclusive(async (page) => {
-      let acceptedBeforeCleanup = false;
+      let submitAttempted = false;
       try {
         if (signal?.aborted) return { status: 'known_not_written', message: '提交已取消' };
         if (!page.url().startsWith(`${input.origin}/taskboard/index`)) {
@@ -103,14 +103,13 @@ export class ErpConnectionService {
           await cancelErpTimeEntryForm(page);
           return { status: 'known_not_written', message: '提交已取消' };
         }
+        submitAttempted = true;
         await submitFilledErpTimeEntryForm(page, input.origin);
-        acceptedBeforeCleanup = true;
         await closeErpTimeEntryList(page);
         return { status: 'accepted' };
       } catch (error) {
         return {
-          status: acceptedBeforeCleanup || (error instanceof ErpTimeEntrySubmissionError && error.dispatched)
-            ? 'outcome_unknown' : 'known_not_written',
+          status: submitAttempted ? 'outcome_unknown' : 'known_not_written',
           message: error instanceof Error ? error.message : String(error),
         };
       }

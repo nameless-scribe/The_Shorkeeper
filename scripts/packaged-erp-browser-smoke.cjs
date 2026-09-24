@@ -31,7 +31,8 @@ async function main() {
           formats: ['cjs'],
           fileName: () => 'erp-probe.cjs',
         },
-        rollupOptions: { external: (id) => id === 'playwright-core' || id.startsWith('node:') },
+        rollupOptions: { external: (id) => id === 'playwright-core' || id === 'better-sqlite3'
+          || id === 'sql.js/dist/sql-wasm.js' || id.startsWith('node:') },
       },
     });
     const worker = path.join(probeRoot, 'erp-probe.cjs');
@@ -49,7 +50,8 @@ async function main() {
     }
     const lastLine = result.stdout.trim().split(/\r?\n/).at(-1);
     const evidence = JSON.parse(lastLine);
-    assert(evidence.ok && evidence.cancelledWithoutWrite && evidence.writes === 1, '模拟提交证据不完整');
+    assert(evidence.ok && evidence.cancelledWithoutWrite && evidence.rejectedWithoutApproval && evidence.writes === 2
+      && evidence.approvedFlowVerified && evidence.ledgerState === 'verified', '模拟提交证据不完整');
     const localMainSha256 = createHash('sha256')
       .update(fs.readFileSync(path.join(root, 'dist-electron', 'main.js'))).digest('hex');
     assert(evidence.packagedMainSha256 === localMainSha256, '打包主进程入口不是当前构建，请重新打包');

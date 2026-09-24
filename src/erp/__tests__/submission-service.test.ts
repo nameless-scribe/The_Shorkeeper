@@ -29,6 +29,7 @@ describe('ERP submission service', () => {
   let abortAfterFirstWrite: AbortController | null = null;
   let readCount = 0;
   let injectExternalOnRead = 0;
+  let activeOrigin = 'http://erp.test';
 
   const tasks = [
     { taskId: '1001', taskName: 'APS 调整', projectName: '日常', ownerId: '7', ownerName: '苏运来', actualMinutes: 0 },
@@ -54,9 +55,10 @@ describe('ERP submission service', () => {
     abortAfterFirstWrite = null;
     readCount = 0;
     injectExternalOnRead = 0;
+    activeOrigin = 'http://erp.test';
     setErpRuntime({
       connect: async () => ({ state: 'authenticated', origin: 'http://erp.test', browserChannel: 'msedge', pageUrl: 'http://erp.test/taskboard/index', userId: '7', userName: '苏运来', message: '已登录' }),
-      status: () => ({ state: 'authenticated', origin: 'http://erp.test', browserChannel: 'msedge', pageUrl: 'http://erp.test/taskboard/index', userId: '7', userName: '苏运来', message: '已登录' }),
+      status: () => ({ state: 'authenticated', origin: activeOrigin, browserChannel: 'msedge', pageUrl: `${activeOrigin}/taskboard/index`, userId: '7', userName: '苏运来', message: '已登录' }),
       readContext: async () => {
         readCount += 1;
         if (readCount === injectExternalOnRead) {
@@ -121,6 +123,18 @@ describe('ERP submission service', () => {
     expect(dispatches.map((entry) => entry.taskId)).toEqual(['1001', '1002']);
     expect(listErpReportSubmissions(result.batchId).map((row) => row.state)).toEqual(['verified', 'verified']);
     expect(getErpReportDraft(setup.draft.id)?.status).toBe('submitted');
+  });
+
+  it('rejects an old-site draft before preview or write after the ERP connection changes', async () => {
+    const setup = await arrange();
+    activeOrigin = 'http://another-erp.test';
+    await expect(previewErpSubmission(setup.request, 'session-1')).rejects.toThrow('站点');
+    await expect(executeErpSubmission(setup.request, {
+      sessionId: 'session-1', runId: 'run-1', stepId: 'run-1:call-1', callId: 'call-1',
+      approvalId: setup.approval.id, argsDigest: setup.argsDigest, previewRevision: setup.preview.revision,
+      toolName: 'submit_erp_report', signal: new AbortController().signal,
+    })).rejects.toThrow('站点');
+    expect(dispatches).toHaveLength(0);
   });
 
   it('rejects an expired preview before any ERP write', async () => {
