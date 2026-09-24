@@ -225,6 +225,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | [P1-PERSONAL-MODEL-PLAN.md](docs/P1-PERSONAL-MODEL-PLAN.md) | P1 可追溯个人模型实施计划与阶段出口 |
 | [P3-LOCAL-PROACTIVITY-PLAN.md](docs/P3-LOCAL-PROACTIVITY-PLAN.md) | P3 本地主动服务实施契约、路由规则与验收记录 |
 | [P4-AUDIO-TRANSCRIPTION-PLAN.md](docs/P4-AUDIO-TRANSCRIPTION-PLAN.md) | P4 录音转写与会议纪要实施计划与实施记录 |
+| [P4-REAL-DEVICE-TEST-CHECKLIST.md](docs/P4-REAL-DEVICE-TEST-CHECKLIST.md) | P4 尚待完成的真实录音、语音输入和会议纪要验收清单 |
 | [P5-DOCUMENT-CAPABILITY-PLAN.md](docs/P5-DOCUMENT-CAPABILITY-PLAN.md) | P5 办公文档读写实施计划与实施记录 |
 | [P6-INTENT-AND-INQUIRY-PLAN.md](docs/P6-INTENT-AND-INQUIRY-PLAN.md) | P6 意图理解与追问（`ask_user`）实施计划与实施记录 |
 | [P7-DATA-SOURCE-QUERY-PLAN.md](docs/P7-DATA-SOURCE-QUERY-PLAN.md) | P7 数据源查询实施计划与实施记录 |
@@ -235,6 +236,7 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 | [S3-ACCEPTANCE.md](docs/S3-ACCEPTANCE.md) | 工具 / 技能 / 权限验收集 |
 | [S5-ACCEPTANCE.md](docs/S5-ACCEPTANCE.md) | 私人助理验收集 |
 | [RAG-RETRIEVAL-BASELINE.md](docs/RAG-RETRIEVAL-BASELINE.md) | RAG 检索质量基线 |
+| [STABILITY-SOAK-BASELINE.md](docs/STABILITY-SOAK-BASELINE.md) | 长稳、强制中断恢复和运行时取消基线 |
 
 ## 进度
 
@@ -252,6 +254,8 @@ pnpm db:reset-keep-models     # 重置 DB 但保留模型配置
 - **P8**：P8.0–P8.3 代码已实现：图片附件、百炼视觉客户端、`look_at_image`、同图同问缓存、设置开关与扫描 PDF 衔接。真实模型探针、照片 / 截图 / 图纸验收尚未完成；P8.4 OCR 专用模型评估为可选项，见 [P8 计划](docs/P8-VISION-PLAN.md)
 - **语音**：TTS 朗读与通话（STT → Agent → CosyVoice）已落地
 - **ERP 报工**：M0–M3 代码和模拟验证已完成首轮；M4/M5 的自由对话、自动登录、结果未知回查、部分批次重新确认接续及运行历史明细已有实现。打包态的审批账本、浏览器提交和回查业务模拟通过；打包应用内的用户确认界面与 Agent 全链路、真实 ERP 仍待验收
+
+2026-09-24 状态复核：现有 227 个 Vitest 文件均被测试配置收集，未发现空测试或内容相同的测试文件；两份此前未列入索引的实机清单与长稳基线仍承载待验收事项和历史基线，已补入上方索引。类型检查通过；全量测试首次运行 1360/1361 项通过，Excel 导出用例并发超时，单独重跑该文件 7/7 项通过，第二次全量运行 227 个文件、1361 项全部通过。真实设备、真实 ERP 和打包应用内 Agent 全链路仍按对应计划验收。
 
 ## License
 
